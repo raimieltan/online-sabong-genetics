@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+import { canBreed } from "@/lib/growth";
 import type { Chicken, Egg } from "@/lib/types";
 
 export default function BreedPage() {
@@ -16,8 +17,8 @@ export default function BreedPage() {
     fetch("/api/eggs").then((res) => res.json()).then(setEggs);
   }, []);
 
-  const roosters = chickens.filter((c) => c.sex === "rooster");
-  const hens = chickens.filter((c) => c.sex === "hen");
+  const roosters = chickens.filter((c) => c.sex === "rooster" && canBreed(c.growthStage));
+  const hens = chickens.filter((c) => c.sex === "hen" && canBreed(c.growthStage));
 
   async function handleBreed() {
     setError(null);

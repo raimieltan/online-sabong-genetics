@@ -4,7 +4,9 @@ import {
   type ChickenParentage,
   type ChickenSex,
   type CombatRecord,
+  type GrowthStage,
   type StatBlock,
+  type Trait,
 } from "./types";
 
 const MIN_IV = 40;
@@ -19,6 +21,39 @@ const RANDOM_NAME_POOL: readonly string[] = [
   "Ember",
   "Diablo",
   "Duke",
+  "Kelso",
+  "Hatch",
+  "Sweater",
+  "Shamo",
+  "Asil",
+  "Sumatra",
+  "Malay",
+  "Claret",
+  "Radio",
+  "McRae",
+  "Sid Taylor",
+  "Whitehackle",
+  "Brown Red",
+  "Cornish",
+  "Peruvian",
+  "Spaniard",
+  "Thai Fury",
+  "Old English",
+  "Roundhead",
+  "Twister",
+  "Grey Ghost",
+  "Blackjack",
+  "Crimson Spur",
+  "Ironclaw",
+  "Warlord",
+  "Firecrest",
+  "Stormcock",
+  "Bantam Blitz",
+  "Copperhead",
+  "Vanguard",
+  "Ridgeback",
+  "Wildfire",
+  "Steelwing",
 ];
 
 function cryptoSafeId(seed: string): string {
@@ -38,6 +73,11 @@ function cryptoSafeId(seed: string): string {
 
 function pickRandomName(): string {
   return RANDOM_NAME_POOL[Math.floor(Math.random() * RANDOM_NAME_POOL.length)];
+}
+
+/** Picks a random name from the same pool used for gen-0 chickens, for hatched chicks. */
+export function generateChickName(): string {
+  return pickRandomName();
 }
 
 function pickRandomSex(): ChickenSex {
@@ -72,6 +112,8 @@ export type CreateChickenInput = {
   parents: ChickenParentage;
   bloodlineId: string;
   iv: StatBlock;
+  growthStage?: GrowthStage;
+  traits?: Trait[];
 };
 
 /**
@@ -90,12 +132,13 @@ export function createChicken(input: CreateChickenInput): Chicken {
     bloodlineId: input.bloodlineId,
     iv: input.iv,
     ev: zeroStatBlock(),
-    traits: [],
+    traits: input.traits ?? [],
     age: 0,
     health: 100,
     energy: 100,
     record: zeroRecord(),
     status: "active",
+    growthStage: input.growthStage ?? "adult",
     createdAt: Date.now(),
   };
 }

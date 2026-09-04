@@ -101,6 +101,26 @@ export type ChickenSex = "rooster" | "hen";
 
 export type ChickenStatus = "active" | "injured" | "retired" | "deceased";
 
+export type GrowthStage =
+  | "chick"
+  | "juvenile"
+  | "young_adult"
+  | "adult"
+  | "prime"
+  | "senior"
+  | "retired";
+
+/** Canonical lifecycle order, from the baseline mechanics spec (section 11). */
+export const GROWTH_STAGES: readonly GrowthStage[] = [
+  "chick",
+  "juvenile",
+  "young_adult",
+  "adult",
+  "prime",
+  "senior",
+  "retired",
+];
+
 export type TraitRarity = "common" | "uncommon" | "rare" | "epic" | "legendary";
 
 export type Trait = {
@@ -143,15 +163,15 @@ export type Chicken = {
   energy: number;
   record: CombatRecord;
   status: ChickenStatus;
+  growthStage: GrowthStage;
   createdAt: number;
 };
 
 export type EggStatus = "incubating";
 
 /**
- * Genetics are locked in at conception. An egg has no hatching mechanism
- * yet (that's a later roadmap item) — it simply records what a breeding
- * produced.
+ * Genetics are locked in at conception. Hatching (POST /api/eggs/[id]/hatch)
+ * consumes an incubating egg and produces a chick-stage Chicken.
  */
 export type Egg = {
   id: string;

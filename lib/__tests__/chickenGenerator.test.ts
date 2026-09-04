@@ -40,6 +40,51 @@ test("createChicken fills EVs at zero, full health/energy, and a zeroed record",
   assert.ok(chicken.createdAt > 0);
 });
 
+test("createChicken defaults growthStage to adult and traits to empty", () => {
+  const chicken = createChicken({
+    name: "Test",
+    sex: "rooster",
+    generation: 0,
+    parents: { fatherId: null, motherId: null },
+    bloodlineId: "test-bloodline",
+    iv: {
+      power: 50,
+      speed: 50,
+      stamina: 50,
+      defense: 50,
+      accuracy: 50,
+      agility: 50,
+    },
+  });
+
+  assert.equal(chicken.growthStage, "adult");
+  assert.deepEqual(chicken.traits, []);
+});
+
+test("createChicken accepts explicit growthStage and traits", () => {
+  const trait = { id: "iron-stamina", name: "Iron Stamina", rarity: "common" as const, description: "x" };
+  const chicken = createChicken({
+    name: "Test",
+    sex: "hen",
+    generation: 1,
+    parents: { fatherId: "f", motherId: "m" },
+    bloodlineId: "test-bloodline",
+    iv: {
+      power: 50,
+      speed: 50,
+      stamina: 50,
+      defense: 50,
+      accuracy: 50,
+      agility: 50,
+    },
+    growthStage: "chick",
+    traits: [trait],
+  });
+
+  assert.equal(chicken.growthStage, "chick");
+  assert.deepEqual(chicken.traits, [trait]);
+});
+
 test("createChicken respects an explicit id instead of generating one", () => {
   const chicken = createChicken({
     id: "fixed-id",

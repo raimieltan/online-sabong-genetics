@@ -13,7 +13,9 @@ function zeroBlock(): StatBlock {
   return block;
 }
 
-async function seedChicken(overrides: Partial<{ sex: string; generation: number; bloodlineId: string }>) {
+async function seedChicken(
+  overrides: Partial<{ sex: string; generation: number; bloodlineId: string; growthStage: string }>
+) {
   const player = await getOrCreatePlayer();
   const id = randomUUID();
   await prisma.chicken.create({
@@ -32,6 +34,7 @@ async function seedChicken(overrides: Partial<{ sex: string; generation: number;
       energy: 100,
       record: { wins: 0, losses: 0, championships: 0, koTko: 0, decisions: 0 },
       status: "active",
+      growthStage: overrides.growthStage ?? "adult",
     },
   });
   return id;
@@ -72,6 +75,14 @@ test("POST /api/breed rejects two roosters", async () => {
   const secondRoosterId = await seedChicken({ sex: "rooster" });
 
   const response = await POST(postRequest({ fatherId, motherId: secondRoosterId }));
+  assert.equal(response.status, 400);
+});
+
+test("POST /api/breed rejects a chick that hasn't reached adulthood", async () => {
+  const fatherId = await seedChicken({ sex: "rooster", growthStage: "chick" });
+  const motherId = await seedChicken({ sex: "hen" });
+
+  const response = await POST(postRequest({ fatherId, motherId }));
   assert.equal(response.status, 400);
 });
 

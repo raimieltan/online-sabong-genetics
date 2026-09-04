@@ -35,6 +35,7 @@ export async function POST() {
       energy: generated.energy,
       record: generated.record,
       status: generated.status,
+      growthStage: generated.growthStage,
     },
   });
 

@@ -4,9 +4,10 @@ import { NextResponse } from "next/server";
 
 import { prisma } from "@/lib/db";
 import { inheritStatBlock } from "@/lib/genetics";
+import { canBreed } from "@/lib/growth";
 import { getOrCreatePlayer } from "@/lib/player";
 import { inheritTraits } from "@/lib/traits";
-import type { StatBlock, Trait } from "@/lib/types";
+import type { GrowthStage, StatBlock, Trait } from "@/lib/types";
 
 export async function POST(request: Request) {
   const body = (await request.json()) as { fatherId?: string; motherId?: string };
@@ -31,6 +32,12 @@ export async function POST(request: Request) {
   if (father.sex !== "rooster" || mother.sex !== "hen") {
     return NextResponse.json(
       { error: "fatherId must be a rooster and motherId must be a hen" },
+      { status: 400 }
+    );
+  }
+  if (!canBreed(father.growthStage as GrowthStage) || !canBreed(mother.growthStage as GrowthStage)) {
+    return NextResponse.json(
+      { error: "Both parents must be old enough to breed (adult or older)" },
       { status: 400 }
     );
   }
