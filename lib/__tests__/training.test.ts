@@ -35,6 +35,9 @@ function makeChicken(overrides: Partial<Chicken> = {}): Chicken {
     record: { wins: 0, losses: 0, championships: 0, koTko: 0, decisions: 0 },
     status: "active",
     growthStage: "adult",
+    fightingStyle: "balanced",
+    colorScheme: { body: "#000000", head: "#000000", comb: "#000000", tail: "#000000", feet: "#000000" },
+    injured: false,
     createdAt: Date.now(),
     ...overrides,
   };

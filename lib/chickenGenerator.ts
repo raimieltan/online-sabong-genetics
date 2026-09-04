@@ -1,13 +1,17 @@
 import {
+  FIGHTING_STYLES,
   GENETIC_STAT_KEYS,
   type Chicken,
   type ChickenParentage,
   type ChickenSex,
   type CombatRecord,
+  type FightingStyle,
   type GrowthStage,
+  type RoosterColorScheme,
   type StatBlock,
   type Trait,
 } from "./types";
+import { COLOR_PALETTES } from "./roosterGenerator";
 
 const MIN_IV = 40;
 const MAX_IV = 99;
@@ -84,6 +88,14 @@ function pickRandomSex(): ChickenSex {
   return Math.random() < 0.5 ? "rooster" : "hen";
 }
 
+function pickRandomFightingStyle(): FightingStyle {
+  return FIGHTING_STYLES[Math.floor(Math.random() * FIGHTING_STYLES.length)];
+}
+
+function pickRandomColorScheme(): RoosterColorScheme {
+  return { ...COLOR_PALETTES[Math.floor(Math.random() * COLOR_PALETTES.length)] };
+}
+
 function zeroStatBlock(): StatBlock {
   const stats = {} as StatBlock;
   GENETIC_STAT_KEYS.forEach((key) => {
@@ -139,6 +151,9 @@ export function createChicken(input: CreateChickenInput): Chicken {
     record: zeroRecord(),
     status: "active",
     growthStage: input.growthStage ?? "adult",
+    fightingStyle: pickRandomFightingStyle(),
+    colorScheme: pickRandomColorScheme(),
+    injured: false,
     createdAt: Date.now(),
   };
 }

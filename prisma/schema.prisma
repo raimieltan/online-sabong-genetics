@@ -33,6 +33,9 @@ model Chicken {
   record      Json
   status      String
   growthStage String
+  fightingStyle String @default("balanced")
+  colorScheme   Json   @default("{\"body\":\"#8b6f47\",\"head\":\"#6b5637\",\"comb\":\"#ff0000\",\"tail\":\"#a0826d\",\"feet\":\"#ff8c00\"}")
+  injured       Boolean @default(false)
   createdAt   DateTime @default(now())
 }
 

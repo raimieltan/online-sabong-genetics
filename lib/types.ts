@@ -143,6 +143,16 @@ export type CombatRecord = {
   decisions: number;
 };
 
+/** A chicken's combat fighting style — persistent, set once at creation. */
+export type FightingStyle = "aggressive" | "counter" | "endurance" | "balanced";
+
+export const FIGHTING_STYLES: readonly FightingStyle[] = [
+  "aggressive",
+  "counter",
+  "endurance",
+  "balanced",
+];
+
 /**
  * A single chicken: an individual digital asset tracking genetics, lineage,
  * and career history. IV is fixed genetic potential set at creation; EV
@@ -164,7 +174,56 @@ export type Chicken = {
   record: CombatRecord;
   status: ChickenStatus;
   growthStage: GrowthStage;
+  fightingStyle: FightingStyle;
+  colorScheme: RoosterColorScheme;
+  injured: boolean;
   createdAt: number;
+};
+
+// ---------------------------------------------------------------------------
+// Combat
+// ---------------------------------------------------------------------------
+
+export type HitZone =
+  | "head"
+  | "neck"
+  | "body"
+  | "left_wing"
+  | "right_wing"
+  | "left_leg"
+  | "right_leg";
+
+export const HIT_ZONES: readonly HitZone[] = [
+  "head",
+  "neck",
+  "body",
+  "left_wing",
+  "right_wing",
+  "left_leg",
+  "right_leg",
+];
+
+export type CombatLogEntry = {
+  turn: number;
+  attackerId: string;
+  defenderId: string;
+  damage: number;
+  hitZone: HitZone | null;
+  isMiss: boolean;
+  isCrit: boolean;
+  isCounter: boolean;
+  isCritical: boolean;
+  defenderHp: number;
+  timestamp: number;
+};
+
+export type CombatResult = {
+  winnerId: string;
+  loserId: string;
+  log: CombatLogEntry[];
+  totalTurns: number;
+  outcomeReason: "ko" | "timeout" | "critical_injury";
+  injuredChickenId: string | null;
 };
 
 export type EggStatus = "incubating";

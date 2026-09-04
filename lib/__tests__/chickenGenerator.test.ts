@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { createChicken, generateRandomChicken } from "../chickenGenerator";
-import { GENETIC_STAT_KEYS } from "../types";
+import { FIGHTING_STYLES, GENETIC_STAT_KEYS } from "../types";
 
 test("createChicken fills EVs at zero, full health/energy, and a zeroed record", () => {
   const chicken = createChicken({
@@ -38,6 +38,32 @@ test("createChicken fills EVs at zero, full health/energy, and a zeroed record",
   assert.deepEqual(chicken.traits, []);
   assert.ok(chicken.id.length > 0);
   assert.ok(chicken.createdAt > 0);
+});
+
+test("createChicken assigns a persistent fighting style, a color scheme, and starts uninjured", () => {
+  const chicken = createChicken({
+    name: "Test",
+    sex: "rooster",
+    generation: 0,
+    parents: { fatherId: null, motherId: null },
+    bloodlineId: "test-bloodline",
+    iv: {
+      power: 80,
+      speed: 70,
+      stamina: 60,
+      defense: 50,
+      accuracy: 40,
+      agility: 30,
+    },
+  });
+
+  assert.ok(FIGHTING_STYLES.includes(chicken.fightingStyle));
+  assert.ok(chicken.colorScheme.body.startsWith("#"));
+  assert.ok(chicken.colorScheme.head.startsWith("#"));
+  assert.ok(chicken.colorScheme.comb.startsWith("#"));
+  assert.ok(chicken.colorScheme.tail.startsWith("#"));
+  assert.ok(chicken.colorScheme.feet.startsWith("#"));
+  assert.equal(chicken.injured, false);
 });
 
 test("createChicken defaults growthStage to adult and traits to empty", () => {
