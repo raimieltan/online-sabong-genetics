@@ -70,3 +70,78 @@ export type Bet = {
   roosterName: string;
   odds: number;
 };
+
+// ---------------------------------------------------------------------------
+// Chicken data model / genetics (Gamefowl Dynasty foundation)
+// ---------------------------------------------------------------------------
+
+/** The five genetic stats from the mechanics spec, plus Agility as a sixth. */
+export type GeneticStatKey =
+  | "power"
+  | "speed"
+  | "stamina"
+  | "defense"
+  | "accuracy"
+  | "agility";
+
+/** Canonical display/iteration order for the six genetic stats. */
+export const GENETIC_STAT_KEYS: readonly GeneticStatKey[] = [
+  "power",
+  "speed",
+  "stamina",
+  "defense",
+  "accuracy",
+  "agility",
+];
+
+/** A full set of values across all genetic stats (used for both IV and EV). */
+export type StatBlock = Record<GeneticStatKey, number>;
+
+export type ChickenSex = "rooster" | "hen";
+
+export type ChickenStatus = "active" | "injured" | "retired" | "deceased";
+
+export type TraitRarity = "common" | "uncommon" | "rare" | "epic" | "legendary";
+
+export type Trait = {
+  id: string;
+  name: string;
+  rarity: TraitRarity;
+  description: string;
+};
+
+export type ChickenParentage = {
+  fatherId: string | null;
+  motherId: string | null;
+};
+
+export type CombatRecord = {
+  wins: number;
+  losses: number;
+  championships: number;
+  koTko: number;
+  decisions: number;
+};
+
+/**
+ * A single chicken: an individual digital asset tracking genetics, lineage,
+ * and career history. IV is fixed genetic potential set at creation; EV
+ * accumulates through training and starts at zero for every stat.
+ */
+export type Chicken = {
+  id: string;
+  name: string;
+  sex: ChickenSex;
+  generation: number;
+  parents: ChickenParentage;
+  bloodlineId: string;
+  iv: StatBlock;
+  ev: StatBlock;
+  traits: Trait[];
+  age: number;
+  health: number;
+  energy: number;
+  record: CombatRecord;
+  status: ChickenStatus;
+  createdAt: number;
+};
