@@ -1,0 +1,9 @@
+/Users/sean/Documents/online-sabong/rooster-arena/.serena/project.yml
+/Users/sean/Documents/online-sabong/rooster-arena/AGENTS.md
+/Users/sean/Documents/online-sabong/rooster-arena/CLAUDE.md
+/Users/sean/Documents/online-sabong/rooster-arena/README.md
+/Users/sean/Documents/online-sabong/rooster-arena/public/file.svg
+/Users/sean/Documents/online-sabong/rooster-arena/public/globe.svg
+/Users/sean/Documents/online-sabong/rooster-arena/public/next.svg
+/Users/sean/Documents/online-sabong/rooster-arena/public/vercel.svg
+/Users/sean/Documents/online-sabong/rooster-arena/public/window.svg
