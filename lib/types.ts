@@ -145,3 +145,23 @@ export type Chicken = {
   status: ChickenStatus;
   createdAt: number;
 };
+
+export type EggStatus = "incubating";
+
+/**
+ * Genetics are locked in at conception. An egg has no hatching mechanism
+ * yet (that's a later roadmap item) — it simply records what a breeding
+ * produced.
+ */
+export type Egg = {
+  id: string;
+  fatherId: string;
+  motherId: string;
+  bloodlineId: string;
+  generation: number;
+  sex: ChickenSex;
+  iv: StatBlock;
+  traits: Trait[];
+  laidAt: number;
+  status: EggStatus;
+};
