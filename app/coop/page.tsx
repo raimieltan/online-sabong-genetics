@@ -2,7 +2,9 @@
 
 import { useEffect, useState } from "react";
 
-import type { Chicken, Egg } from "@/lib/types";
+import type { Chicken, Egg, GeneticStatKey } from "@/lib/types";
+import { canTrain } from "@/lib/growth";
+import { ENERGY_PER_TRAIN } from "@/lib/training";
 
 import { ChickenCard } from "./ChickenCard";
 
@@ -50,6 +52,25 @@ export default function CoopPage() {
     if (!res.ok) return;
     const updated: Chicken = await res.json();
     setChickens((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+  }
+
+  async function handleTrain(chickenId: string, stat: GeneticStatKey) {
+    const res = await fetch(`/api/chickens/${chickenId}/train`, {
+      method: "POST",
+      body: JSON.stringify({ stat }),
+    });
+    if (!res.ok) return;
+    const updated: Chicken = await res.json();
+    setChickens((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+    setSelected((prev) => (prev && prev.id === updated.id ? updated : prev));
+  }
+
+  async function handleRest(chickenId: string) {
+    const res = await fetch(`/api/chickens/${chickenId}/rest`, { method: "POST" });
+    if (!res.ok) return;
+    const updated: Chicken = await res.json();
+    setChickens((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+    setSelected((prev) => (prev && prev.id === updated.id ? updated : prev));
   }
 
   if (loading) {
@@ -127,11 +148,34 @@ export default function CoopPage() {
               ))}
             </ul>
 
-            <h3 className="mt-4 font-semibold text-neutral-200">EV</h3>
+            <div className="mt-4 flex items-center justify-between">
+              <h3 className="font-semibold text-neutral-200">
+                Training <span className="text-neutral-400">· Energy {selected.energy}/100</span>
+              </h3>
+              {selected.energy < 100 && (
+                <button
+                  onClick={() => handleRest(selected.id)}
+                  className="rounded bg-neutral-800 px-2 py-1 text-xs font-semibold text-neutral-200 hover:bg-neutral-700"
+                >
+                  Rest
+                </button>
+              )}
+            </div>
             <ul className="text-sm text-neutral-400">
               {Object.entries(selected.ev).map(([stat, value]) => (
-                <li key={stat}>
-                  {stat}: {value}
+                <li key={stat} className="mt-1 flex items-center justify-between gap-2">
+                  <span>
+                    {stat}: {value}
+                  </span>
+                  {canTrain(selected.growthStage) && (
+                    <button
+                      onClick={() => handleTrain(selected.id, stat as GeneticStatKey)}
+                      disabled={selected.energy < ENERGY_PER_TRAIN}
+                      className="rounded bg-neutral-800 px-2 py-0.5 text-xs font-semibold text-amber-400 hover:bg-neutral-700 disabled:cursor-not-allowed disabled:text-neutral-600 disabled:hover:bg-neutral-800"
+                    >
+                      Train
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>
