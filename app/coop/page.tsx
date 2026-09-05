@@ -246,8 +246,15 @@ export default function CoopPage() {
             </p>
 
             <Link
-              href={`/pedigree/${selected.id}`}
+              href={`/tournament/${selected.id}`}
               className="mt-4 flex items-center justify-center gap-1.5 rounded bg-black/10 px-3 py-2 text-sm font-semibold hover:bg-black/20"
+            >
+              🏆 Enter Tournament
+            </Link>
+
+            <Link
+              href={`/pedigree/${selected.id}`}
+              className="mt-2 flex items-center justify-center gap-1.5 rounded bg-black/10 px-3 py-2 text-sm font-semibold hover:bg-black/20"
             >
               🌳 View Pedigree
             </Link>

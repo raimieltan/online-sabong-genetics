@@ -4,16 +4,27 @@ import { useEffect, useState } from "react";
 
 import { mockPlayer } from "@/lib/mockPlayer";
 
-function CurrencyPill({ icon, value }: { icon: string; value: number }) {
+function CurrencyPill({
+  icon,
+  value,
+  purchasable = true,
+}: {
+  icon: string;
+  value: number;
+  /** Tournament Tokens must never be purchasable — see lib/economy.ts. */
+  purchasable?: boolean;
+}) {
   return (
     <div className="flex items-center gap-1.5 rounded-full border border-(--color-gold)/25 bg-black/30 py-1 pl-2.5 pr-1.5">
       <span className="text-sm leading-none">{icon}</span>
       <span className="font-display text-xs font-semibold text-(--foreground)">
         {value.toLocaleString()}
       </span>
-      <span className="flex h-4 w-4 items-center justify-center rounded-full bg-(--color-gold)/20 text-[10px] font-bold leading-none text-(--color-gold-bright)">
-        +
-      </span>
+      {purchasable && (
+        <span className="flex h-4 w-4 items-center justify-center rounded-full bg-(--color-gold)/20 text-[10px] font-bold leading-none text-(--color-gold-bright)">
+          +
+        </span>
+      )}
     </div>
   );
 }
@@ -25,14 +36,17 @@ function CurrencyPill({ icon, value }: { icon: string; value: number }) {
  */
 export function TopBar() {
   const [credits, setCredits] = useState(mockPlayer.coins);
+  const [tournamentTokens, setTournamentTokens] = useState(0);
   const xpPct = Math.round((mockPlayer.xp / mockPlayer.xpToNext) * 100);
 
   useEffect(() => {
     let cancelled = false;
     fetch("/api/player")
       .then((res) => res.json())
-      .then((player: { credits: number }) => {
-        if (!cancelled) setCredits(player.credits);
+      .then((player: { credits: number; tournamentTokens: number }) => {
+        if (cancelled) return;
+        setCredits(player.credits);
+        setTournamentTokens(player.tournamentTokens);
       });
     return () => {
       cancelled = true;
@@ -64,7 +78,7 @@ export function TopBar() {
       <div className="ml-auto flex items-center gap-2">
         <CurrencyPill icon="⚡" value={mockPlayer.energy} />
         <CurrencyPill icon="🪙" value={credits} />
-        <CurrencyPill icon="💎" value={mockPlayer.gems} />
+        <CurrencyPill icon="🎟️" value={tournamentTokens} purchasable={false} />
         <button
           type="button"
           aria-label="Mail"
