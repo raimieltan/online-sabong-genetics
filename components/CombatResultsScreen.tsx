@@ -28,45 +28,45 @@ export default function CombatResultsScreen({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm">
-      <div className="max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-3xl border-2 border-slate-700 bg-gradient-to-br from-slate-950 via-gray-950 to-black p-6 shadow-2xl sm:p-8">
+      <div className="panel-wood max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-3xl p-6 shadow-2xl sm:p-8">
         <div className="mb-6 text-center">
           <div
             className={`mb-4 inline-block rounded-2xl px-8 py-4 shadow-lg ${
               didWin
                 ? "bg-gradient-to-r from-emerald-500 to-lime-400 shadow-emerald-950/40"
-                : "bg-gradient-to-r from-red-600 to-orange-500 shadow-red-950/40"
+                : "bg-gradient-to-r from-red-700 to-red-900 shadow-red-950/40"
             }`}
           >
-            <h2 className="text-4xl font-black uppercase tracking-[0.16em] text-black sm:text-5xl">
+            <h2 className="font-display text-4xl font-bold uppercase tracking-[0.16em] text-black sm:text-5xl">
               {didWin ? "Win" : "Loss"}
             </h2>
           </div>
-          <p className="text-sm font-black uppercase tracking-[0.24em] text-slate-500">
+          <p className="text-sm font-semibold uppercase tracking-[0.24em] text-(--color-text-muted)">
             {OUTCOME_LABEL[result.outcomeReason]} · Turn {result.totalTurns}
           </p>
         </div>
 
         {playerInjured && (
           <div className="mb-5 rounded-2xl border border-red-500/50 bg-red-500/10 p-4 text-center">
-            <p className="text-sm font-black uppercase tracking-[0.2em] text-red-400">
+            <p className="text-sm font-semibold uppercase tracking-[0.2em] text-red-400">
               {playerChicken.name} suffered a critical injury
             </p>
-            <p className="mt-1 text-xs text-slate-400">Heal before fighting again.</p>
+            <p className="mt-1 text-xs text-(--color-text-muted)">Heal before fighting again.</p>
           </div>
         )}
 
         <div className="mb-6 grid grid-cols-2 gap-3">
-          <div className="rounded-2xl border border-slate-700 bg-slate-900/60 p-4 text-center">
-            <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-500">
+          <div className="rounded-2xl border border-(--color-gold)/20 bg-black/25 p-4 text-center">
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-(--color-text-muted)">
               {playerChicken.id === result.winnerId ? "Victor" : "Defeated"}
             </p>
-            <p className="mt-1 text-lg font-black text-slate-100">{playerChicken.name}</p>
+            <p className="mt-1 font-display text-lg font-semibold text-(--foreground)">{playerChicken.name}</p>
           </div>
-          <div className="rounded-2xl border border-slate-700 bg-slate-900/60 p-4 text-center">
-            <p className="text-xs font-black uppercase tracking-[0.2em] text-slate-500">
+          <div className="rounded-2xl border border-(--color-gold)/20 bg-black/25 p-4 text-center">
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-(--color-text-muted)">
               {opponent.id === result.winnerId ? "Victor" : "Defeated"}
             </p>
-            <p className="mt-1 text-lg font-black text-slate-100">{opponent.name}</p>
+            <p className="mt-1 font-display text-lg font-semibold text-(--foreground)">{opponent.name}</p>
           </div>
         </div>
 
@@ -74,14 +74,14 @@ export default function CombatResultsScreen({
           {playerInjured ? (
             <button
               onClick={onHeal}
-              className="flex-1 rounded-xl bg-amber-500 px-4 py-3 font-black uppercase tracking-wide text-neutral-900 hover:bg-amber-400"
+              className="flex-1 rounded-xl bg-gradient-to-b from-(--color-gold-bright) to-(--color-gold) px-4 py-3 font-display font-semibold uppercase tracking-wide text-(--color-ink) hover:brightness-110"
             >
               Heal
             </button>
           ) : (
             <button
               onClick={onFightAgain}
-              className="flex-1 rounded-xl bg-amber-500 px-4 py-3 font-black uppercase tracking-wide text-neutral-900 hover:bg-amber-400"
+              className="flex-1 rounded-xl bg-gradient-to-b from-(--color-gold-bright) to-(--color-gold) px-4 py-3 font-display font-semibold uppercase tracking-wide text-(--color-ink) hover:brightness-110"
             >
               Fight Again
             </button>

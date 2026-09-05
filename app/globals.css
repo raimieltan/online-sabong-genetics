@@ -1,26 +1,196 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #100c08;
+  --foreground: #f1e6d0;
+
+  /* Cockfight Chronicles theme */
+  --color-ink: #0d0a07;
+  --color-panel: #221a12;
+  --color-panel-light: #332715;
+  --color-parchment: #e8dcc0;
+  --color-parchment-dark: #cbb98a;
+  --color-gold: #d4a24e;
+  --color-gold-bright: #f0c674;
+  --color-blood: #a13d3d;
+  --color-azure: #4a7a9c;
+  --color-rose: #a8395f;
+  --color-text-muted: #a89a7d;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-ink: var(--color-ink);
+  --color-panel: var(--color-panel);
+  --color-panel-light: var(--color-panel-light);
+  --color-parchment: var(--color-parchment);
+  --color-parchment-dark: var(--color-parchment-dark);
+  --color-gold: var(--color-gold);
+  --color-gold-bright: var(--color-gold-bright);
+  --color-blood: var(--color-blood);
+  --color-azure: var(--color-azure);
+  --color-rose: var(--color-rose);
+  --color-text-muted: var(--color-text-muted);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+  --font-display: var(--font-cinzel);
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  background-image:
+    radial-gradient(ellipse 900px 500px at 15% -10%, rgba(212, 162, 78, 0.08), transparent 60%),
+    radial-gradient(ellipse 1200px 800px at 100% 100%, rgba(74, 122, 156, 0.06), transparent 55%);
+}
+
+.font-display {
+  font-family: var(--font-cinzel), Georgia, serif;
+}
+
+/* Carved-wood panel used throughout: dark gradient, gold hairline, soft lift */
+.panel-wood {
+  background: linear-gradient(180deg, var(--color-panel-light) 0%, var(--color-panel) 60%, var(--color-ink) 100%);
+  border: 1px solid rgba(212, 162, 78, 0.28);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset, 0 12px 24px -12px rgba(0, 0, 0, 0.65);
+}
+
+/* Parchment surface used for info-dense readouts (stats, genes) */
+.panel-parchment {
+  background: linear-gradient(180deg, #f1e7cd 0%, var(--color-parchment) 100%);
+  border: 1px solid var(--color-parchment-dark);
+  color: #3a2f1c;
+}
+
+/* Framed 3D model stage: rarity-tinted pedestal glow + gold corner brackets */
+.model-stage {
+  position: relative;
+  overflow: hidden;
+  border-radius: 0.5rem;
+  background:
+    radial-gradient(ellipse 80% 70% at 50% 78%, var(--stage-glow, rgba(212, 162, 78, 0.35)), transparent 70%),
+    var(--color-ink);
+}
+
+.model-stage::before,
+.model-stage::after {
+  content: "";
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  pointer-events: none;
+  border-color: rgba(212, 162, 78, 0.65);
+}
+
+.model-stage::before {
+  top: 6px;
+  left: 6px;
+  border-top: 2px solid rgba(212, 162, 78, 0.65);
+  border-left: 2px solid rgba(212, 162, 78, 0.65);
+}
+
+.model-stage::after {
+  bottom: 6px;
+  right: 6px;
+  border-bottom: 2px solid rgba(212, 162, 78, 0.65);
+  border-right: 2px solid rgba(212, 162, 78, 0.65);
+}
+
+/* Lighter 3D model stage for use on parchment (breeding cards): same rarity
+   glow and corner brackets as .model-stage, minus the dark ink backing. */
+.model-stage-light {
+  position: relative;
+  overflow: hidden;
+  border-radius: 0.4rem;
+  background: radial-gradient(ellipse 75% 65% at 50% 82%, var(--stage-glow, rgba(212, 162, 78, 0.3)), transparent 72%);
+}
+
+.model-stage-light::before,
+.model-stage-light::after {
+  content: "";
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  pointer-events: none;
+  border-color: rgba(58, 47, 28, 0.35);
+}
+
+.model-stage-light::before {
+  top: 5px;
+  left: 5px;
+  border-top: 2px solid rgba(58, 47, 28, 0.35);
+  border-left: 2px solid rgba(58, 47, 28, 0.35);
+}
+
+.model-stage-light::after {
+  bottom: 5px;
+  right: 5px;
+  border-bottom: 2px solid rgba(58, 47, 28, 0.35);
+  border-right: 2px solid rgba(58, 47, 28, 0.35);
+}
+
+/* Hanging wood signboard, used for page-level titles on the breeding screen. */
+.signboard {
+  position: relative;
+  display: inline-block;
+  padding: 0.6rem 2.5rem;
+  background: linear-gradient(180deg, var(--color-panel-light) 0%, var(--color-panel) 100%);
+  border: 1px solid rgba(212, 162, 78, 0.35);
+  border-radius: 0.4rem;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.05) inset, 0 10px 20px -10px rgba(0, 0, 0, 0.7);
+  background-image:
+    radial-gradient(circle at 12px 12px, var(--color-gold) 0 2.5px, transparent 3.5px),
+    radial-gradient(circle at calc(100% - 12px) 12px, var(--color-gold) 0 2.5px, transparent 3.5px),
+    radial-gradient(circle at 12px calc(100% - 12px), var(--color-gold) 0 2.5px, transparent 3.5px),
+    radial-gradient(circle at calc(100% - 12px) calc(100% - 12px), var(--color-gold) 0 2.5px, transparent 3.5px),
+    linear-gradient(180deg, var(--color-panel-light) 0%, var(--color-panel) 100%);
+}
+
+/* Small brass bolt heads nailed into each corner of a parchment surface. */
+.brass-bolts {
+  background-image:
+    radial-gradient(circle at 10px 10px, var(--color-gold) 0 2px, rgba(58, 47, 28, 0.5) 2px 2.5px, transparent 3.5px),
+    radial-gradient(circle at calc(100% - 10px) 10px, var(--color-gold) 0 2px, rgba(58, 47, 28, 0.5) 2px 2.5px, transparent 3.5px),
+    radial-gradient(circle at 10px calc(100% - 10px), var(--color-gold) 0 2px, rgba(58, 47, 28, 0.5) 2px 2.5px, transparent 3.5px),
+    radial-gradient(circle at calc(100% - 10px) calc(100% - 10px), var(--color-gold) 0 2px, rgba(58, 47, 28, 0.5) 2px 2.5px, transparent 3.5px);
+}
+
+/* Role banner tag draped over the top of a breeding parent card. --ribbon
+   sets the base color; folded corners read as ribbon tails underneath. */
+.ribbon-tag {
+  position: relative;
+  display: inline-block;
+  padding: 0.35rem 1.1rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #fff;
+  background: linear-gradient(180deg, var(--ribbon, var(--color-gold)) 0%, color-mix(in srgb, var(--ribbon, var(--color-gold)) 70%, black) 100%);
+  border-radius: 0.3rem 0.3rem 0 0;
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.35);
+}
+
+.ribbon-tag::before,
+.ribbon-tag::after {
+  content: "";
+  position: absolute;
+  bottom: -6px;
+  width: 0;
+  height: 0;
+  border-style: solid;
+}
+
+.ribbon-tag::before {
+  left: 0;
+  border-width: 6px 6px 0 0;
+  border-color: color-mix(in srgb, var(--ribbon, var(--color-gold)) 55%, black) transparent transparent transparent;
+}
+
+.ribbon-tag::after {
+  right: 0;
+  border-width: 6px 0 0 6px;
+  border-color: transparent transparent transparent color-mix(in srgb, var(--ribbon, var(--color-gold)) 55%, black);
 }

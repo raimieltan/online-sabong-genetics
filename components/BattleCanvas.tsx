@@ -4,6 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import type { Chicken, CombatLogEntry } from "@/lib/types";
 import { maxHealth } from "@/lib/combat";
 import { AudioEngine } from "@/lib/audioEngine";
+import { BattleStage3D } from "@/components/chicken3d/BattleStage3D";
+import type { CameraCue } from "@/components/chicken3d/BattleStage3D";
+import type { FighterAnim } from "@/components/chicken3d/ChickenModel";
 
 interface BattleCanvasProps {
   chickenA: Chicken;
@@ -36,17 +39,6 @@ interface FloatingText {
   alpha: number;
   life: number;
   maxLife: number;
-}
-
-interface FighterAnim {
-  offsetX: number;
-  offsetY: number;
-  rot: number;
-  scaleX: number;
-  scaleY: number;
-  flash: number; // 0..1 flash white on hit
-  wingPhase: number;
-  legPhase: number;
 }
 
 /** Display-only fighter state, derived by replaying the server-computed log one entry at a time. */
@@ -87,6 +79,22 @@ export default function BattleCanvas({
   const animationRef = useRef<number | null>(null);
   const [currentTurn, setCurrentTurn] = useState(0);
 
+  // Live per-frame fighter state, read directly by the 3D models (BattleStage3D)
+  // every frame — mutated by the RAF loop below, not by React state.
+  const animR1Ref = useRef<FighterAnim>({
+    offsetX: 0, offsetY: 0, rot: 0, scaleX: 1, scaleY: 1, flash: 0, wingPhase: 0, legPhase: 0,
+  });
+  const animR2Ref = useRef<FighterAnim>({
+    offsetX: 0, offsetY: 0, rot: 0, scaleX: 1, scaleY: 1, flash: 0, wingPhase: 0, legPhase: 0,
+  });
+
+  // Latest attack cue for the 3D camera — same attacker/crit/miss/timing info that
+  // drives the 2D lunge below, mirrored here so BattleStage3D's camera can react
+  // without duplicating combat logic. `startTime` moving forward is what tells the
+  // camera a new attack began; it holds the last cue (doesn't reset to null) so the
+  // camera has something to ease back from between turns.
+  const cameraCueRef = useRef<CameraCue | null>(null);
+
   useEffect(() => {
     const audio = new AudioEngine(audioEnabled);
     audioRef.current = audio;
@@ -123,8 +131,10 @@ export default function BattleCanvas({
     const particles: Particle[] = [];
     const floatingTexts: FloatingText[] = [];
 
-    const animR1: FighterAnim = { offsetX: 0, offsetY: 0, rot: 0, scaleX: 1, scaleY: 1, flash: 0, wingPhase: 0, legPhase: 0 };
-    const animR2: FighterAnim = { offsetX: 0, offsetY: 0, rot: 0, scaleX: 1, scaleY: 1, flash: 0, wingPhase: 0, legPhase: 0 };
+    const animR1 = animR1Ref.current;
+    const animR2 = animR2Ref.current;
+    Object.assign(animR1, { offsetX: 0, offsetY: 0, rot: 0, scaleX: 1, scaleY: 1, flash: 0, wingPhase: 0, legPhase: 0 });
+    Object.assign(animR2, { offsetX: 0, offsetY: 0, rot: 0, scaleX: 1, scaleY: 1, flash: 0, wingPhase: 0, legPhase: 0 });
 
     let activeAttack: {
       attacker: "r1" | "r2";
@@ -184,6 +194,12 @@ export default function BattleCanvas({
           startTime: now,
           duration: 350,
           isCrit: entry.isCrit,
+          isMiss: entry.isMiss,
+        };
+        cameraCueRef.current = {
+          attacker: activeAttack.attacker,
+          startTime: activeAttack.startTime,
+          isCrit: entry.isCrit || entry.isCritical,
           isMiss: entry.isMiss,
         };
 
@@ -281,10 +297,7 @@ export default function BattleCanvas({
       ctx.clearRect(0, 0, width, height);
       drawArenaGround(ctx, width, height);
 
-      drawFighter(ctx, r1BaseX + animR1.offsetX, roosterBaseY + animR1.offsetY, visualA, "right", animR1);
       drawHealthBar(ctx, r1BaseX - 60, roosterBaseY - 95, visualA.hp, visualA.maxHp, visualA.name, "#ef4444", visualA.fatigued);
-
-      drawFighter(ctx, r2BaseX + animR2.offsetX, roosterBaseY + animR2.offsetY, visualB, "left", animR2);
       drawHealthBar(ctx, r2BaseX - 60, roosterBaseY - 95, visualB.hp, visualB.maxHp, visualB.name, "#3b82f6", visualB.fatigued);
 
       for (let i = particles.length - 1; i >= 0; i--) {
@@ -352,16 +365,20 @@ export default function BattleCanvas({
   }, [audioEnabled]);
 
   return (
-    <div className="relative">
-      <canvas
-        ref={canvasRef}
-        width={800}
-        height={400}
-        className="w-full border-2 border-slate-700 rounded-2xl bg-gradient-to-b from-slate-950 via-gray-900 to-slate-950 shadow-2xl"
-      />
-      <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-slate-900/90 px-5 py-2 rounded-xl border border-slate-700 shadow-lg backdrop-blur">
-        <span className="text-yellow-400 font-black text-sm uppercase tracking-widest">
-          Turn {currentTurn}
+    <div className="panel-wood relative aspect-[2/1] w-full overflow-hidden rounded-2xl">
+      <div className="absolute inset-0">
+        <BattleStage3D
+          fighterA={chickenA}
+          fighterB={chickenB}
+          animA={animR1Ref}
+          animB={animR2Ref}
+          cameraCue={cameraCueRef}
+        />
+      </div>
+      <canvas ref={canvasRef} width={800} height={400} className="absolute inset-0 h-full w-full" />
+      <div className="absolute top-4 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-xl border border-(--color-gold)/30 bg-black/70 px-5 py-2 shadow-lg backdrop-blur">
+        <span className="font-display text-sm font-semibold uppercase tracking-widest text-(--color-gold-bright)">
+          Round {currentTurn}
         </span>
       </div>
     </div>
@@ -389,144 +406,6 @@ function drawArenaGround(ctx: CanvasRenderingContext2D, width: number, height: n
   ctx.beginPath();
   ctx.ellipse(width / 2, groundY + 40, width * 0.42, 35, 0, 0, Math.PI * 2);
   ctx.stroke();
-}
-
-function drawFighter(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  fighter: FighterVisual,
-  facing: "left" | "right",
-  anim: FighterAnim
-) {
-  const flip = facing === "right" ? -1 : 1;
-
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.scale(flip * anim.scaleX, anim.scaleY);
-  ctx.rotate(flip * anim.rot);
-
-  ctx.save();
-  ctx.scale(1, 0.3);
-  ctx.fillStyle = "rgba(0, 0, 0, 0.45)";
-  ctx.beginPath();
-  ctx.ellipse(0, 170, 38, 22, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-
-  const bodyColor = anim.flash > 0.3 ? "#ffffff" : fighter.colorScheme.body;
-  const headColor = anim.flash > 0.3 ? "#ffffff" : fighter.colorScheme.head;
-  const combColor = anim.flash > 0.3 ? "#ffffff" : fighter.colorScheme.comb;
-  const tailColor = anim.flash > 0.3 ? "#ffffff" : fighter.colorScheme.tail;
-
-  ctx.fillStyle = tailColor;
-  ctx.beginPath();
-  ctx.moveTo(20, -10);
-  ctx.quadraticCurveTo(55, -35, 65, -55);
-  ctx.quadraticCurveTo(50, -15, 25, 5);
-  ctx.closePath();
-  ctx.fill();
-
-  ctx.beginPath();
-  ctx.moveTo(22, -5);
-  ctx.quadraticCurveTo(60, -15, 68, -35);
-  ctx.quadraticCurveTo(45, 5, 22, 12);
-  ctx.closePath();
-  ctx.fill();
-
-  ctx.strokeStyle = fighter.colorScheme.feet;
-  ctx.lineWidth = 5;
-  ctx.lineCap = "round";
-  ctx.beginPath();
-  const legTwitch = anim.legPhase * 3;
-  ctx.moveTo(-8 + legTwitch, 30);
-  ctx.lineTo(-12 + legTwitch, 54);
-  ctx.lineTo(-20 + legTwitch, 56);
-  ctx.moveTo(8 + legTwitch, 30);
-  ctx.lineTo(12 + legTwitch, 54);
-  ctx.lineTo(4 + legTwitch, 56);
-  ctx.stroke();
-
-  ctx.strokeStyle = "#e2e8f0";
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.moveTo(-12, 48);
-  ctx.lineTo(-24, 45);
-  ctx.stroke();
-
-  ctx.fillStyle = bodyColor;
-  ctx.beginPath();
-  ctx.ellipse(0, 5, 32, 40, -0.2, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.strokeStyle = "#0f172a";
-  ctx.lineWidth = 2;
-  ctx.stroke();
-
-  ctx.fillStyle = tailColor;
-  ctx.beginPath();
-  const wingY = 6 + anim.wingPhase * 5;
-  const wingScale = 1 + anim.wingPhase * 0.1;
-  ctx.ellipse(8, wingY, 18 * wingScale, 26, 0.4, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.fillStyle = headColor;
-  ctx.beginPath();
-  ctx.moveTo(-10, -15);
-  ctx.quadraticCurveTo(-28, -25, -24, -48);
-  ctx.arc(-22, -48, 16, 0, Math.PI * 2);
-  ctx.lineTo(-2, -20);
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
-
-  ctx.fillStyle = combColor;
-  ctx.beginPath();
-  ctx.moveTo(-24, -64);
-  ctx.lineTo(-30, -74);
-  ctx.lineTo(-22, -70);
-  ctx.lineTo(-15, -77);
-  ctx.lineTo(-10, -68);
-  ctx.lineTo(-3, -73);
-  ctx.lineTo(-8, -60);
-  ctx.closePath();
-  ctx.fill();
-
-  ctx.fillStyle = combColor;
-  ctx.beginPath();
-  ctx.ellipse(-32, -38, 6, 10, 0.2, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.fillStyle = "#f59e0b";
-  ctx.beginPath();
-  ctx.moveTo(-34, -52);
-  ctx.lineTo(-52, -46);
-  ctx.lineTo(-34, -42);
-  ctx.closePath();
-  ctx.fill();
-  ctx.strokeStyle = "#b45309";
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
-
-  ctx.fillStyle = "#facc15";
-  ctx.beginPath();
-  ctx.arc(-28, -52, 4.5, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = "#000000";
-  ctx.beginPath();
-  ctx.arc(-29, -52, 2.2, 0, Math.PI * 2);
-  ctx.fill();
-
-  if (fighter.fatigued) {
-    ctx.strokeStyle = "#a855f7";
-    ctx.lineWidth = 3;
-    ctx.setLineDash([6, 6]);
-    ctx.beginPath();
-    ctx.ellipse(0, -5, 52, 60, 0, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.setLineDash([]);
-  }
-
-  ctx.restore();
 }
 
 function drawHealthBar(

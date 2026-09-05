@@ -36,6 +36,9 @@ export async function POST() {
       record: generated.record,
       status: generated.status,
       growthStage: generated.growthStage,
+      fightingStyle: generated.fightingStyle,
+      colorScheme: generated.colorScheme,
+      injured: generated.injured,
     },
   });
 

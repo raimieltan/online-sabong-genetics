@@ -1,18 +1,23 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import type { Chicken, Egg, GeneticStatKey } from "@/lib/types";
 import { canTrain } from "@/lib/growth";
 import { ENERGY_PER_TRAIN } from "@/lib/training";
+import { DEFAULT_COOP_FILTERS, filterChickens } from "@/lib/coopFilters";
+
+import { ChickenViewer } from "@/components/chicken3d/ChickenViewer";
 
 import { ChickenCard } from "./ChickenCard";
+import { CoopFilters } from "./CoopFilters";
 
 export default function CoopPage() {
   const [chickens, setChickens] = useState<Chicken[]>([]);
   const [eggs, setEggs] = useState<Egg[]>([]);
   const [selected, setSelected] = useState<Chicken | null>(null);
   const [loading, setLoading] = useState(true);
+  const [filters, setFilters] = useState(DEFAULT_COOP_FILTERS);
 
   useEffect(() => {
     Promise.all([
@@ -25,6 +30,8 @@ export default function CoopPage() {
       })
       .finally(() => setLoading(false));
   }, []);
+
+  const filteredChickens = useMemo(() => filterChickens(chickens, filters), [chickens, filters]);
 
   async function handleGenerate() {
     const res = await fetch("/api/chickens", { method: "POST" });
@@ -74,36 +81,49 @@ export default function CoopPage() {
   }
 
   if (loading) {
-    return <p className="p-6 text-neutral-400">Loading coop...</p>;
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-(--color-ink)">
+        <p className="text-(--color-text-muted)">🐔 Loading coop...</p>
+      </main>
+    );
   }
 
   return (
-    <main className="p-6">
-      <div className="mb-4 flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-neutral-100">Coop</h1>
+    <main className="min-h-screen bg-(--color-ink) p-6">
+      <div className="panel-wood mb-6 flex flex-wrap items-center justify-between gap-4 rounded-lg p-4">
+        <div>
+          <h1 className="flex items-center gap-2 font-display text-2xl font-semibold text-(--color-gold-bright)">
+            🐔 Coop
+          </h1>
+          <p className="mt-1 text-sm text-(--color-text-muted)">
+            🥚 {eggs.length} incubating · 🐔 {chickens.length} chickens
+          </p>
+        </div>
         <button
           onClick={handleGenerate}
-          className="rounded bg-amber-500 px-4 py-2 font-semibold text-neutral-900 hover:bg-amber-400"
+          className="rounded-md bg-gradient-to-b from-(--color-gold-bright) to-(--color-gold) px-4 py-2 font-semibold text-(--color-ink) shadow-lg shadow-black/40 transition hover:brightness-110"
         >
-          Generate Chicken
+          + Generate Chicken
         </button>
       </div>
 
       {eggs.length > 0 && (
-        <div className="mb-6">
-          <h2 className="mb-2 text-lg font-semibold text-neutral-200">Eggs</h2>
+        <div className="mb-8">
+          <h2 className="mb-3 flex items-center gap-2 font-display text-lg font-semibold text-(--foreground)">
+            <span className="rounded bg-black/30 px-2 py-0.5 text-base">🥚</span>
+            Eggs
+            <span className="text-sm font-normal text-(--color-text-muted)">({eggs.length})</span>
+          </h2>
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
             {eggs.map((egg) => (
-              <div
-                key={egg.id}
-                className="rounded border border-neutral-800 bg-neutral-900 p-4"
-              >
-                <p className="text-sm text-neutral-400">
-                  {egg.sex} · Gen {egg.generation}
+              <div key={egg.id} className="panel-wood rounded-lg p-4 text-center">
+                <p className="text-3xl">🥚</p>
+                <p className="mt-2 text-sm text-(--color-text-muted)">
+                  {egg.sex === "rooster" ? "🐓" : "🐔"} {egg.sex} · Gen {egg.generation}
                 </p>
                 <button
                   onClick={() => handleHatch(egg.id)}
-                  className="mt-2 rounded bg-amber-500 px-2 py-1 text-xs font-semibold text-neutral-900 hover:bg-amber-400"
+                  className="mt-3 rounded bg-gradient-to-b from-(--color-gold-bright) to-(--color-gold) px-3 py-1 text-xs font-semibold text-(--color-ink) shadow shadow-black/40 hover:brightness-110"
                 >
                   Hatch
                 </button>
@@ -113,34 +133,60 @@ export default function CoopPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
-        {chickens.map((chicken) => (
-          <ChickenCard
-            key={chicken.id}
-            chicken={chicken}
-            onSelect={() => setSelected(chicken)}
-            onAgeUp={() => handleAgeUp(chicken.id)}
-            onRetire={() => handleRetire(chicken.id)}
-          />
-        ))}
-      </div>
+      <h2 className="mb-3 flex items-center gap-2 font-display text-lg font-semibold text-(--foreground)">
+        <span className="rounded bg-black/30 px-2 py-0.5 text-base">🐔</span>
+        Coop
+        <span className="text-sm font-normal text-(--color-text-muted)">({chickens.length})</span>
+      </h2>
+
+      <CoopFilters
+        filters={filters}
+        onChange={setFilters}
+        resultCount={filteredChickens.length}
+        totalCount={chickens.length}
+      />
+
+      {filteredChickens.length === 0 ? (
+        <p className="rounded-lg border border-dashed border-(--color-gold)/20 p-8 text-center text-(--color-text-muted)">
+          No chickens match your filters.
+        </p>
+      ) : (
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
+          {filteredChickens.map((chicken) => (
+            <ChickenCard
+              key={chicken.id}
+              chicken={chicken}
+              onSelect={() => setSelected(chicken)}
+              onAgeUp={() => handleAgeUp(chicken.id)}
+              onRetire={() => handleRetire(chicken.id)}
+            />
+          ))}
+        </div>
+      )}
 
       {selected && (
         <div
-          className="fixed inset-0 flex items-center justify-center bg-black/70"
+          className="fixed inset-0 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
           onClick={() => setSelected(null)}
         >
           <div
-            className="max-w-md rounded bg-neutral-900 p-6"
+            className="panel-parchment max-h-[90vh] w-full max-w-md overflow-y-auto rounded-lg p-6 shadow-2xl"
             onClick={(event) => event.stopPropagation()}
           >
-            <h2 className="mb-2 text-xl font-bold text-neutral-100">{selected.name}</h2>
-            <p className="text-neutral-400">
-              {selected.sex} · Gen {selected.generation}
-            </p>
+            <ChickenViewer chicken={selected} className="mb-2 h-56 w-full rounded-lg bg-(--color-ink)" />
 
-            <h3 className="mt-4 font-semibold text-neutral-200">IV</h3>
-            <ul className="text-sm text-neutral-400">
+            <div className="flex items-center gap-2 border-b border-(--color-parchment-dark) pb-3">
+              <span className="text-2xl">{selected.sex === "rooster" ? "🐓" : "🐔"}</span>
+              <div>
+                <h2 className="font-display text-xl font-semibold">{selected.name}</h2>
+                <p className="text-sm opacity-70">
+                  {selected.sex} · Gen {selected.generation}
+                </p>
+              </div>
+            </div>
+
+            <h3 className="mt-4 flex items-center gap-1 font-display font-semibold">🧬 IV</h3>
+            <ul className="text-sm opacity-80">
               {Object.entries(selected.iv).map(([stat, value]) => (
                 <li key={stat}>
                   {stat}: {value}
@@ -149,19 +195,19 @@ export default function CoopPage() {
             </ul>
 
             <div className="mt-4 flex items-center justify-between">
-              <h3 className="font-semibold text-neutral-200">
-                Training <span className="text-neutral-400">· Energy {selected.energy}/100</span>
+              <h3 className="flex items-center gap-1 font-display font-semibold">
+                💪 Training <span className="opacity-60">· ⚡ {selected.energy}/100</span>
               </h3>
               {selected.energy < 100 && (
                 <button
                   onClick={() => handleRest(selected.id)}
-                  className="rounded bg-neutral-800 px-2 py-1 text-xs font-semibold text-neutral-200 hover:bg-neutral-700"
+                  className="rounded bg-black/10 px-2 py-1 text-xs font-semibold hover:bg-black/20"
                 >
                   Rest
                 </button>
               )}
             </div>
-            <ul className="text-sm text-neutral-400">
+            <ul className="text-sm opacity-80">
               {Object.entries(selected.ev).map(([stat, value]) => (
                 <li key={stat} className="mt-1 flex items-center justify-between gap-2">
                   <span>
@@ -171,7 +217,7 @@ export default function CoopPage() {
                     <button
                       onClick={() => handleTrain(selected.id, stat as GeneticStatKey)}
                       disabled={selected.energy < ENERGY_PER_TRAIN}
-                      className="rounded bg-neutral-800 px-2 py-0.5 text-xs font-semibold text-amber-400 hover:bg-neutral-700 disabled:cursor-not-allowed disabled:text-neutral-600 disabled:hover:bg-neutral-800"
+                      className="rounded bg-black/10 px-2 py-0.5 text-xs font-semibold text-amber-800 hover:bg-black/20 disabled:cursor-not-allowed disabled:text-neutral-400 disabled:hover:bg-black/10"
                     >
                       Train
                     </button>
@@ -180,13 +226,13 @@ export default function CoopPage() {
               ))}
             </ul>
 
-            <h3 className="mt-4 font-semibold text-neutral-200">Traits</h3>
-            <p className="text-sm text-neutral-400">
+            <h3 className="mt-4 flex items-center gap-1 font-display font-semibold">✨ Traits</h3>
+            <p className="text-sm opacity-80">
               {selected.traits.length ? selected.traits.map((t) => t.name).join(", ") : "None"}
             </p>
 
-            <h3 className="mt-4 font-semibold text-neutral-200">Record</h3>
-            <p className="text-sm text-neutral-400">
+            <h3 className="mt-4 flex items-center gap-1 font-display font-semibold">🏆 Record</h3>
+            <p className="text-sm opacity-80">
               {selected.record.wins}W - {selected.record.losses}L · {selected.record.championships}{" "}
               championships
             </p>

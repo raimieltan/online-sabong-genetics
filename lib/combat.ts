@@ -29,8 +29,9 @@ export function effectiveStat(chicken: Chicken, key: GeneticStatKey): number {
   return chicken.iv[key] * 0.6 + chicken.ev[key] * 0.4;
 }
 
+/** Hens do not fight — only roosters enter combat, per the baseline mechanics spec. */
 export function canFight(chicken: Chicken): boolean {
-  return canBattleStage(chicken.growthStage) && !chicken.injured;
+  return chicken.sex === "rooster" && canBattleStage(chicken.growthStage) && !chicken.injured;
 }
 
 export function healChicken(): { injured: false; health: number } {
@@ -306,7 +307,7 @@ function totalEffectiveStats(chicken: Chicken): number {
  */
 export function generateMatchedOpponent(
   playerChicken: Chicken,
-  generator: () => Chicken = generateRandomChicken
+  generator: () => Chicken = () => generateRandomChicken({ sex: "rooster" })
 ): Chicken {
   const targetTotal = totalEffectiveStats(playerChicken);
   const minTotal = targetTotal * (1 - MATCH_TOLERANCE);

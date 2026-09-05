@@ -27,6 +27,17 @@ test("canFight requires a battle-eligible growth stage and no injury", () => {
   assert.equal(canFight(makeChicken({ growthStage: "chick", injured: false })), false);
 });
 
+test("canFight excludes hens — hens do not fight per baseline spec", () => {
+  assert.equal(
+    canFight(makeChicken({ sex: "hen", growthStage: "adult", injured: false })),
+    false
+  );
+  assert.equal(
+    canFight(makeChicken({ sex: "rooster", growthStage: "adult", injured: false })),
+    true
+  );
+});
+
 test("healChicken clears the injured flag and restores health", () => {
   const result = healChicken();
   assert.equal(result.injured, false);
@@ -68,6 +79,14 @@ test("generateMatchedOpponent produces a full, distinct chicken within a stat to
   const opponentTotal = totalKeys.reduce((sum, key) => sum + effectiveStat(opponent, key), 0);
   const ratio = opponentTotal / playerTotal;
   assert.ok(ratio >= 0.6 && ratio <= 1.6, `expected opponent total within tolerance, got ratio ${ratio}`);
+});
+
+test("generateMatchedOpponent always produces a rooster — hens do not fight", () => {
+  const player = makeChicken({ id: "player" });
+  for (let i = 0; i < 20; i += 1) {
+    const opponent = generateMatchedOpponent(player);
+    assert.equal(opponent.sex, "rooster");
+  }
 });
 
 test("simulateFight declares a winner and terminates within MAX_TURNS", () => {

@@ -75,6 +75,22 @@ test("POST /api/eggs/:id/hatch assigns a random name, not a fixed placeholder", 
   assert.ok(names.size > 1, "expected varied names across hatches");
 });
 
+test("POST /api/eggs/:id/hatch persists a randomized fightingStyle, not always 'balanced'", async () => {
+  const player = await getOrCreatePlayer();
+
+  const styles = new Set<string>();
+  for (let i = 0; i < 20; i += 1) {
+    const eggId = await seedEgg(player.id);
+    const response = await POST(postRequest(eggId), { params: Promise.resolve({ id: eggId }) });
+    const chicken = await response.json();
+    styles.add(chicken.fightingStyle);
+
+    const stored = await prisma.chicken.findUnique({ where: { id: chicken.id } });
+    assert.equal(stored?.fightingStyle, chicken.fightingStyle);
+  }
+  assert.ok(styles.size > 1, "expected varied fighting styles across hatches, got only: " + [...styles]);
+});
+
 test("POST /api/eggs/:id/hatch returns 404 for an unknown egg", async () => {
   const response = await POST(postRequest("missing"), { params: Promise.resolve({ id: "missing" }) });
   assert.equal(response.status, 404);

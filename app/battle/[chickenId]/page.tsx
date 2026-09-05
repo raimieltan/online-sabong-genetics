@@ -6,6 +6,7 @@ import Link from "next/link";
 import type { Chicken, CombatResult } from "@/lib/types";
 import BattleCanvas from "@/components/BattleCanvas";
 import CombatResultsScreen from "@/components/CombatResultsScreen";
+import { ChickenViewer } from "@/components/chicken3d/ChickenViewer";
 
 type Phase = "loading" | "ready" | "fighting" | "replaying" | "result" | "error";
 
@@ -121,16 +122,22 @@ export default function BattlePage({
   }
 
   if (phase === "loading") {
-    return <main className="p-6 text-neutral-400">Loading battle...</main>;
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-(--color-ink)">
+        <p className="text-(--color-text-muted)">⚔️ Loading battle...</p>
+      </main>
+    );
   }
 
   if (phase === "error") {
     return (
-      <main className="p-6">
-        <p className="text-red-400">{error}</p>
-        <Link href="/coop" className="mt-4 inline-block text-amber-400 hover:underline">
-          Back to Coop
-        </Link>
+      <main className="flex min-h-screen items-center justify-center bg-(--color-ink) p-6">
+        <div className="panel-wood rounded-lg border-t-2 border-red-800/60 p-6 text-center">
+          <p className="text-red-400">{error}</p>
+          <Link href="/coop" className="mt-4 inline-block text-(--color-gold-bright) hover:underline">
+            ← Back to Coop
+          </Link>
+        </div>
       </main>
     );
   }
@@ -138,37 +145,45 @@ export default function BattlePage({
   if (!chicken || !opponent) return null;
 
   return (
-    <main className="mx-auto max-w-3xl p-6">
-      <div className="mb-4 flex items-center justify-between">
-        <Link href="/coop" className="text-sm text-amber-400 hover:underline">
-          ← Coop
-        </Link>
-        <h1 className="text-xl font-bold text-neutral-100">
-          {chicken.name} vs {opponent.name}
-        </h1>
-      </div>
-
-      {(phase === "ready" || phase === "fighting") && (
-        <div className="flex flex-col items-center gap-4">
-          <div className="grid w-full grid-cols-2 gap-4 text-center text-sm text-neutral-400">
-            <div>
-              <p className="text-lg font-black text-neutral-100">{chicken.name}</p>
-              <p className="uppercase tracking-wide text-amber-400">{chicken.fightingStyle}</p>
-            </div>
-            <div>
-              <p className="text-lg font-black text-neutral-100">{opponent.name}</p>
-              <p className="uppercase tracking-wide text-amber-400">{opponent.fightingStyle}</p>
-            </div>
-          </div>
-          <button
-            onClick={handleFight}
-            disabled={phase === "fighting"}
-            className="rounded bg-amber-500 px-6 py-3 font-bold text-neutral-900 hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {phase === "fighting" ? "Fighting..." : "Fight"}
-          </button>
+    <main className="min-h-screen bg-(--color-ink) p-6">
+      <div className="mx-auto max-w-3xl">
+        <div className="panel-wood mb-4 flex items-center justify-between rounded-lg p-4">
+          <Link href="/coop" className="text-sm text-(--color-gold-bright) hover:underline">
+            ← Coop
+          </Link>
+          <h1 className="flex items-center gap-2 font-display text-xl font-semibold text-(--foreground)">
+            ⚔️ {chicken.name} <span className="text-(--color-text-muted)">vs</span> {opponent.name}
+          </h1>
         </div>
-      )}
+
+        {(phase === "ready" || phase === "fighting") && (
+          <div className="panel-wood flex flex-col items-center gap-6 rounded-lg p-6">
+            <div className="grid w-full grid-cols-[1fr_auto_1fr] items-center gap-4 text-center">
+              <div className="rounded-lg border border-sky-700/40 bg-black/25 p-4">
+                <ChickenViewer chicken={chicken} interactive={false} className="h-28 w-full" />
+                <p className="mt-1 font-display text-lg font-semibold text-(--foreground)">{chicken.name}</p>
+                <p className="text-xs uppercase tracking-wide text-(--color-gold-bright)">
+                  {chicken.fightingStyle}
+                </p>
+              </div>
+              <span className="font-display text-2xl font-black text-(--color-text-muted)">VS</span>
+              <div className="rounded-lg border border-rose-700/40 bg-black/25 p-4">
+                <ChickenViewer chicken={opponent} interactive={false} className="h-28 w-full" />
+                <p className="mt-1 font-display text-lg font-semibold text-(--foreground)">{opponent.name}</p>
+                <p className="text-xs uppercase tracking-wide text-(--color-gold-bright)">
+                  {opponent.fightingStyle}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={handleFight}
+              disabled={phase === "fighting"}
+              className="rounded-md bg-gradient-to-b from-(--color-gold-bright) to-(--color-gold) px-8 py-3 font-display font-semibold text-(--color-ink) shadow-lg shadow-black/40 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {phase === "fighting" ? "Fighting..." : "⚔️ Fight"}
+            </button>
+          </div>
+        )}
 
       {phase === "replaying" && (
         <BattleCanvas
@@ -189,6 +204,7 @@ export default function BattlePage({
           onHeal={handleHeal}
         />
       )}
+      </div>
     </main>
   );
 }
