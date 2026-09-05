@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 
 import type { Chicken, Egg, GeneticStatKey } from "@/lib/types";
 import { canTrain } from "@/lib/growth";
@@ -236,6 +237,13 @@ export default function CoopPage() {
               {selected.record.wins}W - {selected.record.losses}L · {selected.record.championships}{" "}
               championships
             </p>
+
+            <Link
+              href={`/pedigree/${selected.id}`}
+              className="mt-4 flex items-center justify-center gap-1.5 rounded bg-black/10 px-3 py-2 text-sm font-semibold hover:bg-black/20"
+            >
+              🌳 View Pedigree
+            </Link>
           </div>
         </div>
       )}
