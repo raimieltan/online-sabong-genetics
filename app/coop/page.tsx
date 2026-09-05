@@ -81,6 +81,13 @@ export default function CoopPage() {
     setSelected((prev) => (prev && prev.id === updated.id ? updated : prev));
   }
 
+  async function handleSell(chickenId: string) {
+    const res = await fetch(`/api/chickens/${chickenId}/sell`, { method: "POST" });
+    if (!res.ok) return;
+    setChickens((prev) => prev.filter((c) => c.id !== chickenId));
+    setSelected((prev) => (prev && prev.id === chickenId ? null : prev));
+  }
+
   if (loading) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-(--color-ink)">
@@ -244,6 +251,17 @@ export default function CoopPage() {
             >
               🌳 View Pedigree
             </Link>
+
+            <button
+              onClick={() => {
+                if (confirm(`Sell ${selected.name} for Battle Credits? This can't be undone.`)) {
+                  handleSell(selected.id);
+                }
+              }}
+              className="mt-2 flex w-full items-center justify-center gap-1.5 rounded bg-red-900/20 px-3 py-2 text-sm font-semibold text-red-800 hover:bg-red-900/30"
+            >
+              🪙 Sell Chicken
+            </button>
           </div>
         </div>
       )}

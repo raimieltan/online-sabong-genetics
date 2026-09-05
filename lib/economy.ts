@@ -7,7 +7,7 @@
  * Philippine gambling/regulatory risk, even if credits can't be cashed out.
  */
 
-export const STARTING_CREDITS = 500;
+export const STARTING_CREDITS = 1000;
 
 /** Battle Credits awarded to the winner of a fight. */
 export const BATTLE_WIN_CREDITS = 25;

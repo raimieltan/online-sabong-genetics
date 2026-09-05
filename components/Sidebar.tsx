@@ -7,11 +7,11 @@ const LINKS = [
   { href: "/", label: "Home", icon: "🏠" },
   { href: "/coop", label: "Coop", icon: "🐔" },
   { href: "/breed", label: "Breeding", icon: "🥚" },
+  { href: "/market", label: "Market", icon: "🛒" },
 ] as const;
 
 const SOON_LINKS = [
   { label: "Ranch", icon: "🏚️" },
-  { label: "Market", icon: "🛒" },
   { label: "Quests", icon: "📜" },
   { label: "Leaderboard", icon: "🏆" },
 ] as const;

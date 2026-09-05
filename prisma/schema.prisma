@@ -10,7 +10,7 @@ datasource db {
 model Player {
   id               String    @id @default(uuid())
   createdAt        DateTime  @default(now())
-  credits          Int       @default(500)
+  credits          Int       @default(1000)
   tournamentTokens Int       @default(0)
   chickens         Chicken[]
   eggs             Egg[]
@@ -39,6 +39,22 @@ model Chicken {
   colorScheme   Json   @default("{\"body\":\"#8b6f47\",\"head\":\"#6b5637\",\"comb\":\"#ff0000\",\"tail\":\"#a0826d\",\"feet\":\"#ff8c00\"}")
   injured       Boolean @default(false)
   createdAt   DateTime @default(now())
+}
+
+model MarketListing {
+  id            String   @id
+  name          String
+  sex           String
+  generation    Int
+  fatherId      String?
+  motherId      String?
+  bloodlineId   String
+  iv            Json
+  traits        Json
+  fightingStyle String
+  colorScheme   Json
+  price         Int
+  createdAt     DateTime @default(now())
 }
 
 model Egg {
