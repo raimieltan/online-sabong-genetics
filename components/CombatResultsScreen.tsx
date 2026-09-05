@@ -6,6 +6,7 @@ interface CombatResultsScreenProps {
   result: CombatResult;
   playerChicken: Chicken;
   opponent: Chicken;
+  creditsEarned?: number;
   onFightAgain: () => void;
   onHeal: () => void;
 }
@@ -20,6 +21,7 @@ export default function CombatResultsScreen({
   result,
   playerChicken,
   opponent,
+  creditsEarned = 0,
   onFightAgain,
   onHeal,
 }: CombatResultsScreenProps) {
@@ -45,6 +47,15 @@ export default function CombatResultsScreen({
             {OUTCOME_LABEL[result.outcomeReason]} · Turn {result.totalTurns}
           </p>
         </div>
+
+        {didWin && creditsEarned > 0 && (
+          <div className="mb-5 flex items-center justify-center gap-2 rounded-2xl border border-(--color-gold)/30 bg-(--color-gold)/10 p-3 text-center">
+            <span className="text-lg leading-none">🪙</span>
+            <p className="text-sm font-semibold text-(--color-gold-bright)">
+              +{creditsEarned} Battle Credits
+            </p>
+          </div>
+        )}
 
         {playerInjured && (
           <div className="mb-5 rounded-2xl border border-red-500/50 bg-red-500/10 p-4 text-center">

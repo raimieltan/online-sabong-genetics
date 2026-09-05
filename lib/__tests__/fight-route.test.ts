@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import { prisma } from "../db";
 import { getOrCreatePlayer } from "../player";
 import { generateRandomChicken } from "../chickenGenerator";
+import { BATTLE_WIN_CREDITS } from "../economy";
 import { POST } from "../../app/api/chickens/[id]/fight/route";
 import { GENETIC_STAT_KEYS, type Chicken, type GrowthStage, type StatBlock } from "../types";
 
@@ -71,6 +72,21 @@ test("POST /api/chickens/:id/fight runs a fight and updates the player chicken's
   const updated = await prisma.chicken.findUnique({ where: { id } });
   const wonOrLost = updated!.record as { wins: number; losses: number };
   assert.equal(wonOrLost.wins + wonOrLost.losses, 1);
+});
+
+test("POST /api/chickens/:id/fight awards BATTLE_WIN_CREDITS only when the player's chicken wins", async () => {
+  const player = await getOrCreatePlayer();
+  const id = await seedChicken(player.id, { iv: statBlock(90) });
+  const opponent = generateRandomChicken({ name: "NPC" });
+
+  const response = await POST(postRequest(id, opponent), { params: Promise.resolve({ id }) });
+  const body = await response.json();
+  const won = body.result.winnerId === id;
+
+  const updatedPlayer = await prisma.player.findUnique({ where: { id: player.id } });
+  assert.equal(body.creditsEarned, won ? BATTLE_WIN_CREDITS : 0);
+  assert.equal(updatedPlayer!.credits, player.credits + (won ? BATTLE_WIN_CREDITS : 0));
+  assert.equal(body.credits, updatedPlayer!.credits);
 });
 
 test("POST /api/chickens/:id/fight returns 404 for an unknown chicken", async () => {

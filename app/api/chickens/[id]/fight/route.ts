@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { prisma } from "@/lib/db";
 import { canFight, finalHealthPercent, simulateFight } from "@/lib/combat";
+import { BATTLE_WIN_CREDITS, earnCredits } from "@/lib/economy";
 import { getOrCreatePlayer } from "@/lib/player";
 import type { Chicken, CombatRecord } from "@/lib/types";
 
@@ -38,15 +39,29 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     decisions: record.decisions + (result.outcomeReason === "timeout" ? 1 : 0),
   };
 
-  const updated = await prisma.chicken.update({
-    where: { id },
-    data: {
-      record: updatedRecord,
-      health: finalHealthPercent(result, chicken),
-      injured: wasInjured,
-      status: wasInjured ? "injured" : chicken.status,
-    },
-  });
+  const [updated, updatedPlayer] = await Promise.all([
+    prisma.chicken.update({
+      where: { id },
+      data: {
+        record: updatedRecord,
+        health: finalHealthPercent(result, chicken),
+        injured: wasInjured,
+        status: wasInjured ? "injured" : chicken.status,
+      },
+    }),
+    won
+      ? prisma.player.update({
+          where: { id: player.id },
+          data: { credits: earnCredits(player.credits, BATTLE_WIN_CREDITS) },
+        })
+      : Promise.resolve(player),
+  ]);
 
-  return NextResponse.json({ result, log: result.log, chicken: updated });
+  return NextResponse.json({
+    result,
+    log: result.log,
+    chicken: updated,
+    creditsEarned: won ? BATTLE_WIN_CREDITS : 0,
+    credits: updatedPlayer.credits,
+  });
 }

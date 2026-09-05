@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "Player" ADD COLUMN     "credits" INTEGER NOT NULL DEFAULT 500,
+ADD COLUMN     "tournamentTokens" INTEGER NOT NULL DEFAULT 0;

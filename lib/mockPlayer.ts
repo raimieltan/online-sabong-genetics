@@ -1,8 +1,7 @@
 /**
- * Placeholder player/economy data for the top bar. The game has no player-level
- * profile, energy, or currency system yet (see the gamefowl-dynasty roadmap's
- * economy item) — everything here is mock data so the UI reads as complete.
- * Swap this for a real `/api/player` fetch once that subsystem exists.
+ * Placeholder player-level/energy/gems data for the top bar. Battle Credits
+ * (`coins` below) are now backed by the real `/api/player` wallet — see
+ * TopBar.tsx. Level/XP/energy/gems still have no backing system.
  */
 export const mockPlayer = {
   name: "ROOSTER#1234",

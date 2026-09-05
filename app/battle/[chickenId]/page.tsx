@@ -24,6 +24,7 @@ export default function BattlePage({
   const [result, setResult] = useState<CombatResult | null>(null);
   const [log, setLog] = useState<CombatResult["log"]>([]);
   const [updatedChicken, setUpdatedChicken] = useState<Chicken | null>(null);
+  const [creditsEarned, setCreditsEarned] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -83,6 +84,7 @@ export default function BattlePage({
     setResult(body.result);
     setLog(body.log);
     setUpdatedChicken(body.chicken);
+    setCreditsEarned(body.creditsEarned ?? 0);
     setPhase("replaying");
   }
 
@@ -200,6 +202,7 @@ export default function BattlePage({
           result={result}
           playerChicken={updatedChicken ?? chicken}
           opponent={opponent}
+          creditsEarned={creditsEarned}
           onFightAgain={handleFightAgain}
           onHeal={handleHeal}
         />

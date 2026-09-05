@@ -8,10 +8,12 @@ datasource db {
 }
 
 model Player {
-  id        String    @id @default(uuid())
-  createdAt DateTime  @default(now())
-  chickens  Chicken[]
-  eggs      Egg[]
+  id               String    @id @default(uuid())
+  createdAt        DateTime  @default(now())
+  credits          Int       @default(500)
+  tournamentTokens Int       @default(0)
+  chickens         Chicken[]
+  eggs             Egg[]
 }
 
 model Chicken {

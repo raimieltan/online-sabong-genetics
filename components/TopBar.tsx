@@ -1,3 +1,7 @@
+"use client";
+
+import { useEffect, useState } from "react";
+
 import { mockPlayer } from "@/lib/mockPlayer";
 
 function CurrencyPill({ icon, value }: { icon: string; value: number }) {
@@ -20,7 +24,20 @@ function CurrencyPill({ icon, value }: { icon: string; value: number }) {
  * system yet, so this reads from `mockPlayer` — see that file's note.
  */
 export function TopBar() {
+  const [credits, setCredits] = useState(mockPlayer.coins);
   const xpPct = Math.round((mockPlayer.xp / mockPlayer.xpToNext) * 100);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/player")
+      .then((res) => res.json())
+      .then((player: { credits: number }) => {
+        if (!cancelled) setCredits(player.credits);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <header className="panel-wood sticky top-0 z-20 flex items-center gap-4 border-b border-(--color-gold)/20 px-4 py-2.5">
@@ -46,7 +63,7 @@ export function TopBar() {
 
       <div className="ml-auto flex items-center gap-2">
         <CurrencyPill icon="⚡" value={mockPlayer.energy} />
-        <CurrencyPill icon="🪙" value={mockPlayer.coins} />
+        <CurrencyPill icon="🪙" value={credits} />
         <CurrencyPill icon="💎" value={mockPlayer.gems} />
         <button
           type="button"
