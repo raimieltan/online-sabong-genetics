@@ -2,7 +2,16 @@ import { randomUUID } from "node:crypto";
 
 import { generateRandomChicken } from "./chickenGenerator";
 import { chickenValue } from "./valuation";
-import type { Chicken, ChickenSex, FightingStyle, RoosterColorScheme, StatBlock, Trait } from "./types";
+import type {
+  Chicken,
+  ChickenColorScheme,
+  ChickenSex,
+  FightingStyle,
+  MutationGenome,
+  PhysicalBlock,
+  StatBlock,
+  Trait,
+} from "./types";
 
 /** How many NPC listings the market keeps in stock at once. */
 export const MARKET_STOCK_SIZE = 6;
@@ -22,9 +31,11 @@ export type MarketListingRow = {
   motherId: string | null;
   bloodlineId: string;
   iv: StatBlock;
+  physical: PhysicalBlock;
+  mutations: MutationGenome;
   traits: Trait[];
   fightingStyle: FightingStyle;
-  colorScheme: RoosterColorScheme;
+  colorScheme: ChickenColorScheme;
   price: number;
 };
 
@@ -40,6 +51,8 @@ export function generateListing(): MarketListingRow {
     motherId: chicken.parents.motherId,
     bloodlineId: chicken.bloodlineId,
     iv: chicken.iv,
+    physical: chicken.physical,
+    mutations: chicken.mutations,
     traits: chicken.traits,
     fightingStyle: chicken.fightingStyle,
     colorScheme: chicken.colorScheme,
@@ -58,6 +71,8 @@ export function listingToChicken(listing: MarketListingRow): Chicken {
     bloodlineId: listing.bloodlineId,
     iv: listing.iv,
     ev: Object.fromEntries(Object.keys(listing.iv).map((key) => [key, 0])) as StatBlock,
+    physical: listing.physical,
+    mutations: listing.mutations,
     traits: listing.traits,
     age: 0,
     health: 100,

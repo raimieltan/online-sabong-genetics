@@ -58,6 +58,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
 
   return NextResponse.json({
     matches: outcome.matches,
+    opponentsFought: outcome.opponentsFought,
     placement: outcome.placement,
     tokensAwarded: outcome.tokensAwarded,
     tournamentTokens: updatedPlayer.tournamentTokens,

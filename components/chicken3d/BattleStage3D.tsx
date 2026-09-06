@@ -1,16 +1,18 @@
 "use client";
 
-import { Suspense, useRef } from "react";
+import { Suspense, useMemo, useRef } from "react";
 import type { Ref, RefObject } from "react";
 import * as THREE from "three";
 import { Canvas, useFrame } from "@react-three/fiber";
 import { Environment } from "@react-three/drei";
 
 import type { Chicken, StaggerLevel } from "@/lib/types";
+import { CameraDirector, type CameraCueName } from "@/lib/animation/cameraDirector";
 
 import { ArenaGround } from "./ArenaGround";
 import { ArenaPhysics } from "./ArenaPhysics";
 import { ChickenPhysicsRig, type ChickenPhysicsHandle } from "./ChickenPhysicsRig";
+import { ImpactVFX, type ImpactVFXHandle } from "./ImpactVFX";
 import type { FighterAnim } from "./ChickenModel";
 import type { AnimIntent } from "@/lib/animation/types";
 
@@ -26,13 +28,23 @@ const STAGE_SCALE = 2.2;
 /** World-space distance each fighter sits from center (BattleCanvas's lunge clamp reads this so a lunge can never close more than the real gap between fighters and pass through). */
 export const WORLD_HALF_GAP = FIGHTER_X * STAGE_SCALE;
 
-/** Latest attack event for the camera to react to — mirrors the timing info BattleCanvas's 2D lunge already uses. */
+/**
+ * Latest attack event for the camera to react to. `seq` is a monotonic counter
+ * BattleCanvas bumps on every discrete beat (attack start, impact, KO, victory)
+ * — the camera keys new cues off `seq` changing, not off deep-equality.
+ */
 export interface CameraCue {
   attacker: "r1" | "r2";
   startTime: number;
   isCrit: boolean;
   isMiss: boolean;
   stagger: StaggerLevel;
+  /** Monotonic beat counter; a change means "act on this cue now". */
+  seq?: number;
+  /** Explicit director cue for this beat. Falls back to a heuristic if absent. */
+  cueName?: CameraCueName;
+  /** Which fighter the frame should favour for this beat. */
+  focus?: "r1" | "r2" | "midpoint";
 }
 
 // Elevated 3/4 angle looking down at the stage (bird's-eye but tilted, not
@@ -41,91 +53,93 @@ export interface CameraCue {
 // framing rather than a flat portrait shot.
 const IDLE_POS = new THREE.Vector3(0, 2.45, 3.7);
 const IDLE_LOOKAT = new THREE.Vector3(0, -0.15, 0);
-
-/** How long (ms) the camera stays punched-in before easing back to the idle wide shot. */
-const PUNCH_HOLD_MS = 550;
-
-/** Camera shake magnitude/duration scale with how hard the hit rocked the defender (spec §44). */
-const STAGGER_SHAKE: Record<StaggerLevel, { mag: number; ms: number }> = {
-  none: { mag: 0, ms: 0 },
-  light: { mag: 0.008, ms: 90 },
-  // A trip reads as a bigger event than a plain medium flinch, so it shakes harder.
-  stumble: { mag: 0.02, ms: 170 },
-  medium: { mag: 0.015, ms: 140 },
-  heavy: { mag: 0.026, ms: 200 },
-  knockdown: { mag: 0.042, ms: 340 },
-};
-
-/** Heavier hits also earn a longer camera hold before easing back to the idle shot. */
-const STAGGER_HOLD_MULT: Record<StaggerLevel, number> = {
-  none: 0.7,
-  light: 0.85,
-  stumble: 1.15,
-  medium: 1,
-  heavy: 1.3,
-  knockdown: 1.8,
-};
-
-/** Idle drift: a slow side-to-side/height sway around the elevated base — the
- * fighters sit fixed along the X axis in front of a backdrop, so a full 360°
- * orbit would swing the camera behind the ground plane; this arcs back and
- * forth instead, just enough to keep the shot feeling alive between punches. */
-const DRIFT_YAW_MS = 9000;
-const DRIFT_YAW_AMPLITUDE = 0.16; // rad
-const DRIFT_BOB_MS = 6500;
-const DRIFT_BOB_AMPLITUDE = 0.08; // world units of height
+const ORBIT_RADIUS = Math.hypot(IDLE_POS.x, IDLE_POS.z);
+const FOV = 90;
 
 /**
- * Drives the battle camera each frame: idles on an elevated angled shot that
- * slowly drifts side to side, and eases into a closer 3/4 angle favoring the
- * attacker/impact point whenever `cameraCue` reports a new attack, easing back
- * out once it settles. Crits add a short decaying shake. Reads mutable refs
- * only — no React state, no re-renders.
+ * Camera driven by the V2 `CameraDirector` (spec §20–22): a slow front-arc
+ * orbit as the base motion, biased / pushed / shaken by discrete battle cues.
+ * All easing lives in the director; this component only copies the result onto
+ * the real camera each frame and adds the shake as a position offset.
  */
-function BattleCamera({ cameraCue }: { cameraCue?: RefObject<CameraCue | null> }) {
-  const currentPos = useRef(IDLE_POS.clone());
-  const currentLookAt = useRef(IDLE_LOOKAT.clone());
+function DirectedCamera({
+  cueRef,
+  hitStopScaleRef,
+}: {
+  cueRef?: RefObject<CameraCue | null>;
+  hitStopScaleRef?: RefObject<number>;
+}) {
+  const director = useMemo(
+    () =>
+      new CameraDirector({
+        radius: ORBIT_RADIUS,
+        height: IDLE_POS.y,
+        fov: FOV,
+        center: { x: IDLE_LOOKAT.x, y: IDLE_LOOKAT.y, z: IDLE_LOOKAT.z },
+      }),
+    []
+  );
+  const lastSeq = useRef<number>(-1);
+  const lastStart = useRef<number>(-1);
+  const virtualMs = useRef(0);
+  const midpoint = useRef({ x: 0, y: IDLE_LOOKAT.y, z: 0 });
+  const focusA = useRef({ x: -WORLD_HALF_GAP, y: STAGE_Y_OFFSET + 0.3, z: 0 });
+  const focusB = useRef({ x: WORLD_HALF_GAP, y: STAGE_Y_OFFSET + 0.3, z: 0 });
 
-  useFrame(({ camera, clock }) => {
-    const cue = cameraCue?.current ?? null;
-    const now = Date.now();
-    const elapsed = cue ? now - cue.startTime : Infinity;
-    const holdMs = PUNCH_HOLD_MS * (cue ? STAGGER_HOLD_MULT[cue.stagger] : 1);
+  useFrame(({ camera }, rawDelta) => {
+    const scale = hitStopScaleRef?.current ?? 1;
+    const dt = Math.min(rawDelta, 1 / 30) * scale;
+    // Virtual clock — freezes with the rest of the presentation during hit-stop
+    // so the orbit sweep and shake phase hold still too.
+    virtualMs.current += dt * 1000;
+    const nowMs = virtualMs.current;
 
-    // Punch intensity: 0 at rest, rises then falls back to 0 over holdMs.
-    const progress = Math.min(1, elapsed / holdMs);
-    const punch = cue ? Math.sin(progress * Math.PI) : 0;
-
-    const t = clock.elapsedTime * 1000;
-    const driftYaw = Math.sin((t / DRIFT_YAW_MS) * Math.PI * 2) * DRIFT_YAW_AMPLITUDE * (1 - punch);
-    const driftBob = Math.sin((t / DRIFT_BOB_MS) * Math.PI * 2) * DRIFT_BOB_AMPLITUDE * (1 - punch);
-    const idlePos = new THREE.Vector3(
-      Math.sin(driftYaw) * IDLE_POS.z + IDLE_POS.x,
-      IDLE_POS.y + driftBob,
-      Math.cos(driftYaw) * IDLE_POS.z
-    );
-
-    const sideSign = cue?.attacker === "r1" ? -1 : 1;
-    const targetPos = new THREE.Vector3(sideSign * 0.6, 1.35, 1.7);
-    const targetLookAt = new THREE.Vector3(-sideSign * 0.35, 0.05, 0);
-
-    currentPos.current.lerpVectors(idlePos, targetPos, punch);
-    currentLookAt.current.lerpVectors(IDLE_LOOKAT, targetLookAt, punch);
-
-    let shakeX = 0;
-    let shakeY = 0;
-    const shakeCfg = cue ? STAGGER_SHAKE[cue.stagger] : null;
-    if (shakeCfg && shakeCfg.mag > 0 && elapsed < shakeCfg.ms) {
-      const decay = 1 - elapsed / shakeCfg.ms;
-      shakeX = Math.sin(elapsed * 0.09) * shakeCfg.mag * decay;
-      shakeY = Math.cos(elapsed * 0.11) * shakeCfg.mag * 0.85 * decay;
+    const cue = cueRef?.current ?? null;
+    if (cue) {
+      const seq = cue.seq ?? 0;
+      const fired = seq !== lastSeq.current || cue.startTime !== lastStart.current;
+      if (fired) {
+        lastSeq.current = seq;
+        lastStart.current = cue.startTime;
+        const focusVec =
+          cue.focus === "r1"
+            ? focusA.current
+            : cue.focus === "r2"
+              ? focusB.current
+              : cue.focus === "midpoint"
+                ? midpoint.current
+                : cue.attacker === "r1"
+                  ? focusB.current // default: favour the fighter being hit
+                  : focusA.current;
+        const name: CameraCueName = cue.cueName ?? heuristicCue(cue);
+        director.setCue(name, focusVec);
+      }
     }
 
-    camera.position.set(currentPos.current.x + shakeX, currentPos.current.y + shakeY, currentPos.current.z);
-    camera.lookAt(currentLookAt.current);
+    director.update(dt, nowMs, midpoint.current);
+
+    camera.position.set(
+      director.position.x + director.shake.x,
+      director.position.y + director.shake.y,
+      director.position.z + director.shake.z
+    );
+    camera.lookAt(director.lookAt.x, director.lookAt.y, director.lookAt.z);
+    const cam = camera as THREE.PerspectiveCamera;
+    if (Math.abs(cam.fov - director.fov) > 0.01) {
+      cam.fov = director.fov;
+      cam.updateProjectionMatrix();
+    }
   });
 
   return null;
+}
+
+function heuristicCue(cue: CameraCue): CameraCueName {
+  if (cue.isMiss) return "attack";
+  if (cue.isCrit) return "critical";
+  if (cue.stagger === "knockdown") return "knockdown";
+  if (cue.stagger === "heavy") return "impact_heavy";
+  return "impact_light";
 }
 
 /**
@@ -145,6 +159,8 @@ export function BattleStage3D({
   physicsA,
   physicsB,
   cameraCue,
+  vfxRef,
+  hitStopScaleRef,
 }: {
   fighterA: Pick<Chicken, "colorScheme" | "sex" | "physical" | "mutations">;
   fighterB: Pick<Chicken, "colorScheme" | "sex" | "physical" | "mutations">;
@@ -156,8 +172,12 @@ export function BattleStage3D({
   /** Imperative handles for real-physics knockback/stagger, called by BattleCanvas on impact. */
   physicsA?: Ref<ChickenPhysicsHandle>;
   physicsB?: Ref<ChickenPhysicsHandle>;
-  /** Latest attack event driving the dynamic camera; omit for a static wide shot. */
+  /** Latest camera cue, consumed by the DirectedCamera / CameraDirector. */
   cameraCue?: RefObject<CameraCue | null>;
+  /** Impact VFX handle — BattleCanvas calls `.spawn()` at contact. */
+  vfxRef?: Ref<ImpactVFXHandle>;
+  /** 0 during a hit-stop freeze so camera + VFX advancement freezes too. */
+  hitStopScaleRef?: RefObject<number>;
 }) {
   const worldFighterX = FIGHTER_X * STAGE_SCALE;
   // Fixed opponent world positions for the head-tracking layer (fighters sit at fixed X).
@@ -166,14 +186,14 @@ export function BattleStage3D({
 
   return (
     <Canvas
-      camera={{ position: [IDLE_POS.x, IDLE_POS.y, IDLE_POS.z], fov: 100 }}
+      camera={{ position: [IDLE_POS.x, IDLE_POS.y, IDLE_POS.z], fov: FOV }}
       dpr={[1, 1.5]}
       gl={{ antialias: true, alpha: true }}
     >
       <ambientLight intensity={0.7} />
       <directionalLight position={[3, 5, 2]} intensity={1.4} />
       <directionalLight position={[-3, 2, -2]} intensity={0.4} />
-      <BattleCamera cameraCue={cameraCue} />
+      <DirectedCamera cueRef={cameraCue} hitStopScaleRef={hitStopScaleRef} />
       <Suspense fallback={null}>
         <ArenaGround y={STAGE_Y_OFFSET} />
         <ArenaPhysics floorY={STAGE_Y_OFFSET}>
@@ -204,6 +224,7 @@ export function BattleStage3D({
             worldScale={STAGE_SCALE}
           />
         </ArenaPhysics>
+        <ImpactVFX ref={vfxRef} timeScaleRef={hitStopScaleRef} />
         <Environment preset="city" />
       </Suspense>
     </Canvas>

@@ -1,10 +1,14 @@
 import { generateRandomChicken } from "./chickenGenerator";
 import { canBattle as canBattleStage } from "./growth";
+import { MUTATION_POOL } from "./mutations";
+import { resolvePhysicalProfile } from "./physicalProfile";
+import { calculateStagger } from "./stagger";
 import {
   GENETIC_STAT_KEYS,
   HIT_ZONES,
   type Chicken,
   type CombatLogEntry,
+  type CombatRecord,
   type CombatResult,
   type FightingStyle,
   type GeneticStatKey,
@@ -23,10 +27,24 @@ const MAX_DEFENSE_REDUCTION = 0.4;
 const MIN_DAMAGE = 0.5;
 const CRITICAL_INJURY_BASE_CHANCE = 0.5;
 const COUNTER_DAMAGE_MULT = 1.4;
+const LEG_ZONES: readonly HitZone[] = ["left_leg", "right_leg"];
+const WING_ZONES: readonly HitZone[] = ["left_wing", "right_wing"];
+
+/** Product of every expressed mutation's modifier for this stat (spec item 6: mutation stat effects). */
+function mutationStatMultiplier(chicken: Chicken, key: GeneticStatKey): number {
+  let mult = 1;
+  for (const def of MUTATION_POOL) {
+    if (!chicken.mutations[def.id]?.expressed) continue;
+    const modifier = def.statModifiers[key];
+    if (modifier) mult *= 1 + modifier;
+  }
+  return mult;
+}
 
 /** IV is genetic ceiling, EV is trained investment — 60/40 weighting per the combat spec. */
 export function effectiveStat(chicken: Chicken, key: GeneticStatKey): number {
-  return chicken.iv[key] * 0.6 + chicken.ev[key] * 0.4;
+  const base = chicken.iv[key] * 0.6 + chicken.ev[key] * 0.4;
+  return base * mutationStatMultiplier(chicken, key);
 }
 
 /** Hens do not fight — only roosters enter combat, per the baseline mechanics spec. */
@@ -38,8 +56,10 @@ export function healChicken(): { injured: false; health: number } {
   return { injured: false, health: MAX_HEALTH };
 }
 
+/** Body-size genetics add mass, which raises the HP pool a bird can soak up (spec: physique → combat). */
 export function maxHealth(chicken: Chicken): number {
-  return 50 + effectiveStat(chicken, "stamina") + effectiveStat(chicken, "defense") * 0.5;
+  const base = 50 + effectiveStat(chicken, "stamina") + effectiveStat(chicken, "defense") * 0.5;
+  return base * resolvePhysicalProfile(chicken).mass;
 }
 
 /** The chicken's remaining HP at the end of a fight, scaled to the 0–100 `Chicken.health` range. */
@@ -52,6 +72,34 @@ export function finalHealthPercent(result: CombatResult, chicken: Chicken): numb
     }
   }
   return 100;
+}
+
+/** Persistable field updates for one side of a resolved fight — shared by `/api/chickens/[id]/fight` and `/api/live/next` so both apply the same rules to an owned chicken. */
+export type FightOutcomeUpdate = {
+  record: CombatRecord;
+  health: number;
+  injured: boolean;
+  status: Chicken["status"];
+};
+
+/** Computes the persisted record/health/injury/status delta for `chicken`'s side of `result`. Caller decides whether to award credits (only the fight-initiating route does). */
+export function applyFightOutcome(chicken: Chicken, result: CombatResult): FightOutcomeUpdate {
+  const won = result.winnerId === chicken.id;
+  const wasInjured = result.injuredChickenId === chicken.id;
+  const record = chicken.record;
+
+  return {
+    record: {
+      ...record,
+      wins: record.wins + (won ? 1 : 0),
+      losses: record.losses + (won ? 0 : 1),
+      koTko: record.koTko + (won && result.outcomeReason !== "timeout" ? 1 : 0),
+      decisions: record.decisions + (result.outcomeReason === "timeout" ? 1 : 0),
+    },
+    health: finalHealthPercent(result, chicken),
+    injured: wasInjured,
+    status: wasInjured ? "injured" : chicken.status,
+  };
 }
 
 /** Weighted so head/neck are rare relative to body/wings/legs (5/5/30/15/15/15/15). */
@@ -167,18 +215,25 @@ export function simulateFight(
   while (turn < MAX_TURNS && !fightOver) {
     turn += 1;
 
+    const physicalA = resolvePhysicalProfile(stateA.chicken);
+    const physicalB = resolvePhysicalProfile(stateB.chicken);
+
     const weightA =
       STYLE_FREQUENCY_WEIGHT[stateA.chicken.fightingStyle] *
-      (effectiveStat(stateA.chicken, "speed") + effectiveStat(stateA.chicken, "agility") + 1);
+      (effectiveStat(stateA.chicken, "speed") + effectiveStat(stateA.chicken, "agility") + 1) *
+      physicalA.mobility;
     const weightB =
       STYLE_FREQUENCY_WEIGHT[stateB.chicken.fightingStyle] *
-      (effectiveStat(stateB.chicken, "speed") + effectiveStat(stateB.chicken, "agility") + 1);
+      (effectiveStat(stateB.chicken, "speed") + effectiveStat(stateB.chicken, "agility") + 1) *
+      physicalB.mobility;
 
     const attacker = rng() < weightA / (weightA + weightB) ? stateA : stateB;
     const defender = attacker === stateA ? stateB : stateA;
+    const attackerPhysical = attacker === stateA ? physicalA : physicalB;
+    const defenderPhysical = defender === stateA ? physicalA : physicalB;
 
-    const attackerAccuracy = effectiveStat(attacker.chicken, "accuracy");
-    const defenderAgility = effectiveStat(defender.chicken, "agility");
+    const attackerAccuracy = effectiveStat(attacker.chicken, "accuracy") * attackerPhysical.reach;
+    const defenderAgility = effectiveStat(defender.chicken, "agility") * defenderPhysical.mobility;
     let missChance = Math.max(0, ((defenderAgility - attackerAccuracy) / 100) * 0.15);
     if (hasTrait(attacker.chicken, "calm")) missChance *= 0.7;
     const isMiss = rng() < missChance;
@@ -207,7 +262,8 @@ export function simulateFight(
       const defenderDefense =
         effectiveStat(defender.chicken, "defense") *
         STYLE_DEFENSE_MULT[defender.chicken.fightingStyle] *
-        traitDefenseMult(defender.chicken);
+        traitDefenseMult(defender.chicken) *
+        defenderPhysical.stability;
       const defenseReduction = Math.min(defenderDefense / 250, MAX_DEFENSE_REDUCTION);
 
       if (counterChance(attacker.chicken) > 0 && attacker.wasHitLastTurn && rng() < counterChance(attacker.chicken)) {
@@ -218,10 +274,17 @@ export function simulateFight(
       const styleMult = styleDamageMult(attacker.chicken.fightingStyle, turn);
       const traitMult = traitDamageMult(attacker.chicken);
 
+      /** Thick-legged kickers hit harder on leg zones; good wing control shields against wing hits. */
+      const zonePhysicalMult = LEG_ZONES.includes(hitZone as HitZone)
+        ? attackerPhysical.kickPower
+        : WING_ZONES.includes(hitZone as HitZone)
+          ? 1 / defenderPhysical.wingControl
+          : 1;
+
       damage = Math.max(
         MIN_DAMAGE,
         (baseDamage + variance) * critMult * fatigueMult * counterMult * styleMult * traitMult *
-          (1 - defenseReduction)
+          zonePhysicalMult * (1 - defenseReduction)
       );
 
       if (isCrit && (hitZone === "head" || hitZone === "neck")) {
@@ -242,6 +305,20 @@ export function simulateFight(
     defender.wasHitLastTurn = !isMiss;
     attacker.wasHitLastTurn = false;
 
+    const stagger = calculateStagger({
+      damage,
+      defenderMaxHp: defender.maxHp,
+      hitZone,
+      isMiss,
+      isCrit,
+      isCounter,
+      isCritical,
+      defenderStability: defenderPhysical.stability,
+      defenderMass: defenderPhysical.mass,
+      defenderStaminaRatio: defender.stamina / 100,
+      defenderAgility: effectiveStat(defender.chicken, "agility"),
+    });
+
     log.push({
       turn,
       attackerId: attacker.chicken.id,
@@ -253,6 +330,7 @@ export function simulateFight(
       isCounter,
       isCritical,
       defenderHp: Number(defender.hp.toFixed(1)),
+      stagger,
       timestamp: Date.now(),
     });
 

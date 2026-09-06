@@ -1,11 +1,10 @@
 import Link from "next/link";
-import { Suspense, useState } from "react";
 import type { CSSProperties } from "react";
 
 import type { Chicken } from "@/lib/types";
 import { canAgeUp, canRetire } from "@/lib/growth";
 import { canFight } from "@/lib/combat";
-import { ChickenViewer } from "@/components/chicken3d/ChickenViewer";
+import { ChickenThumbnail } from "@/components/chicken3d/ChickenThumbnail";
 import { RARITY_BORDER, RARITY_COLOR, RARITY_GEM, RARITY_GLOW, topRarity } from "@/lib/rarity";
 
 const SEX_ICON: Record<Chicken["sex"], string> = {
@@ -25,16 +24,13 @@ const STAGE_COLOR: Record<Chicken["growthStage"], string> = {
 
 export function ChickenCard({
   chicken,
-  onSelect,
   onAgeUp,
   onRetire,
 }: {
   chicken: Chicken;
-  onSelect: () => void;
   onAgeUp?: () => void;
   onRetire?: () => void;
 }) {
-  const [hovered, setHovered] = useState(false);
   const visibleTraits = chicken.traits.slice(0, 2);
   const hiddenTraitCount = chicken.traits.length - visibleTraits.length;
   const rarity = topRarity(chicken.traits);
@@ -42,8 +38,6 @@ export function ChickenCard({
   return (
     <div
       className={`panel-wood group relative overflow-hidden rounded-lg border-t-2 p-4 text-left transition hover:-translate-y-0.5 hover:shadow-[0_0_0_1px_rgba(212,162,78,0.4)] ${RARITY_BORDER[rarity]}`}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
     >
       {(chicken.injured || chicken.status === "retired") && (
         <span
@@ -57,7 +51,7 @@ export function ChickenCard({
         </span>
       )}
 
-      <button onClick={onSelect} className="block w-full text-left">
+      <Link href={`/chicken/${chicken.id}`} className="block w-full text-left">
         <div
           className="model-stage -mx-4 -mt-4 mb-3 h-32 w-[calc(100%+2rem)]"
           style={{ "--stage-glow": RARITY_GLOW[rarity] } as CSSProperties}
@@ -65,21 +59,7 @@ export function ChickenCard({
           <span className="absolute left-2 top-2 z-10 text-lg leading-none opacity-80">
             {RARITY_GEM[rarity]}
           </span>
-          <Suspense
-            fallback={
-              <div className="flex h-full w-full items-center justify-center text-3xl opacity-30">
-                {SEX_ICON[chicken.sex]}
-              </div>
-            }
-          >
-            <ChickenViewer
-              chicken={chicken}
-              interactive={false}
-              animate={hovered}
-              cameraDistance={4.5}
-              className="h-full w-full"
-            />
-          </Suspense>
+          <ChickenThumbnail chicken={chicken} className="h-full w-full" />
         </div>
 
         <div className="flex items-center gap-2">
@@ -131,7 +111,7 @@ export function ChickenCard({
         <p className="mt-2 text-[11px] text-(--color-text-muted)">
           🏆 {chicken.record.wins}W - {chicken.record.losses}L
         </p>
-      </button>
+      </Link>
 
       {(canAgeUp(chicken.growthStage) || canRetire(chicken.growthStage) || canFight(chicken)) && (
         <div className="mt-3 flex gap-2">

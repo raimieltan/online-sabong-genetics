@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { createChicken, generateRandomChicken } from "../chickenGenerator";
-import { FIGHTING_STYLES, GENETIC_STAT_KEYS } from "../types";
+import { FIGHTING_STYLES, GENETIC_STAT_KEYS, PHYSICAL_TRAIT_KEYS, PHYSICAL_TRAIT_RANGE } from "../types";
 
 test("createChicken fills EVs at zero, full health/energy, and a zeroed record", () => {
   const chicken = createChicken({
@@ -58,11 +58,11 @@ test("createChicken assigns a persistent fighting style, a color scheme, and sta
   });
 
   assert.ok(FIGHTING_STYLES.includes(chicken.fightingStyle));
-  assert.ok(chicken.colorScheme.body.startsWith("#"));
-  assert.ok(chicken.colorScheme.head.startsWith("#"));
-  assert.ok(chicken.colorScheme.comb.startsWith("#"));
+  assert.ok(chicken.colorScheme.feathers.startsWith("#"));
+  assert.ok(chicken.colorScheme.details.startsWith("#"));
+  assert.ok(chicken.colorScheme.eyes.startsWith("#"));
   assert.ok(chicken.colorScheme.tail.startsWith("#"));
-  assert.ok(chicken.colorScheme.feet.startsWith("#"));
+  assert.ok(chicken.colorScheme.patternColor.startsWith("#"));
   assert.equal(chicken.injured, false);
 });
 
@@ -166,4 +166,36 @@ test("generateRandomChicken assigns distinct ids across calls", () => {
   const first = generateRandomChicken();
   const second = generateRandomChicken();
   assert.notEqual(first.id, second.id);
+});
+
+test("generateRandomChicken produces physical proportions within each trait's rig-supported range", () => {
+  for (let i = 0; i < 200; i += 1) {
+    const chicken = generateRandomChicken();
+    for (const key of PHYSICAL_TRAIT_KEYS) {
+      const { min, max } = PHYSICAL_TRAIT_RANGE[key];
+      const value = chicken.physical[key];
+      assert.ok(value >= min && value <= max, `${key}=${value} out of range`);
+    }
+  }
+});
+
+test("generateRandomChicken starts with no mutations — those emerge through breeding", () => {
+  const chicken = generateRandomChicken();
+  assert.deepEqual(chicken.mutations, {});
+});
+
+test("createChicken defaults physical to the all-1 baseline block and mutations to empty", () => {
+  const chicken = createChicken({
+    name: "Test",
+    sex: "rooster",
+    generation: 0,
+    parents: { fatherId: null, motherId: null },
+    bloodlineId: "test-bloodline",
+    iv: { power: 50, speed: 50, stamina: 50, defense: 50, accuracy: 50, agility: 50 },
+  });
+
+  for (const key of PHYSICAL_TRAIT_KEYS) {
+    assert.equal(chicken.physical[key], 1);
+  }
+  assert.deepEqual(chicken.mutations, {});
 });

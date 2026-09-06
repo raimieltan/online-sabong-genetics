@@ -60,7 +60,7 @@ test("POST /api/chickens/:id/opponent returns a full, unpersisted NPC chicken", 
   const opponent = await response.json();
   assert.ok(opponent.id);
   assert.ok(FIGHTING_STYLES.includes(opponent.fightingStyle));
-  assert.ok(opponent.colorScheme?.body);
+  assert.ok(opponent.colorScheme?.feathers);
   assert.equal(opponent.injured, false);
 
   const stored = await prisma.chicken.findUnique({ where: { id: opponent.id } });

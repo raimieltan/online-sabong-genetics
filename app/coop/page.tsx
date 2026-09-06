@@ -1,14 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 
-import type { Chicken, Egg, GeneticStatKey } from "@/lib/types";
-import { canTrain } from "@/lib/growth";
-import { ENERGY_PER_TRAIN } from "@/lib/training";
+import type { Chicken, Egg } from "@/lib/types";
 import { DEFAULT_COOP_FILTERS, filterChickens } from "@/lib/coopFilters";
-
-import { ChickenViewer } from "@/components/chicken3d/ChickenViewer";
 
 import { ChickenCard } from "./ChickenCard";
 import { CoopFilters } from "./CoopFilters";
@@ -16,7 +11,6 @@ import { CoopFilters } from "./CoopFilters";
 export default function CoopPage() {
   const [chickens, setChickens] = useState<Chicken[]>([]);
   const [eggs, setEggs] = useState<Egg[]>([]);
-  const [selected, setSelected] = useState<Chicken | null>(null);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState(DEFAULT_COOP_FILTERS);
 
@@ -60,32 +54,6 @@ export default function CoopPage() {
     if (!res.ok) return;
     const updated: Chicken = await res.json();
     setChickens((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
-  }
-
-  async function handleTrain(chickenId: string, stat: GeneticStatKey) {
-    const res = await fetch(`/api/chickens/${chickenId}/train`, {
-      method: "POST",
-      body: JSON.stringify({ stat }),
-    });
-    if (!res.ok) return;
-    const updated: Chicken = await res.json();
-    setChickens((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
-    setSelected((prev) => (prev && prev.id === updated.id ? updated : prev));
-  }
-
-  async function handleRest(chickenId: string) {
-    const res = await fetch(`/api/chickens/${chickenId}/rest`, { method: "POST" });
-    if (!res.ok) return;
-    const updated: Chicken = await res.json();
-    setChickens((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
-    setSelected((prev) => (prev && prev.id === updated.id ? updated : prev));
-  }
-
-  async function handleSell(chickenId: string) {
-    const res = await fetch(`/api/chickens/${chickenId}/sell`, { method: "POST" });
-    if (!res.ok) return;
-    setChickens((prev) => prev.filter((c) => c.id !== chickenId));
-    setSelected((prev) => (prev && prev.id === chickenId ? null : prev));
   }
 
   if (loading) {
@@ -164,112 +132,10 @@ export default function CoopPage() {
             <ChickenCard
               key={chicken.id}
               chicken={chicken}
-              onSelect={() => setSelected(chicken)}
               onAgeUp={() => handleAgeUp(chicken.id)}
               onRetire={() => handleRetire(chicken.id)}
             />
           ))}
-        </div>
-      )}
-
-      {selected && (
-        <div
-          className="fixed inset-0 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
-          onClick={() => setSelected(null)}
-        >
-          <div
-            className="panel-parchment max-h-[90vh] w-full max-w-md overflow-y-auto rounded-lg p-6 shadow-2xl"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <ChickenViewer chicken={selected} className="mb-2 h-56 w-full rounded-lg bg-(--color-ink)" />
-
-            <div className="flex items-center gap-2 border-b border-(--color-parchment-dark) pb-3">
-              <span className="text-2xl">{selected.sex === "rooster" ? "🐓" : "🐔"}</span>
-              <div>
-                <h2 className="font-display text-xl font-semibold">{selected.name}</h2>
-                <p className="text-sm opacity-70">
-                  {selected.sex} · Gen {selected.generation}
-                </p>
-              </div>
-            </div>
-
-            <h3 className="mt-4 flex items-center gap-1 font-display font-semibold">🧬 IV</h3>
-            <ul className="text-sm opacity-80">
-              {Object.entries(selected.iv).map(([stat, value]) => (
-                <li key={stat}>
-                  {stat}: {value}
-                </li>
-              ))}
-            </ul>
-
-            <div className="mt-4 flex items-center justify-between">
-              <h3 className="flex items-center gap-1 font-display font-semibold">
-                💪 Training <span className="opacity-60">· ⚡ {selected.energy}/100</span>
-              </h3>
-              {selected.energy < 100 && (
-                <button
-                  onClick={() => handleRest(selected.id)}
-                  className="rounded bg-black/10 px-2 py-1 text-xs font-semibold hover:bg-black/20"
-                >
-                  Rest
-                </button>
-              )}
-            </div>
-            <ul className="text-sm opacity-80">
-              {Object.entries(selected.ev).map(([stat, value]) => (
-                <li key={stat} className="mt-1 flex items-center justify-between gap-2">
-                  <span>
-                    {stat}: {value}
-                  </span>
-                  {canTrain(selected.growthStage) && (
-                    <button
-                      onClick={() => handleTrain(selected.id, stat as GeneticStatKey)}
-                      disabled={selected.energy < ENERGY_PER_TRAIN}
-                      className="rounded bg-black/10 px-2 py-0.5 text-xs font-semibold text-amber-800 hover:bg-black/20 disabled:cursor-not-allowed disabled:text-neutral-400 disabled:hover:bg-black/10"
-                    >
-                      Train
-                    </button>
-                  )}
-                </li>
-              ))}
-            </ul>
-
-            <h3 className="mt-4 flex items-center gap-1 font-display font-semibold">✨ Traits</h3>
-            <p className="text-sm opacity-80">
-              {selected.traits.length ? selected.traits.map((t) => t.name).join(", ") : "None"}
-            </p>
-
-            <h3 className="mt-4 flex items-center gap-1 font-display font-semibold">🏆 Record</h3>
-            <p className="text-sm opacity-80">
-              {selected.record.wins}W - {selected.record.losses}L · {selected.record.championships}{" "}
-              championships
-            </p>
-
-            <Link
-              href={`/tournament/${selected.id}`}
-              className="mt-4 flex items-center justify-center gap-1.5 rounded bg-black/10 px-3 py-2 text-sm font-semibold hover:bg-black/20"
-            >
-              🏆 Enter Tournament
-            </Link>
-
-            <Link
-              href={`/pedigree/${selected.id}`}
-              className="mt-2 flex items-center justify-center gap-1.5 rounded bg-black/10 px-3 py-2 text-sm font-semibold hover:bg-black/20"
-            >
-              🌳 View Pedigree
-            </Link>
-
-            <button
-              onClick={() => {
-                if (confirm(`Sell ${selected.name} for Battle Credits? This can't be undone.`)) {
-                  handleSell(selected.id);
-                }
-              }}
-              className="mt-2 flex w-full items-center justify-center gap-1.5 rounded bg-red-900/20 px-3 py-2 text-sm font-semibold text-red-800 hover:bg-red-900/30"
-            >
-              🪙 Sell Chicken
-            </button>
-          </div>
         </div>
       )}
     </main>

@@ -28,6 +28,8 @@ model Chicken {
   bloodlineId String
   iv          Json
   ev          Json
+  physical      Json    @default("{\"body\":1,\"neck\":1,\"legs\":1,\"tail\":1,\"wings\":1}")
+  mutations     Json    @default("{}")
   traits      Json
   age         Int
   health      Int
@@ -36,7 +38,7 @@ model Chicken {
   status      String
   growthStage String
   fightingStyle String @default("balanced")
-  colorScheme   Json   @default("{\"body\":\"#8b6f47\",\"head\":\"#6b5637\",\"comb\":\"#ff0000\",\"tail\":\"#a0826d\",\"feet\":\"#ff8c00\"}")
+  colorScheme   Json   @default("{\"feathers\":\"#8b6f47\",\"details\":\"#ff0000\",\"eyes\":\"#050505\",\"tail\":\"#a0826d\",\"pattern\":\"SOLID\",\"patternColor\":\"#4a3521\"}")
   injured       Boolean @default(false)
   createdAt   DateTime @default(now())
 }
@@ -50,6 +52,8 @@ model MarketListing {
   motherId      String?
   bloodlineId   String
   iv            Json
+  physical      Json     @default("{\"body\":1,\"neck\":1,\"legs\":1,\"tail\":1,\"wings\":1}")
+  mutations     Json     @default("{}")
   traits        Json
   fightingStyle String
   colorScheme   Json
@@ -67,6 +71,8 @@ model Egg {
   generation  Int
   sex         String
   iv          Json
+  physical    Json     @default("{\"body\":1,\"neck\":1,\"legs\":1,\"tail\":1,\"wings\":1}")
+  mutations   Json     @default("{}")
   traits      Json
   laidAt      DateTime @default(now())
   status      String

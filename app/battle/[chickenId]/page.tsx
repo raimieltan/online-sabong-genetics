@@ -6,9 +6,11 @@ import Link from "next/link";
 import type { Chicken, CombatResult } from "@/lib/types";
 import BattleCanvas from "@/components/BattleCanvas";
 import CombatResultsScreen from "@/components/CombatResultsScreen";
-import { ChickenViewer } from "@/components/chicken3d/ChickenViewer";
+import { MatchupScreen } from "@/components/battle/MatchupScreen";
 
 type Phase = "loading" | "ready" | "fighting" | "replaying" | "result" | "error";
+
+const AUDIO_STORAGE_KEY = "rooster-arena-audio-enabled";
 
 export default function BattlePage({
   params,
@@ -25,6 +27,19 @@ export default function BattlePage({
   const [log, setLog] = useState<CombatResult["log"]>([]);
   const [updatedChicken, setUpdatedChicken] = useState<Chicken | null>(null);
   const [creditsEarned, setCreditsEarned] = useState(0);
+  const [audioEnabled, setAudioEnabled] = useState(() => {
+    if (typeof window === "undefined") return true;
+    const stored = window.localStorage.getItem(AUDIO_STORAGE_KEY);
+    return stored === null ? true : stored === "true";
+  });
+
+  function toggleAudio() {
+    setAudioEnabled((prev) => {
+      const next = !prev;
+      window.localStorage.setItem(AUDIO_STORAGE_KEY, String(next));
+      return next;
+    });
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -147,55 +162,34 @@ export default function BattlePage({
   if (!chicken || !opponent) return null;
 
   return (
-    <main className="min-h-screen bg-(--color-ink) p-6">
-      <div className="mx-auto max-w-3xl">
-        <div className="panel-wood mb-4 flex items-center justify-between rounded-lg p-4">
+    <main className="min-h-screen bg-(--color-ink)">
+      <div className={phase === "replaying" ? "mx-auto p-6 pb-0" : "mx-auto p-6"}>
+        <div className="panel-wood mb-4 flex items-center justify-between w-full rounded-lg p-4">
           <Link href="/coop" className="text-sm text-(--color-gold-bright) hover:underline">
             ← Coop
           </Link>
           <h1 className="flex items-center gap-2 font-display text-xl font-semibold text-(--foreground)">
             ⚔️ {chicken.name} <span className="text-(--color-text-muted)">vs</span> {opponent.name}
           </h1>
+          <button
+            type="button"
+            onClick={toggleAudio}
+            aria-label={audioEnabled ? "Mute audio" : "Unmute audio"}
+            aria-pressed={audioEnabled}
+            className="rounded-full border border-(--color-gold)/30 bg-black/30 px-3 py-1.5 text-lg leading-none hover:bg-black/50"
+          >
+            {audioEnabled ? "🔊" : "🔇"}
+          </button>
         </div>
 
         {(phase === "ready" || phase === "fighting") && (
-          <div className="panel-wood flex flex-col items-center gap-6 rounded-lg p-6">
-            <div className="grid w-full grid-cols-[1fr_auto_1fr] items-center gap-4 text-center">
-              <div className="rounded-lg border border-sky-700/40 bg-black/25 p-4">
-                <ChickenViewer chicken={chicken} interactive={false} className="h-28 w-full" />
-                <p className="mt-1 font-display text-lg font-semibold text-(--foreground)">{chicken.name}</p>
-                <p className="text-xs uppercase tracking-wide text-(--color-gold-bright)">
-                  {chicken.fightingStyle}
-                </p>
-              </div>
-              <span className="font-display text-2xl font-black text-(--color-text-muted)">VS</span>
-              <div className="rounded-lg border border-rose-700/40 bg-black/25 p-4">
-                <ChickenViewer chicken={opponent} interactive={false} className="h-28 w-full" />
-                <p className="mt-1 font-display text-lg font-semibold text-(--foreground)">{opponent.name}</p>
-                <p className="text-xs uppercase tracking-wide text-(--color-gold-bright)">
-                  {opponent.fightingStyle}
-                </p>
-              </div>
-            </div>
-            <button
-              onClick={handleFight}
-              disabled={phase === "fighting"}
-              className="rounded-md bg-gradient-to-b from-(--color-gold-bright) to-(--color-gold) px-8 py-3 font-display font-semibold text-(--color-ink) shadow-lg shadow-black/40 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {phase === "fighting" ? "Fighting..." : "⚔️ Fight"}
-            </button>
-          </div>
+          <MatchupScreen
+            chicken={chicken}
+            opponent={opponent}
+            fighting={phase === "fighting"}
+            onFight={handleFight}
+          />
         )}
-
-      {phase === "replaying" && (
-        <BattleCanvas
-          chickenA={chicken}
-          chickenB={opponent}
-          log={log}
-          audioEnabled={false}
-          onReplayEnd={() => setPhase("result")}
-        />
-      )}
 
       {phase === "result" && result && (
         <CombatResultsScreen
@@ -208,6 +202,16 @@ export default function BattlePage({
         />
       )}
       </div>
+
+      {phase === "replaying" && (
+        <BattleCanvas
+          chickenA={chicken}
+          chickenB={opponent}
+          log={log}
+          audioEnabled={audioEnabled}
+          onReplayEnd={() => setPhase("result")}
+        />
+      )}
     </main>
   );
 }

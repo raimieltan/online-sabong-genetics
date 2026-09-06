@@ -89,12 +89,14 @@ export class Spring {
   value: number;
   velocity = 0;
 
-  constructor(
-    private stiffness: number,
-    private damping: number,
-    private mass = 1,
-    initial = 0
-  ) {
+  private stiffness: number;
+  private damping: number;
+  private mass: number;
+
+  constructor(stiffness: number, damping: number, mass = 1, initial = 0) {
+    this.stiffness = stiffness;
+    this.damping = damping;
+    this.mass = mass;
     this.value = initial;
   }
 

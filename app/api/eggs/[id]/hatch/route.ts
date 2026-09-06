@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { createChicken, generateChickName } from "@/lib/chickenGenerator";
 import { prisma } from "@/lib/db";
 import { getOrCreatePlayer } from "@/lib/player";
-import type { StatBlock, Trait } from "@/lib/types";
+import type { MutationGenome, PhysicalBlock, StatBlock, Trait } from "@/lib/types";
 
 export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -24,6 +24,8 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     parents: { fatherId: egg.fatherId, motherId: egg.motherId },
     bloodlineId: egg.bloodlineId,
     iv: egg.iv as unknown as StatBlock,
+    physical: egg.physical as unknown as PhysicalBlock,
+    mutations: egg.mutations as unknown as MutationGenome,
     traits: egg.traits as unknown as Trait[],
     growthStage: "chick",
   });
@@ -41,6 +43,8 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
         bloodlineId: chick.bloodlineId,
         iv: chick.iv,
         ev: chick.ev,
+        physical: chick.physical,
+        mutations: chick.mutations,
         traits: chick.traits,
         age: chick.age,
         health: chick.health,

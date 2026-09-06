@@ -19,6 +19,8 @@ export type TournamentPlacement = 1 | 2 | 3 | null;
 export type TournamentResult = {
   /** One CombatResult per match the player's chicken fought, in order. */
   matches: CombatResult[];
+  /** The opponent Chicken faced in each match, parallel to `matches`. */
+  opponentsFought: Chicken[];
   placement: TournamentPlacement;
   tokensAwarded: number;
 };
@@ -52,6 +54,7 @@ export function runTournament(
 
   const rounds = Math.log2(TOURNAMENT_SIZE);
   const matches: CombatResult[] = [];
+  const opponentsFought: Chicken[] = [];
   const current = playerChicken;
   const opponentPool = [...opponents];
 
@@ -59,17 +62,18 @@ export function runTournament(
     const opponent = opponentPool.pop()!;
     const result = fight(current, opponent);
     matches.push(result);
+    opponentsFought.push(opponent);
 
     if (result.winnerId !== current.id) {
       const placement: TournamentPlacement =
         round === rounds - 1 ? 2 : round === rounds - 2 ? 3 : null;
-      return { matches, placement, tokensAwarded: placement ? PRIZE_TOKENS[placement] : 0 };
+      return { matches, opponentsFought, placement, tokensAwarded: placement ? PRIZE_TOKENS[placement] : 0 };
     }
 
     if (round === rounds - 1) {
-      return { matches, placement: 1, tokensAwarded: PRIZE_TOKENS[1] };
+      return { matches, opponentsFought, placement: 1, tokensAwarded: PRIZE_TOKENS[1] };
     }
   }
 
-  return { matches, placement: null, tokensAwarded: 0 };
+  return { matches, opponentsFought, placement: null, tokensAwarded: 0 };
 }

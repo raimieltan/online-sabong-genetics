@@ -16,12 +16,18 @@ export const STAT_KEYS: readonly StatKey[] = [
   "luck",
 ];
 
-export type RoosterColorScheme = {
-  body: string;
-  head: string;
-  comb: string;
+/** Feather pattern gene — drives the shader-based pattern on the M_Feathers material. */
+export const FEATHER_PATTERNS = ["SOLID", "BARRED", "LACED", "MOTTLED", "SPANGLED"] as const;
+export type FeatherPattern = (typeof FEATHER_PATTERNS)[number];
+
+/** Color/pattern genes, mapped onto the new rig's 4 recolorable materials plus a shader pattern. */
+export type ChickenColorScheme = {
+  feathers: string;
+  details: string;
+  eyes: string;
   tail: string;
-  feet: string;
+  pattern: FeatherPattern;
+  patternColor: string;
 };
 
 export type Rooster = {
@@ -37,7 +43,7 @@ export type Rooster = {
   maxHp: number;
   hp: number;
   fatigued: boolean;
-  colorScheme: RoosterColorScheme;
+  colorScheme: ChickenColorScheme;
 };
 
 export type BattleLogEntry = {
@@ -96,6 +102,43 @@ export const GENETIC_STAT_KEYS: readonly GeneticStatKey[] = [
 
 /** A full set of values across all genetic stats (used for both IV and EV). */
 export type StatBlock = Record<GeneticStatKey, number>;
+
+/**
+ * The 5 body-proportion genes the 3D rig can actually render (bone scales on
+ * Chest/Neck/ThighL,R/Tail/WingL,R). A single genetic block — proportions
+ * aren't trained, so there's no IV/EV split like the combat stats.
+ */
+export type PhysicalTraitKey = "body" | "neck" | "legs" | "tail" | "wings";
+
+export const PHYSICAL_TRAIT_KEYS: readonly PhysicalTraitKey[] = [
+  "body",
+  "neck",
+  "legs",
+  "tail",
+  "wings",
+];
+
+/** Inheritance/randomization clamp range per physical trait, matching the rig's slider bounds. */
+export const PHYSICAL_TRAIT_RANGE: Record<PhysicalTraitKey, { min: number; max: number }> = {
+  body: { min: 0.7, max: 1.4 },
+  neck: { min: 0.6, max: 2.2 },
+  legs: { min: 0.6, max: 2.0 },
+  tail: { min: 0.4, max: 2.2 },
+  wings: { min: 0.5, max: 2.0 },
+};
+
+export type PhysicalBlock = Record<PhysicalTraitKey, number>;
+
+/** How a mutation gene resolves between two alleles into an offspring's expressed trait. */
+export type MutationInheritance = "dominant" | "recessive" | "codominant" | "random";
+
+export type MutationRarity = "common" | "uncommon" | "rare" | "epic" | "legendary" | "anomalous";
+
+/** A chicken's state for one mutation gene: does it carry an allele, and is it expressed? */
+export type MutationGeneState = { carrier: boolean; expressed: boolean };
+
+/** Keyed by MutationDefinition.id (see lib/mutations.ts) — only genes the chicken carries/expresses are present. */
+export type MutationGenome = Record<string, MutationGeneState>;
 
 export type ChickenSex = "rooster" | "hen";
 
@@ -167,6 +210,8 @@ export type Chicken = {
   bloodlineId: string;
   iv: StatBlock;
   ev: StatBlock;
+  physical: PhysicalBlock;
+  mutations: MutationGenome;
   traits: Trait[];
   age: number;
   health: number;
@@ -175,7 +220,7 @@ export type Chicken = {
   status: ChickenStatus;
   growthStage: GrowthStage;
   fightingStyle: FightingStyle;
-  colorScheme: RoosterColorScheme;
+  colorScheme: ChickenColorScheme;
   injured: boolean;
   createdAt: number;
 };
@@ -203,6 +248,22 @@ export const HIT_ZONES: readonly HitZone[] = [
   "right_leg",
 ];
 
+/**
+ * How hard a hit rocks the defender — server-decided, the 3D layer only renders it (V2 battle spec §28).
+ * "stumble" shares "medium"'s damage-severity band but is rolled instead of it specifically for leg-zone
+ * hits against low-agility defenders — a trip/loss-of-footing reaction distinct from a generic flinch.
+ */
+export type StaggerLevel = "none" | "light" | "stumble" | "medium" | "heavy" | "knockdown";
+
+export const STAGGER_LEVELS: readonly StaggerLevel[] = [
+  "none",
+  "light",
+  "stumble",
+  "medium",
+  "heavy",
+  "knockdown",
+];
+
 export type CombatLogEntry = {
   turn: number;
   attackerId: string;
@@ -214,6 +275,7 @@ export type CombatLogEntry = {
   isCounter: boolean;
   isCritical: boolean;
   defenderHp: number;
+  stagger: StaggerLevel;
   timestamp: number;
 };
 
@@ -240,6 +302,8 @@ export type Egg = {
   generation: number;
   sex: ChickenSex;
   iv: StatBlock;
+  physical: PhysicalBlock;
+  mutations: MutationGenome;
   traits: Trait[];
   laidAt: number;
   status: EggStatus;

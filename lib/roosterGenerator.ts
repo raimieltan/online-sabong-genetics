@@ -1,7 +1,7 @@
 import {
   STAT_KEYS,
+  type ChickenColorScheme,
   type Rooster,
-  type RoosterColorScheme,
   type StatKey,
 } from "./types";
 
@@ -25,11 +25,11 @@ const RANDOM_NAME_POOL: readonly string[] = [
   "Ember",
 ];
 
-/** Dark-neon palette families from the design spec (reds / greens / browns). */
-export const COLOR_PALETTES: readonly RoosterColorScheme[] = [
-  { body: "#d4514f", head: "#c0622e", comb: "#ff0000", tail: "#ff4444", feet: "#ff8c00" },
-  { body: "#4a7c59", head: "#2d5f3d", comb: "#ff0000", tail: "#66cc88", feet: "#ff8c00" },
-  { body: "#8b6f47", head: "#6b5637", comb: "#ff0000", tail: "#a0826d", feet: "#ff8c00" },
+/** Dark-neon palette families from the design spec (reds / greens / browns), remapped onto the new rig's materials. */
+export const COLOR_PALETTES: readonly ChickenColorScheme[] = [
+  { feathers: "#d4514f", details: "#ff0000", eyes: "#050505", tail: "#ff4444", pattern: "SOLID", patternColor: "#5c1f1d" },
+  { feathers: "#4a7c59", details: "#ff0000", eyes: "#050505", tail: "#66cc88", pattern: "BARRED", patternColor: "#1c3a26" },
+  { feathers: "#8b6f47", details: "#ff0000", eyes: "#050505", tail: "#a0826d", pattern: "MOTTLED", patternColor: "#4a3521" },
 ];
 
 function cryptoSafeId(seed: string): string {
@@ -55,7 +55,7 @@ function pickRandomName(): string {
   return RANDOM_NAME_POOL[Math.floor(Math.random() * RANDOM_NAME_POOL.length)];
 }
 
-function pickRandomPalette(): RoosterColorScheme {
+function pickRandomPalette(): ChickenColorScheme {
   return { ...COLOR_PALETTES[Math.floor(Math.random() * COLOR_PALETTES.length)] };
 }
 

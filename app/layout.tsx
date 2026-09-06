@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono, Cinzel } from "next/font/google";
+import { Bangers, Geist, Geist_Mono, Cinzel } from "next/font/google";
 
 import { Sidebar } from "@/components/Sidebar";
 import { TopBar } from "@/components/TopBar";
+import { ThumbnailGenerator } from "@/components/chicken3d/ThumbnailGenerator";
 
 import "./globals.css";
 
@@ -22,6 +23,13 @@ const cinzel = Cinzel({
   weight: ["500", "600", "700"],
 });
 
+/** Comic-book sound-effect lettering for the /live feed's onomatopoeia bursts. */
+const bangers = Bangers({
+  variable: "--font-comic",
+  subsets: ["latin"],
+  weight: "400",
+});
+
 export const metadata: Metadata = {
   title: "Cockfight Chronicles",
   description: "Breed. Fight. Rule.",
@@ -31,7 +39,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} ${cinzel.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} ${cinzel.variable} ${bangers.variable} h-full antialiased`}
     >
       <body className="min-h-full bg-(--color-ink) text-(--foreground) md:flex">
         <Sidebar />
@@ -39,6 +47,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           <TopBar />
           {children}
         </div>
+        <ThumbnailGenerator />
       </body>
     </html>
   );

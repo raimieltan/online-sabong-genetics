@@ -29,6 +29,8 @@ export async function POST() {
       bloodlineId: generated.bloodlineId,
       iv: generated.iv,
       ev: generated.ev,
+      physical: generated.physical,
+      mutations: generated.mutations,
       traits: generated.traits,
       age: generated.age,
       health: generated.health,

@@ -3,11 +3,11 @@ import { randomUUID } from "node:crypto";
 import { NextResponse } from "next/server";
 
 import { prisma } from "@/lib/db";
-import { inheritStatBlock } from "@/lib/genetics";
+import { inheritMutations, inheritPhysicalBlock, inheritStatBlock } from "@/lib/genetics";
 import { canBreed } from "@/lib/growth";
 import { getOrCreatePlayer } from "@/lib/player";
 import { inheritTraits } from "@/lib/traits";
-import type { GrowthStage, StatBlock, Trait } from "@/lib/types";
+import type { GrowthStage, MutationGenome, PhysicalBlock, StatBlock, Trait } from "@/lib/types";
 
 export async function POST(request: Request) {
   const body = (await request.json()) as { fatherId?: string; motherId?: string };
@@ -43,6 +43,14 @@ export async function POST(request: Request) {
   }
 
   const iv = inheritStatBlock(father.iv as unknown as StatBlock, mother.iv as unknown as StatBlock);
+  const physical = inheritPhysicalBlock(
+    father.physical as unknown as PhysicalBlock,
+    mother.physical as unknown as PhysicalBlock
+  );
+  const mutations = inheritMutations(
+    father.mutations as unknown as MutationGenome,
+    mother.mutations as unknown as MutationGenome
+  );
   const traits = inheritTraits(father.traits as unknown as Trait[], mother.traits as unknown as Trait[]);
   const generation = Math.max(father.generation, mother.generation) + 1;
 
@@ -56,6 +64,8 @@ export async function POST(request: Request) {
       generation,
       sex: Math.random() < 0.5 ? "rooster" : "hen",
       iv,
+      physical,
+      mutations,
       traits,
       status: "incubating",
     },

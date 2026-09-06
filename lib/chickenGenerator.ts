@@ -1,13 +1,17 @@
 import {
   FIGHTING_STYLES,
   GENETIC_STAT_KEYS,
+  PHYSICAL_TRAIT_KEYS,
+  PHYSICAL_TRAIT_RANGE,
   type Chicken,
+  type ChickenColorScheme,
   type ChickenParentage,
   type ChickenSex,
   type CombatRecord,
   type FightingStyle,
   type GrowthStage,
-  type RoosterColorScheme,
+  type MutationGenome,
+  type PhysicalBlock,
   type StatBlock,
   type Trait,
 } from "./types";
@@ -92,8 +96,25 @@ function pickRandomFightingStyle(): FightingStyle {
   return FIGHTING_STYLES[Math.floor(Math.random() * FIGHTING_STYLES.length)];
 }
 
-function pickRandomColorScheme(): RoosterColorScheme {
+function pickRandomColorScheme(): ChickenColorScheme {
   return { ...COLOR_PALETTES[Math.floor(Math.random() * COLOR_PALETTES.length)] };
+}
+
+/** Baseline (all-1) physical block — gen-0 stock and any input that doesn't specify physique. */
+function defaultPhysicalBlock(): PhysicalBlock {
+  const block = {} as PhysicalBlock;
+  PHYSICAL_TRAIT_KEYS.forEach((key) => (block[key] = 1));
+  return block;
+}
+
+/** Uniform-random physical block across each trait's full rig-supported range, for gen-0 chickens. */
+function randomPhysicalBlock(): PhysicalBlock {
+  const block = {} as PhysicalBlock;
+  PHYSICAL_TRAIT_KEYS.forEach((key) => {
+    const { min, max } = PHYSICAL_TRAIT_RANGE[key];
+    block[key] = Number((min + Math.random() * (max - min)).toFixed(2));
+  });
+  return block;
 }
 
 function zeroStatBlock(): StatBlock {
@@ -124,6 +145,8 @@ export type CreateChickenInput = {
   parents: ChickenParentage;
   bloodlineId: string;
   iv: StatBlock;
+  physical?: PhysicalBlock;
+  mutations?: MutationGenome;
   growthStage?: GrowthStage;
   traits?: Trait[];
 };
@@ -144,6 +167,8 @@ export function createChicken(input: CreateChickenInput): Chicken {
     bloodlineId: input.bloodlineId,
     iv: input.iv,
     ev: zeroStatBlock(),
+    physical: input.physical ?? defaultPhysicalBlock(),
+    mutations: input.mutations ?? {},
     traits: input.traits ?? [],
     age: 0,
     health: 100,
@@ -177,5 +202,6 @@ export function generateRandomChicken(options: GenerateRandomChickenOptions = {}
     parents: { fatherId: null, motherId: null },
     bloodlineId: id,
     iv: randomStatBlock(MIN_IV, MAX_IV),
+    physical: randomPhysicalBlock(),
   });
 }

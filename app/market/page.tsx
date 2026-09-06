@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 
 import type { MarketListingRow } from "@/lib/marketplace";
 import { RARITY_BORDER, RARITY_GEM, topRarity } from "@/lib/rarity";
-import { ChickenViewer } from "@/components/chicken3d/ChickenViewer";
+import { ChickenThumbnail } from "@/components/chicken3d/ChickenThumbnail";
 
 const SEX_ICON: Record<string, string> = { rooster: "🐓", hen: "🐔" };
 
@@ -88,11 +88,7 @@ export default function MarketPage() {
                 key={listing.id}
                 className={`panel-wood rounded-lg border-t-2 p-4 ${RARITY_BORDER[rarity]}`}
               >
-                <ChickenViewer
-                  chicken={listing}
-                  className="mb-2 h-40 w-full rounded-lg bg-(--color-ink)"
-                  cameraDistance={5}
-                />
+                <ChickenThumbnail chicken={listing} className="mb-2 h-40 w-full rounded-lg bg-(--color-ink)" />
                 <div className="flex items-center gap-2">
                   <span className="text-xl">{SEX_ICON[listing.sex]}</span>
                   <div>

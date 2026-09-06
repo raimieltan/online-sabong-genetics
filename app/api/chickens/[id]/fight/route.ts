@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
 
 import { prisma } from "@/lib/db";
-import { canFight, finalHealthPercent, simulateFight } from "@/lib/combat";
+import { applyFightOutcome, canFight, simulateFight } from "@/lib/combat";
 import { BATTLE_WIN_CREDITS, earnCredits } from "@/lib/economy";
 import { getOrCreatePlayer } from "@/lib/player";
-import type { Chicken, CombatRecord } from "@/lib/types";
+import type { Chicken } from "@/lib/types";
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -28,26 +28,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
   const result = simulateFight(chicken, opponent);
   const won = result.winnerId === chicken.id;
-  const wasInjured = result.injuredChickenId === chicken.id;
-
-  const record = chicken.record as CombatRecord;
-  const updatedRecord: CombatRecord = {
-    ...record,
-    wins: record.wins + (won ? 1 : 0),
-    losses: record.losses + (won ? 0 : 1),
-    koTko: record.koTko + (won && result.outcomeReason !== "timeout" ? 1 : 0),
-    decisions: record.decisions + (result.outcomeReason === "timeout" ? 1 : 0),
-  };
+  const outcome = applyFightOutcome(chicken, result);
 
   const [updated, updatedPlayer] = await Promise.all([
     prisma.chicken.update({
       where: { id },
-      data: {
-        record: updatedRecord,
-        health: finalHealthPercent(result, chicken),
-        injured: wasInjured,
-        status: wasInjured ? "injured" : chicken.status,
-      },
+      data: outcome,
     }),
     won
       ? prisma.player.update({

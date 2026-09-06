@@ -1,10 +1,9 @@
-import { Suspense } from "react";
 import type { CSSProperties } from "react";
 
 import type { Chicken } from "@/lib/types";
 import { GENETIC_STAT_KEYS } from "@/lib/types";
 import { RARITY_COLOR, RARITY_GLOW, topRarity } from "@/lib/rarity";
-import { ChickenViewer } from "@/components/chicken3d/ChickenViewer";
+import { ChickenThumbnail } from "@/components/chicken3d/ChickenThumbnail";
 
 const SEX_ICON: Record<Chicken["sex"], string> = { rooster: "🐓", hen: "🐔" };
 
@@ -85,15 +84,7 @@ export function ParentCard({
               className="model-stage-light my-3 h-36 w-full"
               style={{ "--stage-glow": RARITY_GLOW[rarity] } as CSSProperties}
             >
-              <Suspense
-                fallback={
-                  <div className="flex h-full w-full items-center justify-center text-4xl opacity-40">
-                    {SEX_ICON[chicken.sex]}
-                  </div>
-                }
-              >
-                <ChickenViewer chicken={chicken} interactive={false} cameraDistance={4} className="h-full w-full" />
-              </Suspense>
+              <ChickenThumbnail chicken={chicken} className="h-full w-full" />
             </div>
 
             <div className="space-y-1.5">
