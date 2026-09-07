@@ -4,6 +4,7 @@ import { declineMultiplier, deriveLifeStage } from "../career/aging";
 import { createInjuryRecord } from "../combat/injuries";
 import { prisma } from "../db";
 import { canTrain } from "../growth";
+import { isTrainingLocked } from "../medical/rehab";
 import { applyDevelopment } from "../training/development";
 import { canAffordTrainingPoints, defaultTrainingState, overtrainingInjuryChance, TRAINING_POINT_COST } from "../training/limits";
 import {
@@ -87,6 +88,11 @@ export async function startTrainingSession(
     if (chicken.playerId !== playerId) throw new FacilityError("CHICKEN_NOT_OWNED");
     if (!canTrain(chicken.growthStage as GrowthStage)) throw new FacilityError("CHICKEN_NOT_ELIGIBLE");
     if (chicken.energy < program.energyCost) throw new FacilityError("INSUFFICIENT_ENERGY");
+
+    const activeInjuries = ((chicken.injuries as unknown as InjuryRecord[]) ?? []).filter(
+      (i) => i.permanent || i.recoveryRemaining > 0,
+    );
+    if (isTrainingLocked(activeInjuries, resolvedCategory)) throw new FacilityError("TRAINING_LOCKED_BY_INJURY");
 
     const trainingState = (chicken.trainingState as unknown as TrainingState) ?? defaultTrainingState();
     if (!canAffordTrainingPoints(trainingState)) throw new FacilityError("TRAINING_LIMIT_REACHED");

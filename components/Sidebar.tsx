@@ -7,6 +7,8 @@ const LINKS = [
   { href: "/", label: "Home", icon: "🏠" },
   { href: "/coop", label: "Coop", icon: "🐔" },
   { href: "/breed", label: "Breeding", icon: "🥚" },
+  { href: "/training", label: "Training", icon: "🏋️" },
+  { href: "/clinic", label: "Clinic", icon: "🏥" },
   { href: "/market", label: "Market", icon: "🛒" },
   { href: "/live", label: "Live", icon: "🔴" },
 ] as const;

@@ -6,7 +6,10 @@ import { useSearchParams } from "next/navigation";
 
 import { TRAINING_GYM_UPGRADES, TRAINING_PROGRAMS } from "@/lib/facilities/config";
 import type { ProgramId } from "@/lib/facilities/types";
-import { TRAINING_CATEGORIES, type Chicken, type TrainingCategory } from "@/lib/types";
+import { TRAINING_CATEGORIES, type Chicken, type InjuryRecord, type TrainingCategory } from "@/lib/types";
+import { trainingLocks } from "@/lib/medical/rehab";
+import { battleEligibility } from "@/lib/medical/eligibility";
+import { describeMedicalStatus, medicalStatus } from "@/lib/medical/status";
 
 type FacilityViewDTO = { id: string; level: number; capacity: number; efficiency: number; unlockedPrograms: ProgramId[] };
 type SessionDTO = {
@@ -102,6 +105,13 @@ function TrainingPageContent() {
 
   const nextUpgradeCost = TRAINING_GYM_UPGRADES[facility.level + 1]?.cost;
 
+  const selected = chickens.find((c) => c.id === selectedChicken) ?? null;
+  const selectedActiveInjuries: InjuryRecord[] = (selected?.injuries ?? []).filter(
+    (i) => i.permanent || i.recoveryRemaining > 0,
+  );
+  const locks = trainingLocks(selectedActiveInjuries);
+  const selectedEligibility = selected ? battleEligibility(selected) : null;
+
   return (
     <main className="mx-auto min-h-screen max-w-4xl p-6">
       <div className="mb-6 flex items-center justify-between">
@@ -170,11 +180,36 @@ function TrainingPageContent() {
           </select>
         </div>
 
+        {selected && (
+          <div className="mb-4 rounded-md border border-(--color-parchment-dark) bg-black/5 p-3 text-xs">
+            <p>
+              <span className="font-semibold">{selected.name}</span> · medical status:{" "}
+              <span className="uppercase">{describeMedicalStatus(medicalStatus(selected))}</span> · fatigue{" "}
+              {selected.trainingState?.trainingFatigue ?? 0}/100
+            </p>
+            {locks.size > 0 && (
+              <p className="mt-1 text-red-700">
+                🔒 Injury locks: {[...locks].join(", ")} training unavailable until healed.
+              </p>
+            )}
+            {selectedEligibility && !selectedEligibility.eligible && (
+              <p className="mt-1 text-amber-700">⚠ {selectedEligibility.reasons.join(" · ")}</p>
+            )}
+          </div>
+        )}
+
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {facility.unlockedPrograms.map((programId) => {
             const program = TRAINING_PROGRAMS[programId];
+            const lockedCategory =
+              program.category !== "custom" && locks.has(program.category as TrainingCategory);
+            const customLocked = program.category === "custom" && locks.has(selectedCategory);
+            const disabled = Boolean(lockedCategory || customLocked);
             return (
-              <div key={programId} className="rounded-md border border-(--color-parchment-dark) p-3">
+              <div
+                key={programId}
+                className={`rounded-md border border-(--color-parchment-dark) p-3 ${disabled ? "opacity-50" : ""}`}
+              >
                 <p className="font-display font-semibold">{program.name}</p>
                 <p className="text-xs opacity-70">{program.description}</p>
                 <p className="mt-1 text-xs opacity-80">
@@ -195,9 +230,10 @@ function TrainingPageContent() {
                 )}
                 <button
                   onClick={() => startTraining(programId)}
-                  className="mt-2 w-full rounded bg-black/10 px-3 py-1.5 text-xs font-semibold hover:bg-black/20"
+                  disabled={disabled}
+                  className="mt-2 w-full rounded bg-black/10 px-3 py-1.5 text-xs font-semibold hover:bg-black/20 disabled:cursor-not-allowed disabled:hover:bg-black/10"
                 >
-                  Train
+                  {disabled ? "Locked by injury" : "Train"}
                 </button>
               </div>
             );

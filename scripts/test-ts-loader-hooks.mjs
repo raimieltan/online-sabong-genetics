@@ -26,7 +26,11 @@ export async function resolve(specifier, context, nextResolve) {
   try {
     return await nextResolve(target, context);
   } catch (err) {
-    if (err && err.code === "ERR_MODULE_NOT_FOUND") {
+    // ERR_MODULE_NOT_FOUND: no such file — try appending an extension.
+    // ERR_UNSUPPORTED_DIR_IMPORT: a sibling *directory* matched the bare
+    //   specifier (e.g. `../combat` when both `combat.ts` and `combat/`
+    //   exist). The bundler resolver prefers the file, so retry with `.ts`.
+    if (err && (err.code === "ERR_MODULE_NOT_FOUND" || err.code === "ERR_UNSUPPORTED_DIR_IMPORT")) {
       const fallbackExt = isRelative || isAlias ? "ts" : "js";
       return nextResolve(`${target}.${fallbackExt}`, context);
     }

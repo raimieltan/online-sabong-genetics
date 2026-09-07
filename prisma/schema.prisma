@@ -47,6 +47,9 @@ model Chicken {
   experience    Json    @default("{\"offensive\":0,\"defensive\":0,\"evasion\":0,\"counter\":0,\"pressure\":0,\"recovery\":0,\"adaptation\":0}")
   condition     Int     @default(100)
   injuries      Json    @default("[]")
+  illnesses     Json    @default("[]")
+  stress        Int     @default(0)
+  morale        Int     @default(75)
   trainingState Json    @default("{\"trainingPoints\":100,\"trainingFatigue\":0,\"history\":[]}")
   createdAt   DateTime @default(now())
 }
@@ -92,7 +95,7 @@ model Egg {
 model Facility {
   id        String   @id @default(uuid())
   playerId  String
-  player    Player   @relation(fields: [playerId], references: [id])
+  player    Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
   type      String
   level     Int      @default(1)
   createdAt DateTime @default(now())
@@ -106,7 +109,7 @@ model Facility {
 model PveProgress {
   id                  String    @id @default(uuid())
   playerId            String
-  player              Player    @relation(fields: [playerId], references: [id])
+  player              Player    @relation(fields: [playerId], references: [id], onDelete: Cascade)
   bossId              String
   clearCount          Int       @default(0)
   firstClearedAt      DateTime?
@@ -123,7 +126,7 @@ model TrainingSession {
   playerId         String
   chickenId        String
   facilityId       String
-  facility         Facility  @relation(fields: [facilityId], references: [id])
+  facility         Facility  @relation(fields: [facilityId], references: [id], onDelete: Cascade)
   programId        String
   category         String
   status           String    @default("ACTIVE")
@@ -135,4 +138,23 @@ model TrainingSession {
   adaptationResult Json?
   completedAt      DateTime?
   createdAt        DateTime  @default(now())
+}
+
+model MedicalTreatment {
+  id            String    @id @default(uuid())
+  playerId      String
+  chickenId     String
+  injuryId      String?
+  type          String
+  status        String    @default("ACTIVE")
+  effectiveness Float     @default(1)
+  clinicLevel   Int       @default(1)
+  cost          Int       @default(0)
+  startedAt     DateTime  @default(now())
+  durationMinutes Int
+  completedAt   DateTime?
+  result        Json?
+  createdAt     DateTime  @default(now())
+
+  @@index([chickenId, status])
 }

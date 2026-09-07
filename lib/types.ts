@@ -283,6 +283,12 @@ export type Chicken = {
   experience?: CombatExperience;
   condition?: number;
   injuries?: InjuryRecord[];
+  /** Active illnesses (spec §34) — optional so pre-medical rows still type-check. */
+  illnesses?: IllnessRecord[];
+  /** Accumulated stress 0-100 (spec §48); recovery brings it down. */
+  stress?: number;
+  /** Morale 0-100 (spec §46); wins/good recovery raise it, losses/injury/overtraining lower it. */
+  morale?: number;
   trainingState?: TrainingState;
 };
 
@@ -400,7 +406,74 @@ export type InjuryRecord = {
   recoveryRemaining: number;
   permanent: boolean;
   statPenalty?: Partial<StatBlock>;
+  /** Body region — drives training locks (spec §86-87) and reinjury risk (spec §42). Optional for pre-medical rows. */
+  location?: InjuryLocation;
+  /** Set once a clinic treatment has been started against this injury (spec §41). */
+  inTreatment?: boolean;
 };
+
+/** Injury body regions (spec §27). */
+export type InjuryLocation =
+  | "head"
+  | "neck"
+  | "chest"
+  | "wing"
+  | "leg"
+  | "foot"
+  | "joint"
+  | "muscle"
+  | "internal";
+
+export const INJURY_LOCATIONS: readonly InjuryLocation[] = [
+  "head",
+  "neck",
+  "chest",
+  "wing",
+  "leg",
+  "foot",
+  "joint",
+  "muscle",
+  "internal",
+];
+
+/** Illness is separate from injury (spec §34) — it comes from condition/stress/overtraining, not combat. */
+export type IllnessType =
+  | "fatigue_illness"
+  | "respiratory"
+  | "digestive"
+  | "infection"
+  | "environmental"
+  | "stress_condition";
+
+export type IllnessRecord = {
+  id: string;
+  type: IllnessType;
+  label: string;
+  severity: "minor" | "moderate" | "severe";
+  incurredAt: number;
+  /** Rest/treatment cycles remaining before it clears. */
+  recoveryRemaining: number;
+};
+
+/** Player-facing medical state (spec §35). Derived, never stored. */
+export type MedicalStatus =
+  | "healthy"
+  | "minor_issue"
+  | "needs_attention"
+  | "injured"
+  | "ill"
+  | "recovering"
+  | "critical";
+
+/** Return-to-training ladder after a serious injury (spec §41, §87). */
+export type RehabStage =
+  | "critical"
+  | "stabilized"
+  | "recovery"
+  | "rehabilitation"
+  | "light_training"
+  | "normal_training"
+  | "recovered";
 
 export type TrainingCategory =
   | "strength"

@@ -1,12 +1,11 @@
 import { NextResponse } from "next/server";
 
-import { recoverCondition } from "@/lib/career/condition";
 import { prisma } from "@/lib/db";
 import { getOrCreatePlayer } from "@/lib/player";
-import { defaultTrainingState, restEnergy, restTrainingState } from "@/lib/training";
+import { applyRecovery, type RecoveryMethod } from "@/lib/recovery/engine";
 import type { Chicken } from "@/lib/types";
 
-export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const player = await getOrCreatePlayer();
   const row = await prisma.chicken.findUnique({ where: { id } });
@@ -16,13 +15,23 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   }
   const chicken = row as unknown as Chicken;
 
-  const { energy } = restEnergy();
-  const trainingState = restTrainingState(chicken.trainingState ?? defaultTrainingState());
-  const condition = recoverCondition(chicken.condition ?? 100);
+  const body = (await request.json().catch(() => ({}))) as { method?: RecoveryMethod };
+  const method: RecoveryMethod = body.method === "extended_rest" ? "extended_rest" : "rest";
+
+  const result = applyRecovery(chicken, method, 0);
 
   const updated = await prisma.chicken.update({
     where: { id },
-    data: { energy, trainingState, condition },
+    data: {
+      energy: result.energy,
+      condition: result.condition,
+      stress: result.stress,
+      morale: result.morale,
+      trainingState: result.trainingState as object,
+      injuries: result.injuries as object,
+      illnesses: result.illnesses as object,
+      injured: result.injuries.some((i) => !i.permanent && i.recoveryRemaining > 0),
+    },
   });
 
   return NextResponse.json(updated);

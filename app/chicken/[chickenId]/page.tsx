@@ -12,6 +12,7 @@ import { MAX_EV, defaultTrainingState } from "@/lib/training";
 import { getMutationDefinition } from "@/lib/mutations";
 import { RARITY_COLOR, RARITY_GEM, topRarity } from "@/lib/rarity";
 import { ChickenViewer } from "@/components/chicken3d/ChickenViewer";
+import { ConditionMonitor } from "@/components/ConditionMonitor";
 import { deriveBehaviorProfile } from "@/lib/combat/behavior";
 import { emptyExperience } from "@/lib/combat/experience";
 import { summarizeCareer } from "@/lib/career/retirement";
@@ -83,14 +84,6 @@ const BEHAVIOR_ICON: Record<keyof BehavioralProfile, string> = {
 };
 
 const EXPERIENCE_CAP = 500;
-
-function conditionLabel(condition: number): string {
-  if (condition >= 90) return "Peak";
-  if (condition >= 75) return "Good";
-  if (condition >= 50) return "Compromised";
-  if (condition >= 25) return "Poor";
-  return "Unfit";
-}
 
 const MUTATION_RARITY_COLOR: Record<MutationRarity, string> = {
   common: "border-neutral-600 text-neutral-300",
@@ -211,7 +204,6 @@ function ChickenDetailPageContent({ params }: { params: Promise<{ chickenId: str
 
   const rarity = topRarity(chicken.traits);
   const stars = Math.max(1, ["common", "uncommon", "rare", "epic", "legendary"].indexOf(rarity) + 1);
-  const condition = chicken.condition ?? 100;
   const behavior: BehavioralProfile = chicken.behavior ?? deriveBehaviorProfile(chicken.fightingStyle, chicken.traits);
   const experience: CombatExperience = chicken.experience ?? emptyExperience();
   const injuries = chicken.injuries ?? [];
@@ -361,37 +353,42 @@ function ChickenDetailPageContent({ params }: { params: Promise<{ chickenId: str
             </div>
 
             <div className="border-t border-(--color-parchment-dark) pt-4">
-              <div className="flex items-center justify-between">
-                <h3 className="font-display font-semibold">💚 Condition</h3>
-                <span className="text-sm font-semibold opacity-70">
-                  {condition}/100 · {conditionLabel(condition)}
-                </span>
-              </div>
-              <div className="mt-2">
-                <StatBar icon="💚" label="condition" value={condition} max={100} />
+              <ConditionMonitor chicken={chicken} />
+              <div className="mt-3 flex flex-wrap gap-2">
+                {injuries.some((i) => !i.permanent && i.recoveryRemaining > 0) && (
+                  <button
+                    onClick={handleHeal}
+                    className="rounded bg-black/10 px-3 py-1.5 text-xs font-semibold hover:bg-black/20"
+                  >
+                    Quick Heal
+                  </button>
+                )}
+                {(injuries.length > 0 || (chicken.illnesses ?? []).length > 0) && (
+                  <Link
+                    href="/clinic"
+                    className="rounded bg-black/10 px-3 py-1.5 text-xs font-semibold hover:bg-black/20"
+                  >
+                    🏥 Go to Clinic
+                  </Link>
+                )}
               </div>
             </div>
 
             {injuries.length > 0 && (
               <div className="border-t border-(--color-parchment-dark) pt-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="mb-2 font-display font-semibold">🩹 Injuries</h3>
-                  {injuries.some((i) => !i.permanent && i.recoveryRemaining > 0) && (
-                    <button
-                      onClick={handleHeal}
-                      className="rounded bg-black/10 px-3 py-1.5 text-xs font-semibold hover:bg-black/20"
-                    >
-                      Heal
-                    </button>
-                  )}
-                </div>
+                <h3 className="mb-2 font-display font-semibold">🩹 Injuries</h3>
                 <div className="space-y-1.5">
                   {injuries.map((injury) => (
                     <p key={injury.id} className="text-sm opacity-80">
                       {injury.label}{" "}
                       <span className="text-xs uppercase opacity-60">
                         · {injury.severity.replace("_", " ")}
-                        {injury.permanent ? " · permanent" : ` · ${injury.recoveryRemaining} left to heal`}
+                        {injury.location ? ` · ${injury.location}` : ""}
+                        {injury.permanent
+                          ? " · permanent"
+                          : injury.inTreatment
+                            ? " · in treatment"
+                            : ` · ${injury.recoveryRemaining} left to heal`}
                       </span>
                     </p>
                   ))}
