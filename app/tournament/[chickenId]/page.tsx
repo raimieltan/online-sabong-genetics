@@ -40,6 +40,7 @@ export default function TournamentPage({ params }: { params: Promise<{ chickenId
   const [roundIndex, setRoundIndex] = useState(0);
   const [placement, setPlacement] = useState<number | null>(null);
   const [tokensAwarded, setTokensAwarded] = useState(0);
+  const [finalChicken, setFinalChicken] = useState<Chicken | null>(null);
   const [audioEnabled, setAudioEnabled] = useState(() => {
     if (typeof window === "undefined") return true;
     const stored = window.localStorage.getItem(AUDIO_STORAGE_KEY);
@@ -78,6 +79,15 @@ export default function TournamentPage({ params }: { params: Promise<{ chickenId
     return () => clearTimeout(timer);
   }, [phase, roundIndex]);
 
+  // Only reveal the post-tournament win/loss/KO record once the player has
+  // actually watched the last round resolve, not the moment the server
+  // response (which already reflects the whole bracket) comes back.
+  useEffect(() => {
+    if (phase !== "result" || !finalChicken) return;
+    setChicken(finalChicken);
+    setFinalChicken(null);
+  }, [phase, finalChicken]);
+
   // Auto-advance from the round-result banner into the next round (or final result).
   useEffect(() => {
     if (phase !== "round-banner") return;
@@ -107,7 +117,11 @@ export default function TournamentPage({ params }: { params: Promise<{ chickenId
     setOpponentsFought(body.opponentsFought);
     setPlacement(body.placement);
     setTokensAwarded(body.tokensAwarded);
-    setChicken(body.chicken);
+    // The server resolves the whole bracket (and persists the final win/loss/KO
+    // record) in one shot, but the player still needs to watch each round play
+    // out — so hold the post-tournament chicken back and only reveal it once
+    // the last round's animation has actually finished (see the effect below).
+    setFinalChicken(body.chicken);
     setRoundIndex(0);
     setPhase(body.matches.length > 0 ? "matchup" : "result");
   }

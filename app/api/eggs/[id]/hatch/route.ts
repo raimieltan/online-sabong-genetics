@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { createChicken, generateChickName } from "@/lib/chickenGenerator";
+import { createChicken, generateUniqueChickName } from "@/lib/chickenGenerator";
 import { prisma } from "@/lib/db";
 import { getOrCreatePlayer } from "@/lib/player";
 import type { ChickenColorScheme, MutationGenome, PhysicalBlock, StatBlock, Trait } from "@/lib/types";
@@ -17,8 +17,13 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     return NextResponse.json({ error: "Egg has already hatched" }, { status: 400 });
   }
 
+  const name = await generateUniqueChickName(async (candidate) => {
+    const existing = await prisma.chicken.findFirst({ where: { name: candidate }, select: { id: true } });
+    return existing !== null;
+  });
+
   const chick = createChicken({
-    name: generateChickName(),
+    name,
     sex: egg.sex as "rooster" | "hen",
     generation: egg.generation,
     parents: { fatherId: egg.fatherId, motherId: egg.motherId },

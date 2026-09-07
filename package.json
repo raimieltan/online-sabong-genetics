@@ -10,6 +10,8 @@
     "test": "node --import ./scripts/test-ts-loader.mjs --test --test-concurrency=1 lib/__tests__/*.test.ts",
     "db:up": "docker compose up -d",
     "seed:god": "node --import ./scripts/test-ts-loader.mjs scripts/seed-god-chickens.ts",
+    "seed:monochrome": "node --import ./scripts/test-ts-loader.mjs scripts/seed-monochrome-pairs.ts",
+    "backfill:colors": "node --import ./scripts/test-ts-loader.mjs scripts/backfill-color-jitter.ts",
     "postinstall": "prisma generate"
   },
   "dependencies": {

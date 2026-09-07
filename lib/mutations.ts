@@ -34,7 +34,7 @@ export const MUTATION_POOL: readonly MutationDefinition[] = [
     compatibleMutations: ["albino", "giant"],
     incompatibleMutations: ["two_headed"],
     canBeCarrier: true,
-    canStack: false,
+    canStack: true,
   },
   {
     id: "extra_wings",
@@ -99,7 +99,7 @@ export const MUTATION_POOL: readonly MutationDefinition[] = [
     compatibleMutations: ["giant"],
     incompatibleMutations: ["iron_spurs", "extra_wings"],
     canBeCarrier: true,
-    canStack: false,
+    canStack: true,
   },
 ];
 

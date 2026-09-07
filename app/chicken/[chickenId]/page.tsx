@@ -8,7 +8,7 @@ import type { Chicken, GeneticStatKey, MutationRarity } from "@/lib/types";
 import { GENETIC_STAT_KEYS, PHYSICAL_TRAIT_KEYS, PHYSICAL_TRAIT_RANGE } from "@/lib/types";
 import { canAgeUp, canRetire, canTrain } from "@/lib/growth";
 import { canFight } from "@/lib/combat";
-import { ENERGY_PER_TRAIN, MAX_EV, defaultTrainingState } from "@/lib/training";
+import { MAX_EV, defaultTrainingState } from "@/lib/training";
 import { getMutationDefinition } from "@/lib/mutations";
 import { RARITY_COLOR, RARITY_GEM, topRarity } from "@/lib/rarity";
 import { ChickenViewer } from "@/components/chicken3d/ChickenViewer";
@@ -128,6 +128,7 @@ function ChickenDetailPageContent({ params }: { params: Promise<{ chickenId: str
   const [chicken, setChicken] = useState<Chicken | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [bossVictories, setBossVictories] = useState<string[]>([]);
   const requestedTab = searchParams.get("tab");
   const initialTab = (TABS as readonly string[]).includes(requestedTab ?? "") ? (requestedTab as Tab) : "Info";
   const [tab, setTab] = useState<Tab>(initialTab);
@@ -144,14 +145,18 @@ function ChickenDetailPageContent({ params }: { params: Promise<{ chickenId: str
       .finally(() => setLoading(false));
   }, [chickenId]);
 
-  async function handleTrain(stat: GeneticStatKey) {
-    const res = await fetch(`/api/chickens/${chickenId}/train`, {
-      method: "POST",
-      body: JSON.stringify({ stat }),
-    });
-    if (!res.ok) return;
-    setChicken(await res.json());
-  }
+  useEffect(() => {
+    fetch("/api/pve/bosses")
+      .then((r) => r.json())
+      .then((b: { bosses: { boss: { name: string }; progress: { firstClearChickenId: string | null } }[] }) => {
+        setBossVictories(
+          (b.bosses ?? [])
+            .filter((e) => e.progress.firstClearChickenId === chickenId)
+            .map((e) => e.boss.name),
+        );
+      })
+      .catch(() => {});
+  }, [chickenId]);
 
   async function handleRest() {
     const res = await fetch(`/api/chickens/${chickenId}/rest`, { method: "POST" });
@@ -311,6 +316,12 @@ function ChickenDetailPageContent({ params }: { params: Promise<{ chickenId: str
               {chicken.record.koTko} KO/TKO
             </p>
 
+            {bossVictories.length > 0 && (
+              <p className="text-sm opacity-80">
+                <span className="font-semibold">🛡️ Boss victories:</span> {bossVictories.join(", ")}
+              </p>
+            )}
+
             <div className="flex items-center justify-between border-t border-(--color-parchment-dark) pt-4">
               <div>
                 <h3 className="font-display font-semibold">⚡ Energy</h3>
@@ -450,18 +461,18 @@ function ChickenDetailPageContent({ params }: { params: Promise<{ chickenId: str
                   <div className="flex-1">
                     <StatBar icon={STAT_ICON[stat]} label={stat} value={chicken.ev[stat]} max={MAX_EV} />
                   </div>
-                  {canTrain(chicken.growthStage) && (
-                    <button
-                      onClick={() => handleTrain(stat)}
-                      disabled={chicken.energy < ENERGY_PER_TRAIN}
-                      className="rounded bg-black/10 px-2 py-1 text-xs font-semibold text-amber-800 hover:bg-black/20 disabled:cursor-not-allowed disabled:text-neutral-400 disabled:hover:bg-black/10"
-                    >
-                      Train
-                    </button>
-                  )}
                 </div>
               ))}
             </div>
+
+            {canTrain(chicken.growthStage) && (
+              <Link
+                href={`/training?chickenId=${chicken.id}`}
+                className="mt-2 flex items-center justify-center gap-1.5 rounded bg-gradient-to-b from-(--color-gold-bright) to-(--color-gold) px-3 py-2 text-sm font-semibold text-(--color-ink) hover:brightness-110"
+              >
+                🏋️ Go to Training Gym
+              </Link>
+            )}
           </div>
         )}
 

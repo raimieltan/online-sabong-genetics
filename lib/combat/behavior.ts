@@ -135,30 +135,35 @@ export function scoreAction(profile: BehavioralProfile, action: CombatAction, ct
   const def = ACTION_DEFINITIONS[action];
   let score = 0;
 
+  // Gamefowl still carry some baseline "instinct to engage", but it's small
+  // enough that a style's actual tendencies (aggression, counterPreference,
+  // recoveryPreference, pressurePreference, persistence) decide what a bird
+  // mostly does — a low-aggression archetype should not out-attack a
+  // high-aggression one just because attacking has a fixed floor.
   switch (action) {
     case "LIGHT_ATTACK":
-      score += profile.aggression * 0.6 + (1 - profile.caution) * 0.2;
+      score += 0.12 + profile.aggression * 0.75 + (1 - profile.caution) * 0.25;
       break;
     case "HEAVY_ATTACK":
-      score += profile.aggression * profile.riskTolerance * 1.1;
+      score += profile.aggression * profile.riskTolerance * 1.7;
       break;
     case "PRESSURE":
-      score += profile.pressurePreference * 0.9;
+      score += profile.pressurePreference * 1.15 + profile.persistence * 0.1;
       break;
     case "EVADE":
-      score += profile.caution * 0.6 + (1 - profile.riskTolerance) * 0.3;
+      score += profile.caution * 0.3 + (1 - profile.riskTolerance) * 0.2;
       break;
     case "COUNTER":
-      score += profile.counterPreference * 0.9 + ctx.experience.counter / 400;
+      score += profile.counterPreference * 0.85 + ctx.experience.counter / 400;
       break;
     case "GUARD":
-      score += profile.caution * 0.5;
+      score += profile.caution * 0.4 + profile.persistence * 0.15;
       break;
     case "RECOVER":
-      score += profile.recoveryPreference * 0.8;
+      score += profile.recoveryPreference * 0.9 + profile.persistence * 0.2;
       break;
     case "REPOSITION":
-      score += (profile.caution + profile.patience) * 0.3;
+      score += (profile.caution + profile.patience) * 0.2;
       break;
   }
 

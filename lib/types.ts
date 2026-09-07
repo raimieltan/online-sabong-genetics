@@ -428,7 +428,7 @@ export type TrainingState = {
   trainingPoints: number;
   /** Accumulated overtraining load, 0-100 — pushes effectiveness down the diminishing-returns curve. */
   trainingFatigue: number;
-  history: { category: TrainingCategory; at: number }[];
+  history: { category: TrainingCategory; programId?: string; at: number }[];
 };
 
 /** Derived, never stored directly — emerges from growthStage + condition + experience + training (V2 spec §30). */

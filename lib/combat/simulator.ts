@@ -208,6 +208,55 @@ export function simulateBattle(chickenA: Chicken, chickenB: Chicken, rng: Rng = 
       winner = attackerState;
       loser = defenderState;
     }
+
+    if (!fightOver && outcome.returnExchange) {
+      const re = outcome.returnExchange;
+      const reAttackerState = re.attackerId === chickenA.id ? stateA : stateB;
+      const reDefenderState = re.defenderId === chickenA.id ? stateA : stateB;
+      reAttackerState.battleExperienceGain = gainExperience(
+        reAttackerState.battleExperienceGain,
+        categoryForAction(re.attackerAction),
+        re.hit.isMiss ? 1 : re.hit.isCrit ? 4 : 2
+      );
+      reAttackerState.wasHitLastTurn = false;
+      reDefenderState.wasHitLastTurn = !re.hit.isMiss;
+
+      log.push({
+        turn,
+        attackerId: re.attackerId,
+        defenderId: re.defenderId,
+        damage: re.hit.damage,
+        hitZone: re.hit.hitZone,
+        isMiss: re.hit.isMiss,
+        isCrit: re.hit.isCrit,
+        isCounter: false,
+        isCritical: re.hit.isCritical,
+        defenderHp: reDefenderState.hp,
+        stagger: re.hit.stagger,
+        timestamp: Date.now(),
+        attackerAction: re.attackerAction,
+        defenderAction: re.defenderAction,
+        attackerState: re.attackerId === chickenA.id ? contextA : contextB,
+        defenderState: re.defenderId === chickenA.id ? contextA : contextB,
+        momentum: { attacker: reAttackerState.momentum, defender: reDefenderState.momentum },
+        position: reAttackerState.position,
+        distance: reAttackerState.distance,
+        fatigue: { attacker: reAttackerState.fatigue, defender: reDefenderState.fatigue },
+      });
+
+      if (re.hit.isCritical) {
+        fightOver = true;
+        outcomeReason = "critical_injury";
+        injuredChickenId = reDefenderState.chicken.id;
+        winner = reAttackerState;
+        loser = reDefenderState;
+      } else if (reDefenderState.hp <= 0) {
+        fightOver = true;
+        outcomeReason = "ko";
+        winner = reAttackerState;
+        loser = reDefenderState;
+      }
+    }
   }
 
   if (!fightOver) {

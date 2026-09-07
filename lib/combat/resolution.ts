@@ -16,6 +16,8 @@ const MAX_CRIT_CHANCE = 0.25;
 const CRIT_DAMAGE_MULT = 1.5;
 const MAX_DEFENSE_REDUCTION = 0.4;
 const MIN_DAMAGE = 0.5;
+/** When both fighters commit to offense, the initiative loser still lands their swing, but at reduced potency — they were caught a beat behind. */
+const TRADE_RETURN_POTENCY = 0.6;
 const LEG_ZONES: readonly HitZone[] = ["left_leg", "right_leg"];
 const WING_ZONES: readonly HitZone[] = ["left_wing", "right_wing"];
 
@@ -205,6 +207,19 @@ export type ExchangeOutcome = {
   defenderAction: CombatAction;
   hit: HitOutcome;
   isCounterSwitch: boolean;
+  /**
+   * Present only when both fighters committed to offensive actions this turn:
+   * the initiative loser's own attack still connects (spec §13 "exchange"),
+   * resolved second and at reduced potency. Without this a fast fighter that
+   * always wins initiative shuts a slower opponent out of the fight entirely.
+   */
+  returnExchange?: {
+    attackerId: string;
+    defenderId: string;
+    attackerAction: CombatAction;
+    defenderAction: CombatAction;
+    hit: HitOutcome;
+  };
 };
 
 /**
@@ -317,6 +332,50 @@ export function resolveExchange(params: {
   attacker.momentum = Math.max(-100, Math.min(100, attacker.momentum + momentumDelta(attackerEvent)));
   defender.momentum = Math.max(-100, Math.min(100, defender.momentum - momentumDelta(attackerEvent) * 0.6));
 
+  // Both fighters swung: the one who lost initiative still gets their attack in,
+  // resolved second, unless the first hit already dropped or rocked them.
+  let returnExchange: ExchangeOutcome["returnExchange"];
+  if (
+    !isCounterSwitch &&
+    isOffensive(attackerAction) &&
+    isOffensive(defenderAction) &&
+    defender.hp > 0 &&
+    !hit.isCritical &&
+    staggerLevelToTurns(hit.stagger) === 0
+  ) {
+    const returnHit = resolveHit({
+      attacker: defender,
+      defender: attacker,
+      action: defenderAction,
+      attackerPhysical: defenderPhysical,
+      defenderPhysical: attackerPhysical,
+      vulnerabilityMult: TRADE_RETURN_POTENCY,
+      forceMiss: false,
+      rng,
+    });
+    if (!returnHit.isMiss) {
+      attacker.hp = Math.max(0, attacker.hp - returnHit.damage);
+      attacker.staggerTurns = Math.max(attacker.staggerTurns, staggerLevelToTurns(returnHit.stagger));
+      defender.momentum = Math.max(-100, Math.min(100, defender.momentum + momentumDelta({
+        landedHit: true,
+        wasEvaded: false,
+        wasGuarded: false,
+        wasCountered: false,
+        didCounter: false,
+        causedStagger: returnHit.stagger !== "none",
+        gainedPosition: false,
+        opponentFatigued: attacker.fatigue >= 50,
+      }) * 0.6));
+    }
+    returnExchange = {
+      attackerId: defender.chicken.id,
+      defenderId: attacker.chicken.id,
+      attackerAction: defenderAction,
+      defenderAction: attackerAction,
+      hit: returnHit,
+    };
+  }
+
   return {
     attackerId: attacker.chicken.id,
     defenderId: defender.chicken.id,
@@ -324,5 +383,6 @@ export function resolveExchange(params: {
     defenderAction,
     hit,
     isCounterSwitch,
+    returnExchange,
   };
 }

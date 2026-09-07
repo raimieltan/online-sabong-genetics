@@ -132,6 +132,14 @@ function hslToRgb(h: number, s: number, l: number): [number, number, number] {
   return [(r + m) * 255, (g + m) * 255, (b + m) * 255];
 }
 
+/** Drifts an RGB color's hue/lightness slightly, drawing two rng samples (hue then lightness). */
+function driftRgb(r: number, g: number, b: number, rng: Rng): [number, number, number] {
+  const [hRaw, s, lRaw] = rgbToHsl(r, g, b);
+  const h = (hRaw + (rng() - 0.5) * 0.05 + 1) % 1;
+  const l = clamp(lRaw + (rng() - 0.5) * 0.06, 0, 1);
+  return hslToRgb(h, s, l);
+}
+
 /** Blends two parent hex colors and drifts hue/lightness slightly, matching roosterGenome.ts's breed(). */
 function inheritColorHex(fatherHex: string, motherHex: string, rng: Rng): string {
   const [fr, fg, fb] = hexToRgb(fatherHex);
@@ -141,12 +149,7 @@ function inheritColorHex(fatherHex: string, motherHex: string, rng: Rng): string
   const g = fg * (1 - w) + mg * w;
   const b = fb * (1 - w) + mb * w;
 
-  const [hRaw, s, lRaw] = rgbToHsl(r, g, b);
-  let h = hRaw;
-  let l = lRaw;
-  h = (h + (rng() - 0.5) * 0.05 + 1) % 1;
-  l = clamp(l + (rng() - 0.5) * 0.06, 0, 1);
-  const [dr, dg, db] = hslToRgb(h, s, l);
+  const [dr, dg, db] = driftRgb(r, g, b, rng);
   return rgbToHex(dr, dg, db);
 }
 
@@ -162,6 +165,27 @@ export function inheritColorScheme(
   }
   result.pattern = rng() < 0.5 ? father.pattern : mother.pattern;
   result.patternColor = inheritColorHex(father.patternColor, mother.patternColor, rng);
+  return result;
+}
+
+/** Drifts a single hex color's hue/lightness slightly, same drift shape as inheritColorHex without a blend parent. */
+function jitterColorHex(hex: string, rng: Rng): string {
+  const [r, g, b] = hexToRgb(hex);
+  const [dr, dg, db] = driftRgb(r, g, b, rng);
+  return rgbToHex(dr, dg, db);
+}
+
+/**
+ * Applies per-individual jitter to every one of the 7 material colors plus patternColor, for
+ * gen-0 chickens drawn from a shared base palette — so two chickens rolling the same palette (or
+ * the same breed preset) don't end up with byte-identical material colors.
+ */
+export function jitterColorScheme(scheme: ChickenColorScheme, rng: Rng = Math.random): ChickenColorScheme {
+  const result = { ...scheme };
+  for (const key of COLOR_KEYS) {
+    result[key] = jitterColorHex(scheme[key], rng);
+  }
+  result.patternColor = jitterColorHex(scheme.patternColor, rng);
   return result;
 }
 

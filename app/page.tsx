@@ -2,8 +2,8 @@ import Link from "next/link";
 
 export default function Home() {
   return (
-    <main className="flex min-h-screen items-center justify-center bg-(--color-ink) p-6">
-      <div className="panel-wood w-full max-w-lg rounded-2xl p-8 text-center">
+    <main className="flex min-h-screen w-full items-center justify-center bg-(--color-ink) p-6">
+      <div className="panel-wood w-full rounded-2xl p-8 text-center">
         <p className="text-4xl">🐓</p>
         <h1 className="mt-3 font-display text-3xl font-semibold text-(--color-gold-bright)">
           Cockfight Chronicles
@@ -24,6 +24,18 @@ export default function Home() {
             className="rounded-md border border-(--color-gold)/30 bg-black/25 px-6 py-3 font-display font-semibold text-(--foreground) transition hover:bg-black/40"
           >
             💞 Go to Breeding
+          </Link>
+          <Link
+            href="/training"
+            className="rounded-md border border-(--color-gold)/30 bg-black/25 px-6 py-3 font-display font-semibold text-(--foreground) transition hover:bg-black/40"
+          >
+            🏋️ Training Gym
+          </Link>
+          <Link
+            href="/pve"
+            className="rounded-md border border-(--color-gold)/30 bg-black/25 px-6 py-3 font-display font-semibold text-(--foreground) transition hover:bg-black/40"
+          >
+            🛡️ PvE Bosses
           </Link>
         </div>
       </div>

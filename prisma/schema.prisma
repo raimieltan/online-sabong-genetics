@@ -14,6 +14,8 @@ model Player {
   tournamentTokens Int       @default(0)
   chickens         Chicken[]
   eggs             Egg[]
+  facilities       Facility[]
+  pveProgress      PveProgress[]
 }
 
 model Chicken {
@@ -85,4 +87,52 @@ model Egg {
   traits      Json
   laidAt      DateTime @default(now())
   status      String
+}
+
+model Facility {
+  id        String   @id @default(uuid())
+  playerId  String
+  player    Player   @relation(fields: [playerId], references: [id])
+  type      String
+  level     Int      @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sessions  TrainingSession[]
+
+  @@unique([playerId, type])
+}
+
+model PveProgress {
+  id                  String    @id @default(uuid())
+  playerId            String
+  player              Player    @relation(fields: [playerId], references: [id])
+  bossId              String
+  clearCount          Int       @default(0)
+  firstClearedAt      DateTime?
+  firstClearChickenId String?
+  lastClearedAt       DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@unique([playerId, bossId])
+}
+
+model TrainingSession {
+  id               String    @id @default(uuid())
+  playerId         String
+  chickenId        String
+  facilityId       String
+  facility         Facility  @relation(fields: [facilityId], references: [id])
+  programId        String
+  category         String
+  status           String    @default("ACTIVE")
+  startedAt        DateTime  @default(now())
+  durationMinutes  Int
+  energyCost       Int
+  fatigueCost      Int
+  workload         Int       @default(1)
+  adaptationResult Json?
+  completedAt      DateTime?
+  createdAt        DateTime  @default(now())
 }

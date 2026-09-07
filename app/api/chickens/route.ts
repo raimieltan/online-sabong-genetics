@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { generateRandomChicken } from "@/lib/chickenGenerator";
+import { generateUniqueRandomChicken } from "@/lib/chickenGenerator";
 import { prisma } from "@/lib/db";
 import { getOrCreatePlayer } from "@/lib/player";
 
@@ -15,7 +15,10 @@ export async function GET() {
 
 export async function POST() {
   const player = await getOrCreatePlayer();
-  const generated = generateRandomChicken();
+  const generated = await generateUniqueRandomChicken({}, async (name) => {
+    const existing = await prisma.chicken.findFirst({ where: { name }, select: { id: true } });
+    return existing !== null;
+  });
 
   const chicken = await prisma.chicken.create({
     data: {

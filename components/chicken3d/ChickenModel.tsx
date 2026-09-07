@@ -157,6 +157,7 @@ const BONE_PARENT: Record<string, string | null> = {
   Chest: "Spine",
   Neck: "Chest",
   Head: "Neck",
+  Hackle: "Neck",
   Comb: "Head",
   Wattle: "Head",
   Beak: "Head",
@@ -182,6 +183,10 @@ function worldScales(t: PhysicalBlock): Record<string, [number, number, number]>
     Chest: [t.chest, t.chest, t.chest],
     Neck: [t.neckThick, t.neckLength, t.neckThick],
     Head: [t.headSize, t.headSize, t.headSize],
+    // Fixed world scale — cancels out Neck's genetic scale (Hackle is a
+    // child bone of Neck in the rig) so hackle size never varies with
+    // breeding, regardless of how thick/long/small the neck or head are.
+    Hackle: [1, 1, 1],
     Comb: [t.combSize * 0.6 + 0.4, t.combSize, t.combSize * 0.6 + 0.4],
     Wattle: [t.wattleSize, t.wattleSize, t.wattleSize],
     Beak: [1, 1, t.beakLength],
@@ -224,6 +229,7 @@ const HEN_TAIL_ARC_MULT = 0.6;
 function applyHenOverride(bones: Record<string, THREE.Object3D>, physical: PhysicalBlock) {
   bones["Comb"]?.scale.multiplyScalar(HEN_COMB_SCALE);
   bones["Wattle"]?.scale.multiplyScalar(HEN_COMB_SCALE);
+  bones["Hackle"]?.scale.setScalar(0);
   const tailScale: [number, number, number] = [
     physical.tailSpread,
     physical.tailArc * HEN_TAIL_ARC_MULT,
@@ -233,23 +239,31 @@ function applyHenOverride(bones: Record<string, THREE.Object3D>, physical: Physi
   bones["Tail_Tip"]?.scale.set(...tailScale);
 }
 
-/** Genome → expressed mutation tags drives the mutation-slot bone nodes and material overrides. */
+/**
+ * Genome → expressed mutation tags drives the mutation-slot bone nodes and material overrides.
+ * `mats` maps a rig material name to every cloned instance that shares it — several meshes (e.g.
+ * WingL/WingL_Tip/WingR/WingR_Tip) reuse the same named material in the source GLB, and each gets
+ * its own clone, so every override here must loop over the full array or the un-touched clones
+ * keep the GLB's baked-in default color.
+ */
 function applyVisualTraits(
   bones: Record<string, THREE.Object3D>,
-  mats: Record<string, THREE.MeshStandardMaterial>,
+  mats: Record<string, THREE.MeshStandardMaterial[]>,
   visualTraits: string[]
 ) {
   const has = (tag: string) => visualTraits.includes(tag);
 
   if (has("ALBINO")) {
-    for (const m of ["M_Feathers", "M_Hackle", "M_Wing", "M_Tail"]) mats[m]?.color.set("#f5f2ea");
+    for (const m of ["M_Feathers", "M_Hackle", "M_Wing", "M_Tail"]) {
+      mats[m]?.forEach((mat) => mat.color.set("#f5f2ea"));
+    }
   }
 
   for (const m of ["M_Feathers", "M_Hackle", "M_Wing"]) {
-    const mat = mats[m];
-    if (!mat) continue;
-    mat.emissive = new THREE.Color(has("LUMINESCENT") ? 0x4fffb0 : 0x000000);
-    mat.emissiveIntensity = has("LUMINESCENT") ? 0.55 : 0;
+    for (const mat of mats[m] ?? []) {
+      mat.emissive = new THREE.Color(has("LUMINESCENT") ? 0x4fffb0 : 0x000000);
+      mat.emissiveIntensity = has("LUMINESCENT") ? 0.55 : 0;
+    }
   }
 
   // rooster_rigged.glb ships its mutation slot meshes visible at scale 1, so
@@ -329,7 +343,12 @@ export function ChickenModel({
     // position/rotation. SkeletonUtils.clone rebinds skeletons to the cloned
     // bones so each fighter is independently posable and positionable.
     const clone = SkeletonUtils.clone(scene) as typeof scene;
-    const mats: Record<string, THREE.MeshStandardMaterial> = {};
+    // Several meshes share one named material in the source GLB (e.g. WingL,
+    // WingL_Tip, WingR, and WingR_Tip all use "M_Wing") — each gets its own
+    // clone below, so every name maps to ALL of its clones, not just one.
+    // Recoloring must loop over the whole array or the un-visited clones
+    // keep the GLB's original baked-in color.
+    const mats: Record<string, THREE.MeshStandardMaterial[]> = {};
     const bones: Record<string, THREE.Object3D> = {};
 
     clone.traverse((node) => {
@@ -342,21 +361,21 @@ export function ChickenModel({
       const material = source.clone();
       node.material = material;
       if (material instanceof THREE.MeshStandardMaterial && material.name) {
-        mats[material.name] = material;
+        (mats[material.name] ??= []).push(material);
       }
     });
 
     // 1:1 onto the rig's 7 materials.
-    mats["M_Feathers"]?.color.set(colorScheme.body);
-    mats["M_Hackle"]?.color.set(colorScheme.hackle);
-    mats["M_Wing"]?.color.set(colorScheme.wings);
-    mats["M_Tail"]?.color.set(colorScheme.tail);
-    mats["M_Comb"]?.color.set(colorScheme.comb);
-    mats["M_Beak"]?.color.set(colorScheme.beak);
-    mats["M_Legs"]?.color.set(colorScheme.shanks);
-    if (mats["M_Feathers"]) {
-      installPatternShader(mats["M_Feathers"]);
-      setPattern(mats["M_Feathers"], colorScheme.pattern, colorScheme.patternColor);
+    mats["M_Feathers"]?.forEach((m) => m.color.set(colorScheme.body));
+    mats["M_Hackle"]?.forEach((m) => m.color.set(colorScheme.hackle));
+    mats["M_Wing"]?.forEach((m) => m.color.set(colorScheme.wings));
+    mats["M_Tail"]?.forEach((m) => m.color.set(colorScheme.tail));
+    mats["M_Comb"]?.forEach((m) => m.color.set(colorScheme.comb));
+    mats["M_Beak"]?.forEach((m) => m.color.set(colorScheme.beak));
+    mats["M_Legs"]?.forEach((m) => m.color.set(colorScheme.shanks));
+    for (const feathers of mats["M_Feathers"] ?? []) {
+      installPatternShader(feathers);
+      setPattern(feathers, colorScheme.pattern, colorScheme.patternColor);
     }
 
     applyProportions(bones, physical ?? DEFAULT_PHYSICAL_BLOCK);
