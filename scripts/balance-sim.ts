@@ -42,12 +42,12 @@ function buildFighter(style: FightingStyle, name: string): Chicken {
 
 type ActionTally = Partial<Record<CombatAction, number>>;
 
+/** Each fighter always has exactly one action per logged turn — either as the resolved attacker or the reactive defender. */
 function tallyActions(log: ReturnType<typeof simulateFight>["log"], id: string): ActionTally {
   const tally: ActionTally = {};
   for (const entry of log) {
-    if (entry.attackerId === id) {
-      tally[entry.attackerAction] = (tally[entry.attackerAction] ?? 0) + 1;
-    }
+    const action = entry.attackerId === id ? entry.attackerAction : entry.defenderId === id ? entry.defenderAction : null;
+    if (action) tally[action] = (tally[action] ?? 0) + 1;
   }
   return tally;
 }

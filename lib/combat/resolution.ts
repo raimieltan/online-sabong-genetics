@@ -100,7 +100,7 @@ function computeEvadeChance(
 /** Counters punish commitment, not randomness — strongest vs heavy/predictable attacks (spec §12 COUNTER). */
 function computeCounterChance(defender: CombatantState, attackerAction: CombatAction): number {
   const def = ACTION_DEFINITIONS[attackerAction];
-  let chance = defender.behavior.counterPreference * 0.3 + (defender.experience.counter / 500) * 0.25 + def.commitment * 0.3;
+  let chance = defender.behavior.counterPreference * 0.34 + (defender.experience.counter / 500) * 0.25 + def.commitment * 0.26;
   chance += adaptationCounterBonus(defender.opponentModel, defender.experience.adaptation);
   return clamp01(chance);
 }
@@ -167,10 +167,13 @@ function resolveHit(params: {
     : WING_ZONES.includes(hitZone)
       ? 1 / defenderPhysical.wingControl
       : 1;
+  // A patient/persistent fighter (survivor archetype) takes hits better even
+  // in a short fight, not only via long-run fatigue attrition (spec §16/§10).
+  const persistenceMitigation = 1 - defender.behavior.persistence * 0.15;
 
   const damage = Math.max(
     MIN_DAMAGE,
-    (baseDamage + variance) * critMult * traitMult * zonePhysicalMult * vulnerabilityMult * (1 - defenseReduction)
+    (baseDamage + variance) * critMult * traitMult * zonePhysicalMult * vulnerabilityMult * (1 - defenseReduction) * persistenceMitigation
   );
 
   const isCritical = rollCriticalInjury({

@@ -135,35 +135,38 @@ export function scoreAction(profile: BehavioralProfile, action: CombatAction, ct
   const def = ACTION_DEFINITIONS[action];
   let score = 0;
 
-  // Gamefowl still carry some baseline "instinct to engage", but it's small
-  // enough that a style's actual tendencies (aggression, counterPreference,
-  // recoveryPreference, pressurePreference, persistence) decide what a bird
-  // mostly does — a low-aggression archetype should not out-attack a
-  // high-aggression one just because attacking has a fixed floor.
+  // Every style still keeps LIGHT_ATTACK as its default (gamefowl close
+  // distance and strike), but the margin over other actions now tracks each
+  // style's actual tendencies instead of a large fixed floor — a cautious
+  // archetype attacks less often, and its non-offensive actions win out
+  // mainly through the contextual bonuses below (staggered/exhausted/
+  // vulnerable/fatigued/bad-position), not a high flat baseline. That gives
+  // e.g. an endurance bird a real "reacts better in trouble" edge without
+  // forfeiting its own offense the rest of the time.
   switch (action) {
     case "LIGHT_ATTACK":
-      score += 0.12 + profile.aggression * 0.75 + (1 - profile.caution) * 0.25;
+      score += 0.22 + profile.aggression * 0.6 + (1 - profile.caution) * 0.2;
       break;
     case "HEAVY_ATTACK":
-      score += profile.aggression * profile.riskTolerance * 1.7;
+      score += profile.aggression * profile.riskTolerance * 1.3;
       break;
     case "PRESSURE":
       score += profile.pressurePreference * 1.15 + profile.persistence * 0.1;
       break;
     case "EVADE":
-      score += profile.caution * 0.3 + (1 - profile.riskTolerance) * 0.2;
+      score += profile.caution * 0.15 + (1 - profile.riskTolerance) * 0.1;
       break;
     case "COUNTER":
       score += profile.counterPreference * 0.85 + ctx.experience.counter / 400;
       break;
     case "GUARD":
-      score += profile.caution * 0.4 + profile.persistence * 0.15;
+      score += profile.caution * 0.15 + profile.persistence * 0.05;
       break;
     case "RECOVER":
-      score += profile.recoveryPreference * 0.9 + profile.persistence * 0.2;
+      score += profile.recoveryPreference * 0.18 + profile.persistence * 0.05;
       break;
     case "REPOSITION":
-      score += (profile.caution + profile.patience) * 0.2;
+      score += (profile.caution + profile.patience) * 0.15;
       break;
   }
 
