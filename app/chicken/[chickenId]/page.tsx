@@ -1,17 +1,22 @@
 "use client";
 
-import { use, useEffect, useState } from "react";
+import { Suspense, use, useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 import type { Chicken, GeneticStatKey, MutationRarity } from "@/lib/types";
 import { GENETIC_STAT_KEYS, PHYSICAL_TRAIT_KEYS, PHYSICAL_TRAIT_RANGE } from "@/lib/types";
 import { canAgeUp, canRetire, canTrain } from "@/lib/growth";
 import { canFight } from "@/lib/combat";
-import { ENERGY_PER_TRAIN, MAX_EV } from "@/lib/training";
+import { ENERGY_PER_TRAIN, MAX_EV, defaultTrainingState } from "@/lib/training";
 import { getMutationDefinition } from "@/lib/mutations";
 import { RARITY_COLOR, RARITY_GEM, topRarity } from "@/lib/rarity";
 import { ChickenViewer } from "@/components/chicken3d/ChickenViewer";
+import { deriveBehaviorProfile } from "@/lib/combat/behavior";
+import { emptyExperience } from "@/lib/combat/experience";
+import { summarizeCareer } from "@/lib/career/retirement";
+import { growthFactor } from "@/lib/growth";
+import type { BehavioralProfile, CombatExperience, CombatExperienceCategory } from "@/lib/types";
 
 import { StatBar } from "./StatBar";
 
@@ -27,11 +32,24 @@ const STAT_ICON: Record<GeneticStatKey, string> = {
 };
 
 const PHYSICAL_ICON: Record<(typeof PHYSICAL_TRAIT_KEYS)[number], string> = {
-  body: "🐔",
-  neck: "🦢",
-  legs: "🦵",
-  tail: "🪶",
-  wings: "🦅",
+  scale: "🐔",
+  bodyGirth: "🫃",
+  bodyLength: "📏",
+  chest: "💪",
+  neckLength: "🦢",
+  neckThick: "🦢",
+  headSize: "🗣️",
+  combSize: "🔴",
+  wattleSize: "🩸",
+  beakLength: "🦜",
+  wingSpan: "🦅",
+  wingSize: "🪽",
+  legLength: "🦵",
+  legThick: "🦵",
+  footSize: "🦶",
+  tailLength: "🪶",
+  tailSpread: "🦚",
+  tailArc: "🌙",
 };
 
 const MUTATION_RARITY_GEM: Record<MutationRarity, string> = {
@@ -42,6 +60,37 @@ const MUTATION_RARITY_GEM: Record<MutationRarity, string> = {
   legendary: "⭐",
   anomalous: "💠",
 };
+
+const EXPERIENCE_ICON: Record<CombatExperienceCategory, string> = {
+  offensive: "⚔️",
+  defensive: "🛡️",
+  evasion: "💨",
+  counter: "🔁",
+  pressure: "🔥",
+  recovery: "💤",
+  adaptation: "🧠",
+};
+
+const BEHAVIOR_ICON: Record<keyof BehavioralProfile, string> = {
+  aggression: "😤",
+  caution: "🧐",
+  patience: "⏳",
+  riskTolerance: "🎲",
+  pressurePreference: "🥊",
+  counterPreference: "🔁",
+  recoveryPreference: "💤",
+  persistence: "💪",
+};
+
+const EXPERIENCE_CAP = 500;
+
+function conditionLabel(condition: number): string {
+  if (condition >= 90) return "Peak";
+  if (condition >= 75) return "Good";
+  if (condition >= 50) return "Compromised";
+  if (condition >= 25) return "Poor";
+  return "Unfit";
+}
 
 const MUTATION_RARITY_COLOR: Record<MutationRarity, string> = {
   common: "border-neutral-600 text-neutral-300",
@@ -64,13 +113,24 @@ const TAB_ICON: Record<Tab, string> = {
 };
 
 export default function ChickenDetailPage({ params }: { params: Promise<{ chickenId: string }> }) {
+  return (
+    <Suspense fallback={null}>
+      <ChickenDetailPageContent params={params} />
+    </Suspense>
+  );
+}
+
+function ChickenDetailPageContent({ params }: { params: Promise<{ chickenId: string }> }) {
   const { chickenId } = use(params);
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [chicken, setChicken] = useState<Chicken | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
-  const [tab, setTab] = useState<Tab>("Info");
+  const requestedTab = searchParams.get("tab");
+  const initialTab = (TABS as readonly string[]).includes(requestedTab ?? "") ? (requestedTab as Tab) : "Info";
+  const [tab, setTab] = useState<Tab>(initialTab);
 
   useEffect(() => {
     fetch(`/api/chickens/${chickenId}`)
@@ -95,6 +155,12 @@ export default function ChickenDetailPage({ params }: { params: Promise<{ chicke
 
   async function handleRest() {
     const res = await fetch(`/api/chickens/${chickenId}/rest`, { method: "POST" });
+    if (!res.ok) return;
+    setChicken(await res.json());
+  }
+
+  async function handleHeal() {
+    const res = await fetch(`/api/chickens/${chickenId}/heal`, { method: "POST" });
     if (!res.ok) return;
     setChicken(await res.json());
   }
@@ -140,6 +206,12 @@ export default function ChickenDetailPage({ params }: { params: Promise<{ chicke
 
   const rarity = topRarity(chicken.traits);
   const stars = Math.max(1, ["common", "uncommon", "rare", "epic", "legendary"].indexOf(rarity) + 1);
+  const condition = chicken.condition ?? 100;
+  const behavior: BehavioralProfile = chicken.behavior ?? deriveBehaviorProfile(chicken.fightingStyle, chicken.traits);
+  const experience: CombatExperience = chicken.experience ?? emptyExperience();
+  const injuries = chicken.injuries ?? [];
+  const trainingState = chicken.trainingState ?? defaultTrainingState();
+  const careerStory = summarizeCareer(chicken);
   const expressedMutations = Object.entries(chicken.mutations)
     .filter(([, gene]) => gene.expressed)
     .map(([id]) => getMutationDefinition(id))
@@ -177,7 +249,8 @@ export default function ChickenDetailPage({ params }: { params: Promise<{ chicke
             </span>
           </div>
           <p className="mt-1 text-sm text-(--color-text-muted)">
-            Gen {chicken.generation} · {chicken.growthStage.replace("_", " ")} · Age {chicken.age}
+            Gen {chicken.generation} · {chicken.growthStage.replace("_", " ")} · Age {chicken.age} · Development{" "}
+            {Math.round(growthFactor(chicken.growthStage) * 100)}%
           </p>
 
           <div className="mt-4 space-y-2.5">
@@ -186,7 +259,7 @@ export default function ChickenDetailPage({ params }: { params: Promise<{ chicke
                 key={stat}
                 icon={STAT_ICON[stat]}
                 label={stat}
-                value={chicken.iv[stat] + chicken.ev[stat]}
+                value={Math.round((chicken.iv[stat] + chicken.ev[stat]) * growthFactor(chicken.growthStage))}
                 max={200}
               />
             ))}
@@ -274,6 +347,83 @@ export default function ChickenDetailPage({ params }: { params: Promise<{ chicke
               >
                 🌳 View Pedigree
               </Link>
+            </div>
+
+            <div className="border-t border-(--color-parchment-dark) pt-4">
+              <div className="flex items-center justify-between">
+                <h3 className="font-display font-semibold">💚 Condition</h3>
+                <span className="text-sm font-semibold opacity-70">
+                  {condition}/100 · {conditionLabel(condition)}
+                </span>
+              </div>
+              <div className="mt-2">
+                <StatBar icon="💚" label="condition" value={condition} max={100} />
+              </div>
+            </div>
+
+            {injuries.length > 0 && (
+              <div className="border-t border-(--color-parchment-dark) pt-4">
+                <div className="flex items-center justify-between">
+                  <h3 className="mb-2 font-display font-semibold">🩹 Injuries</h3>
+                  {injuries.some((i) => !i.permanent && i.recoveryRemaining > 0) && (
+                    <button
+                      onClick={handleHeal}
+                      className="rounded bg-black/10 px-3 py-1.5 text-xs font-semibold hover:bg-black/20"
+                    >
+                      Heal
+                    </button>
+                  )}
+                </div>
+                <div className="space-y-1.5">
+                  {injuries.map((injury) => (
+                    <p key={injury.id} className="text-sm opacity-80">
+                      {injury.label}{" "}
+                      <span className="text-xs uppercase opacity-60">
+                        · {injury.severity.replace("_", " ")}
+                        {injury.permanent ? " · permanent" : ` · ${injury.recoveryRemaining} left to heal`}
+                      </span>
+                    </p>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="border-t border-(--color-parchment-dark) pt-4">
+              <h3 className="mb-2 font-display font-semibold">🧭 Behavior</h3>
+              <div className="grid grid-cols-2 gap-x-6 gap-y-2 sm:grid-cols-4">
+                {(Object.keys(BEHAVIOR_ICON) as (keyof BehavioralProfile)[]).map((key) => (
+                  <p key={key} className="text-xs opacity-80">
+                    {BEHAVIOR_ICON[key]} {key}: {Math.round(behavior[key] * 100)}%
+                  </p>
+                ))}
+              </div>
+            </div>
+
+            <div className="border-t border-(--color-parchment-dark) pt-4">
+              <h3 className="mb-2 font-display font-semibold">📖 Combat Experience</h3>
+              <div className="space-y-2">
+                {(Object.keys(experience) as CombatExperienceCategory[]).map((key) => (
+                  <StatBar
+                    key={key}
+                    icon={EXPERIENCE_ICON[key]}
+                    label={key}
+                    value={experience[key]}
+                    max={EXPERIENCE_CAP}
+                  />
+                ))}
+              </div>
+            </div>
+
+            <div className="border-t border-(--color-parchment-dark) pt-4">
+              <h3 className="mb-1 font-display font-semibold">🎓 Training Capacity</h3>
+              <p className="text-sm opacity-80">
+                {trainingState.trainingPoints} training points remaining · {trainingState.trainingFatigue}/100 overtraining load
+              </p>
+            </div>
+
+            <div className="border-t border-(--color-parchment-dark) pt-4">
+              <h3 className="mb-1 font-display font-semibold">📜 Career Story</h3>
+              <p className="whitespace-pre-line text-sm leading-relaxed opacity-80">{careerStory}</p>
             </div>
           </div>
         )}

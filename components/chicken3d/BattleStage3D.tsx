@@ -13,7 +13,7 @@ import { ArenaGround } from "./ArenaGround";
 import { ArenaPhysics } from "./ArenaPhysics";
 import { ChickenPhysicsRig, type ChickenPhysicsHandle } from "./ChickenPhysicsRig";
 import { ImpactVFX, type ImpactVFXHandle } from "./ImpactVFX";
-import type { FighterAnim } from "./ChickenModel";
+import { PX_TO_WORLD, type FighterAnim } from "./ChickenModel";
 import type { AnimIntent } from "@/lib/animation/types";
 
 // The GLB models are authored at ~0.7-1 world unit tall (see
@@ -22,11 +22,17 @@ import type { AnimIntent } from "@/lib/animation/types";
 // specks — these constants keep the models close to their native scale and
 // bring the camera in to match, instead of shrinking the fighters further.
 const FIGHTER_X = 0.75;
-const STAGE_Y_OFFSET = -0.55;
-const STAGE_SCALE = 2.2;
+// Whole stage (ground disc + both fighters) sits low so it lands on the painted
+// pit floor in the backdrop rather than floating up at crowd level.
+const STAGE_Y_OFFSET = -3;
+/** Uniform world scale of the fighter rigs. Exported so BattleCanvas can convert its px-space roam/lunge offsets into the same world units the models live in. */
+export const STAGE_SCALE = 1.75;
 
-/** World-space distance each fighter sits from center (BattleCanvas's lunge clamp reads this so a lunge can never close more than the real gap between fighters and pass through). */
+/** World-space X each fighter's rig is anchored at. Their roam/lunge offsets ride on top of this, so it's the neutral centre of the engagement, not a hard position. */
 export const WORLD_HALF_GAP = FIGHTER_X * STAGE_SCALE;
+
+/** A FighterAnim px offset, converted to the world-space delta it actually produces on the model (inner group px → PX_TO_WORLD → outer STAGE_SCALE). */
+export const ANIM_PX_TO_WORLD = PX_TO_WORLD * STAGE_SCALE;
 
 /**
  * Latest attack event for the camera to react to. `seq` is a monotonic counter
@@ -47,14 +53,17 @@ export interface CameraCue {
   focus?: "r1" | "r2" | "midpoint";
 }
 
-// Elevated 3/4 angle looking down at the stage (bird's-eye but tilted, not
-// top-down) — higher and further back than a straight-on eye-level shot so
-// both fighters and the ground read clearly, matching a Pokemon-battle-style
-// framing rather than a flat portrait shot.
-const IDLE_POS = new THREE.Vector3(0, 2.45, 3.7);
-const IDLE_LOOKAT = new THREE.Vector3(0, -0.15, 0);
+// Elevated 3/4 angle that matches the painted sabong-pit backdrop: the camera
+// sits roughly where a spectator on the arena rim stands, looking down across
+// the pit at ~28°. A narrow FOV (instead of the old ~90° fish-eye) keeps the
+// ground disc a flat ellipse that lands inside the painted ring, so the
+// fighters read as standing *inside* that arena rather than on a bulging
+// free-floating dome. The tight orbit arc (see cameraDirector defaults) keeps
+// that alignment while the camera still breathes.
+const IDLE_POS = new THREE.Vector3(0, 1.6, 11.5);
+const IDLE_LOOKAT = new THREE.Vector3(0, -1.5, 0);
 const ORBIT_RADIUS = Math.hypot(IDLE_POS.x, IDLE_POS.z);
-const FOV = 90;
+const FOV = 32;
 
 /**
  * Camera driven by the V2 `CameraDirector` (spec §20–22): a slow front-arc
@@ -65,9 +74,13 @@ const FOV = 90;
 function DirectedCamera({
   cueRef,
   hitStopScaleRef,
+  animA,
+  animB,
 }: {
   cueRef?: RefObject<CameraCue | null>;
   hitStopScaleRef?: RefObject<number>;
+  animA?: RefObject<FighterAnim | null>;
+  animB?: RefObject<FighterAnim | null>;
 }) {
   const director = useMemo(
     () =>
@@ -93,6 +106,24 @@ function DirectedCamera({
     // so the orbit sweep and shake phase hold still too.
     virtualMs.current += dt * 1000;
     const nowMs = virtualMs.current;
+
+    // Keep the framing targets on the actual (roaming) fighters, not the old
+    // fixed ±WORLD_HALF_GAP spots — otherwise the camera bias/push cues drag the
+    // frame to where a bird used to stand.
+    const fy = STAGE_Y_OFFSET + 0.3;
+    const a = animA?.current;
+    const b = animB?.current;
+    const ax = -WORLD_HALF_GAP + (a ? a.offsetX * ANIM_PX_TO_WORLD : 0);
+    const az = a ? a.offsetZ * ANIM_PX_TO_WORLD : 0;
+    const bx = WORLD_HALF_GAP + (b ? b.offsetX * ANIM_PX_TO_WORLD : 0);
+    const bz = b ? b.offsetZ * ANIM_PX_TO_WORLD : 0;
+    focusA.current.x = ax;
+    focusA.current.z = az;
+    focusB.current.x = bx;
+    focusB.current.z = bz;
+    midpoint.current.x = (ax + bx) / 2;
+    midpoint.current.y = fy;
+    midpoint.current.z = (az + bz) / 2;
 
     const cue = cueRef?.current ?? null;
     if (cue) {
@@ -131,6 +162,44 @@ function DirectedCamera({
     }
   });
 
+  return null;
+}
+
+/**
+ * Feeds each fighter's live (roaming) world position into the other's
+ * `opponentPos` ref every frame, so ChickenModel's head-tracking aim keeps
+ * pointing at where the opponent actually is now rather than a fixed ±X spot.
+ */
+function FighterTracker({
+  animA,
+  animB,
+  oppoForA,
+  oppoForB,
+}: {
+  animA: RefObject<FighterAnim | null>;
+  animB: RefObject<FighterAnim | null>;
+  oppoForA: RefObject<THREE.Vector3>;
+  oppoForB: RefObject<THREE.Vector3>;
+}) {
+  useFrame(() => {
+    const a = animA.current;
+    const b = animB.current;
+    const y = STAGE_Y_OFFSET + 0.3;
+    if (b && oppoForA.current) {
+      oppoForA.current.set(
+        WORLD_HALF_GAP + b.offsetX * ANIM_PX_TO_WORLD,
+        y,
+        b.offsetZ * ANIM_PX_TO_WORLD
+      );
+    }
+    if (a && oppoForB.current) {
+      oppoForB.current.set(
+        -WORLD_HALF_GAP + a.offsetX * ANIM_PX_TO_WORLD,
+        y,
+        a.offsetZ * ANIM_PX_TO_WORLD
+      );
+    }
+  });
   return null;
 }
 
@@ -193,9 +262,20 @@ export function BattleStage3D({
       <ambientLight intensity={0.7} />
       <directionalLight position={[3, 5, 2]} intensity={1.4} />
       <directionalLight position={[-3, 2, -2]} intensity={0.4} />
-      <DirectedCamera cueRef={cameraCue} hitStopScaleRef={hitStopScaleRef} />
+      <DirectedCamera
+        cueRef={cameraCue}
+        hitStopScaleRef={hitStopScaleRef}
+        animA={animA}
+        animB={animB}
+      />
+      <FighterTracker
+        animA={animA}
+        animB={animB}
+        oppoForA={oppoPosForA}
+        oppoForB={oppoPosForB}
+      />
       <Suspense fallback={null}>
-        <ArenaGround y={STAGE_Y_OFFSET} />
+        {/* <ArenaGround y={STAGE_Y_OFFSET} radius={3.4} /> */}
         <ArenaPhysics floorY={STAGE_Y_OFFSET}>
           <ChickenPhysicsRig
             ref={physicsA}

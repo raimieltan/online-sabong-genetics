@@ -26,9 +26,10 @@ model Chicken {
   fatherId    String?
   motherId    String?
   bloodlineId String
+  breed       String?
   iv          Json
   ev          Json
-  physical      Json    @default("{\"body\":1,\"neck\":1,\"legs\":1,\"tail\":1,\"wings\":1}")
+  physical      Json    @default("{\"scale\":1,\"bodyGirth\":1,\"bodyLength\":1,\"chest\":1,\"neckLength\":1,\"neckThick\":1,\"headSize\":1,\"combSize\":1,\"wattleSize\":1,\"beakLength\":1,\"wingSpan\":1,\"wingSize\":1,\"legLength\":1,\"legThick\":1,\"footSize\":1,\"tailLength\":1,\"tailSpread\":1,\"tailArc\":1}")
   mutations     Json    @default("{}")
   traits      Json
   age         Int
@@ -38,8 +39,13 @@ model Chicken {
   status      String
   growthStage String
   fightingStyle String @default("balanced")
-  colorScheme   Json   @default("{\"feathers\":\"#8b6f47\",\"details\":\"#ff0000\",\"eyes\":\"#050505\",\"tail\":\"#a0826d\",\"pattern\":\"SOLID\",\"patternColor\":\"#4a3521\"}")
+  colorScheme   Json   @default("{\"body\":\"#8b6f47\",\"hackle\":\"#c9a24f\",\"wings\":\"#4c1708\",\"tail\":\"#a0826d\",\"comb\":\"#b8100f\",\"beak\":\"#d9a83a\",\"shanks\":\"#cc9e33\",\"pattern\":\"SOLID\",\"patternColor\":\"#4a3521\"}")
   injured       Boolean @default(false)
+  behavior      Json    @default("{\"aggression\":0.55,\"caution\":0.45,\"patience\":0.5,\"riskTolerance\":0.5,\"pressurePreference\":0.55,\"counterPreference\":0.4,\"recoveryPreference\":0.4,\"persistence\":0.5}")
+  experience    Json    @default("{\"offensive\":0,\"defensive\":0,\"evasion\":0,\"counter\":0,\"pressure\":0,\"recovery\":0,\"adaptation\":0}")
+  condition     Int     @default(100)
+  injuries      Json    @default("[]")
+  trainingState Json    @default("{\"trainingPoints\":100,\"trainingFatigue\":0,\"history\":[]}")
   createdAt   DateTime @default(now())
 }
 
@@ -51,8 +57,9 @@ model MarketListing {
   fatherId      String?
   motherId      String?
   bloodlineId   String
+  breed         String?
   iv            Json
-  physical      Json     @default("{\"body\":1,\"neck\":1,\"legs\":1,\"tail\":1,\"wings\":1}")
+  physical      Json     @default("{\"scale\":1,\"bodyGirth\":1,\"bodyLength\":1,\"chest\":1,\"neckLength\":1,\"neckThick\":1,\"headSize\":1,\"combSize\":1,\"wattleSize\":1,\"beakLength\":1,\"wingSpan\":1,\"wingSize\":1,\"legLength\":1,\"legThick\":1,\"footSize\":1,\"tailLength\":1,\"tailSpread\":1,\"tailArc\":1}")
   mutations     Json     @default("{}")
   traits        Json
   fightingStyle String
@@ -68,10 +75,12 @@ model Egg {
   fatherId    String
   motherId    String
   bloodlineId String
+  breed       String?
   generation  Int
   sex         String
   iv          Json
-  physical    Json     @default("{\"body\":1,\"neck\":1,\"legs\":1,\"tail\":1,\"wings\":1}")
+  physical    Json     @default("{\"scale\":1,\"bodyGirth\":1,\"bodyLength\":1,\"chest\":1,\"neckLength\":1,\"neckThick\":1,\"headSize\":1,\"combSize\":1,\"wattleSize\":1,\"beakLength\":1,\"wingSpan\":1,\"wingSize\":1,\"legLength\":1,\"legThick\":1,\"footSize\":1,\"tailLength\":1,\"tailSpread\":1,\"tailArc\":1}")
+  colorScheme Json     @default("{\"body\":\"#8b6f47\",\"hackle\":\"#c9a24f\",\"wings\":\"#4c1708\",\"tail\":\"#a0826d\",\"comb\":\"#b8100f\",\"beak\":\"#d9a83a\",\"shanks\":\"#cc9e33\",\"pattern\":\"SOLID\",\"patternColor\":\"#4a3521\"}")
   mutations   Json     @default("{}")
   traits      Json
   laidAt      DateTime @default(now())

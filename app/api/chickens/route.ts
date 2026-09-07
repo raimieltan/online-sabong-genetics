@@ -27,6 +27,7 @@ export async function POST() {
       fatherId: generated.parents.fatherId,
       motherId: generated.parents.motherId,
       bloodlineId: generated.bloodlineId,
+      breed: generated.breed,
       iv: generated.iv,
       ev: generated.ev,
       physical: generated.physical,

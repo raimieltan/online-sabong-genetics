@@ -7,16 +7,23 @@ import { effectiveStat, maxHealth } from "@/lib/combat";
 import { resolvePhysicalProfile } from "@/lib/physicalProfile";
 import { AudioEngine } from "@/lib/audioEngine";
 import { ArenaBackdrop } from "@/components/chicken3d/ArenaBackdrop";
-import { BattleStage3D, WORLD_HALF_GAP } from "@/components/chicken3d/BattleStage3D";
+import {
+  BattleStage3D,
+  WORLD_HALF_GAP,
+  ANIM_PX_TO_WORLD,
+} from "@/components/chicken3d/BattleStage3D";
 import type { CameraCue } from "@/components/chicken3d/BattleStage3D";
-import type { ChickenPhysicsHandle } from "@/components/chicken3d/ChickenPhysicsRig";
+import {
+  KNOCKDOWN_RECOVER_MS,
+  scaledRecoveryMs,
+  type ChickenPhysicsHandle,
+} from "@/components/chicken3d/ChickenPhysicsRig";
 import type { ImpactVFXHandle } from "@/components/chicken3d/ImpactVFX";
 import {
   BattleDebugOverlay,
   makeDebugState,
   type BattleDebugState,
 } from "@/components/chicken3d/BattleDebugOverlay";
-import { PX_TO_WORLD } from "@/components/chicken3d/ChickenModel";
 import type { FighterAnim } from "@/components/chicken3d/ChickenModel";
 import type { AnimIntent, AnimState } from "@/lib/animation/types";
 import type { StaggerLevel } from "@/lib/types";
@@ -28,7 +35,9 @@ import {
   impactTime,
 } from "@/lib/animation/choreography";
 import { personalityForStyle } from "@/lib/animation/battlePersonality";
-import { DEFAULT_SPACING } from "@/lib/animation/combatSpacing";
+import { DEFAULT_SPACING, dampFacingYaw } from "@/lib/animation/combatSpacing";
+import { roamPose, DEFAULT_ROAM } from "@/lib/animation/arenaRoam";
+import { damp } from "@/lib/animation/math";
 import { impactKindFor } from "@/lib/animation/impactVfx";
 import type { CameraCueName } from "@/lib/animation/cameraDirector";
 
@@ -87,15 +96,14 @@ const HIT_ZONE_LABELS: Record<string, string> = {
   right_leg: "R LEG",
 };
 
-// The lunge/flinch offsets below are computed in the old 2D-canvas pixel space
-// (r1BaseX/r2BaseX, PX_TO_WORLD) but drive the 3D mesh's world position directly
-// — they never touch physics. This clamp keeps a fighter's mesh from ever
-// closing more than the real 3D world-space gap between fighters, so a lunge
-// can't sail through the opponent. Leaves ~0.9 world units of clearance for
-// both chickens' body colliders (~0.4 world-unit radius each) plus the
-// defender's own flinch-back offset.
-const MAX_LUNGE_WORLD = WORLD_HALF_GAP - 0.9;
-const MAX_LUNGE_PX = MAX_LUNGE_WORLD / PX_TO_WORLD;
+// FighterAnim offsets are authored in a px-ish space and turned into a world
+// delta on the model by ANIM_PX_TO_WORLD (inner-group PX_TO_WORLD × stage
+// scale). The roam/lunge system below works in world units and converts at the
+// edge with this helper, so distances read as real arena metres.
+const worldToAnimPx = (w: number) => w / ANIM_PX_TO_WORLD;
+
+/** Body-width clearance (world units) a lunge always leaves between the two birds so a dash can't sail through the opponent. */
+const BODY_CLEARANCE_WORLD = 0.8;
 
 /** Cosmetic flinch magnitude by stagger tier — knockdown is suppressed here since real physics knockback/topple (ChickenPhysicsRig) takes over instead. */
 const STAGGER_FLINCH_MULT: Record<StaggerLevel, number> = {
@@ -133,7 +141,7 @@ function recoveryRatio(chicken: Chicken): number {
  * Per-style animation feel (spec: stats/genetics should read in the fight, not just the numbers).
  * `windupMult` scales the whole attack clip's duration uniformly (phase *fractions* never change,
  * so IMPACT_AT keeps lining up with the strike) — aggressive is snappier, counter/endurance more deliberate.
- * `lungeMult` scales dash distance (still clamped against MAX_LUNGE_PX). `idleLean`/`idleBobMult` shape
+ * `lungeMult` scales dash distance (still clamped so a lunge can never close past body clearance). `idleLean`/`idleBobMult` shape
  * the resting stance so styles read differently even before an exchange happens.
  */
 interface StyleAnimParams {
@@ -182,14 +190,25 @@ function pseudoRandom(seed: number): number {
  * a fraction of the time, seeded off the turn number so replays stay stable.
  */
 function moveKindForZone(hitZone: string | null, turn: number, isCrit: boolean): MoveKind {
+  // Roosters are flying birds — sabong roosters spend a lot of a real match
+  // airborne. `r` seeds a per-turn airborne roll shared across zones so aerials
+  // and spinning kicks show up frequently, not just on the odd wing hit.
+  const r = pseudoRandom(turn * 2.71);
+  if (isCrit && r < 0.7) return "aerial";
+
   if (hitZone === "left_leg" || hitZone === "right_leg") {
-    return isCrit || pseudoRandom(turn * 7.13) < 0.35 ? "spin_kick" : "leg";
+    if (r < 0.3) return "aerial";
+    return isCrit || pseudoRandom(turn * 7.13) < 0.55 ? "spin_kick" : "leg";
   }
   if (hitZone === "left_wing" || hitZone === "right_wing") {
-    return isCrit || pseudoRandom(turn * 3.37) < 0.3 ? "aerial" : "wing";
+    return isCrit || pseudoRandom(turn * 3.37) < 0.6 ? "aerial" : "wing";
   }
-  if (hitZone === "head" || hitZone === "neck") return "peck";
-  return "body";
+  if (hitZone === "head" || hitZone === "neck") {
+    return r < 0.4 ? "aerial" : "peck";
+  }
+  // body
+  if (r < 0.42) return "aerial";
+  return pseudoRandom(turn * 5.9) < 0.3 ? "spin_kick" : "body";
 }
 
 /** Un-signed, un-scaled pose values for one instant of an attack — the caller applies `dir` and `distance`. */
@@ -599,6 +618,29 @@ export default function BattleCanvas({
     Object.assign(animR1, { offsetX: 0, offsetY: 0, offsetZ: 0, rot: 0, yaw: 0, roll: 0, scaleX: 1, scaleY: 1, flash: 0, wingPhase: 0, legPhase: 0 });
     Object.assign(animR2, { offsetX: 0, offsetY: 0, offsetZ: 0, rot: 0, yaw: 0, roll: 0, scaleX: 1, scaleY: 1, flash: 0, wingPhase: 0, legPhase: 0 });
 
+    // --- arena roam state -------------------------------------------------------
+    // Each fighter's actual ring position in world units, damped toward
+    // roamPose() every frame so the pair circles, gives ground and cuts angles
+    // across the whole pit instead of standing pinned to ±WORLD_HALF_GAP. The
+    // lunge/flinch beats below ride on top of this base, and `engagement`
+    // mirrors it out for the deferred fireImpact closure (knockback direction,
+    // VFX placement) and the debug overlay.
+    const roam = (() => {
+      const seed = roamPose(Date.now(), DEFAULT_ROAM, 0);
+      return {
+        baseAX: seed.a.x, baseAZ: seed.a.z,
+        baseBX: seed.b.x, baseBZ: seed.b.z,
+        yawA: seed.yawA, yawB: seed.yawB,
+      };
+    })();
+    const engagement = {
+      ax: roam.baseAX, az: roam.baseAZ,
+      bx: roam.baseBX, bz: roam.baseBZ,
+      /** Unit vector from fighter A's ring position toward fighter B's. */
+      ux: 1, uz: 0,
+    };
+    let prevFrameNow = Date.now();
+
     // Mass is a bounded ~0.85–1.15 multiplier (see lib/physicalProfile) — heavier
     // birds take proportionally longer to complete a strike, lighter birds snap
     // faster. Computed once per fighter since physical genetics/style don't change mid-fight.
@@ -716,7 +758,7 @@ export default function BattleCanvas({
         const isAAttacking = entry.attackerId === visualA.id;
         const defenderVisual = isAAttacking ? visualB : visualA;
         const targetX = isAAttacking ? r2BaseX : r1BaseX;
-        const targetColor = isAAttacking ? visualB.colorScheme.feathers : visualA.colorScheme.feathers;
+        const targetColor = isAAttacking ? visualB.colorScheme.body : visualA.colorScheme.body;
 
         // Effects (HP, sound, particles, flash) are deferred to IMPACT_AT below,
         // fired once the fighter's wings/talons actually reach the target.
@@ -755,7 +797,10 @@ export default function BattleCanvas({
             else animR1.flash = 1;
 
             const defenderPhysics = isAAttacking ? physicsR2Ref.current : physicsR1Ref.current;
-            const knockDir = isAAttacking ? 1 : -1;
+            // Knockback now follows the live attacker→defender axis (the pair can
+            // be at any angle in the ring), not a fixed ±X.
+            const knockDirX = isAAttacking ? engagement.ux : -engagement.ux;
+            const knockDirZ = isAAttacking ? engagement.uz : -engagement.uz;
             const attackerPowerRatio = isAAttacking ? powerRatioA : powerRatioB;
             const defenderRecoveryRatio = isAAttacking ? recoveryRatioB : recoveryRatioA;
 
@@ -777,11 +822,12 @@ export default function BattleCanvas({
             if (vfxKind && vfxRef.current) {
               const zone = entry.hitZone ?? "body";
               const zonePos = defenderPhysics?.getZonePosition(zone as HitZone) ?? null;
-              const fallbackX = isAAttacking ? WORLD_HALF_GAP : -WORLD_HALF_GAP;
+              const fallbackX = isAAttacking ? engagement.bx : engagement.ax;
+              const fallbackZ = isAAttacking ? engagement.bz : engagement.az;
               const pos =
                 zonePos ??
-                new THREE.Vector3(fallbackX, -0.2, 0);
-              const normal = new THREE.Vector3(knockDir, 0.15, 0);
+                new THREE.Vector3(fallbackX, -0.2, fallbackZ);
+              const normal = new THREE.Vector3(knockDirX, 0.15, knockDirZ);
               vfxRef.current.spawn(vfxKind, pos, normal);
             }
 
@@ -798,7 +844,7 @@ export default function BattleCanvas({
                 facing: defenderFacing,
               };
               // KO always topples the body and never rights it (design decision 4).
-              defenderPhysics?.applyKnockback(knockDir, 0, "knockdown", attackerPowerRatio, defenderRecoveryRatio, {
+              defenderPhysics?.applyKnockback(knockDirX, knockDirZ, "knockdown", attackerPowerRatio, defenderRecoveryRatio, {
                 suppressRecovery: true,
               });
               const attackerIntent = isAAttacking ? intentR1Ref : intentR2Ref;
@@ -838,7 +884,29 @@ export default function BattleCanvas({
                 stagger: entry.stagger,
                 facing: defenderFacing,
               };
-              defenderPhysics?.applyKnockback(knockDir, 0, entry.stagger, attackerPowerRatio, defenderRecoveryRatio);
+              defenderPhysics?.applyKnockback(knockDirX, knockDirZ, entry.stagger, attackerPowerRatio, defenderRecoveryRatio);
+
+              // A non-fatal knockdown holds its final pose by design (see
+              // ProceduralAnimationController) until something explicitly
+              // requests "getup" — nothing did, so a downed-but-alive bird
+              // used to stay on the ground forever. Fire that beat once the
+              // physics rig is done toppling it back upright.
+              if (entry.stagger === "knockdown") {
+                const getUpDelay = scaledRecoveryMs(KNOCKDOWN_RECOVER_MS, defenderRecoveryRatio);
+                setTimeout(() => {
+                  // Only stand up if nothing else (a later hit, a KO) has
+                  // since moved this fighter on to a different intent.
+                  if (defenderIntent.current?.state === "knockdown") {
+                    defenderIntent.current = {
+                      state: "getup",
+                      startedAt: Date.now(),
+                      speed: 1,
+                      facing: defenderFacing,
+                    };
+                  }
+                }, getUpDelay);
+              }
+
               emitCue({
                 attacker: isAAttacking ? "r1" : "r2",
                 startTime: impactNow,
@@ -932,14 +1000,42 @@ export default function BattleCanvas({
       }
 
       const t = now / 250;
-      // Slow independent clock for pacing/circling footwork between exchanges —
-      // much lower frequency than the idle bob above so it reads as deliberate
-      // ring-craft (sizing each other up) rather than a jitter on top of it.
-      const circleT = now / 3400;
+
+      // Advance the shared ring-position target and damp both fighters toward
+      // it — pulled tighter (engageBias) while an attack is live so the roamer
+      // doesn't drag a lunging bird back out of its own strike range.
+      const frameDt = Math.min(Math.max((now - prevFrameNow) / 1000, 0), 1 / 15);
+      prevFrameNow = now;
+      const engageBias = activeAttack ? 1 : 0;
+      const targetPose = roamPose(now, DEFAULT_ROAM, engageBias);
+      const ROAM_LAMBDA = 2.4;
+      roam.baseAX = damp(roam.baseAX, targetPose.a.x, ROAM_LAMBDA, frameDt);
+      roam.baseAZ = damp(roam.baseAZ, targetPose.a.z, ROAM_LAMBDA, frameDt);
+      roam.baseBX = damp(roam.baseBX, targetPose.b.x, ROAM_LAMBDA, frameDt);
+      roam.baseBZ = damp(roam.baseBZ, targetPose.b.z, ROAM_LAMBDA, frameDt);
+      roam.yawA = dampFacingYaw(roam.yawA, targetPose.yawA, 3, frameDt);
+      roam.yawB = dampFacingYaw(roam.yawB, targetPose.yawB, 3, frameDt);
+
+      const gapX = roam.baseBX - roam.baseAX;
+      const gapZ = roam.baseBZ - roam.baseAZ;
+      const gapDist = Math.max(0.1, Math.hypot(gapX, gapZ));
+      const ux = gapX / gapDist;
+      const uz = gapZ / gapDist;
+      // Perpendicular to the engagement axis — aerial loop-arounds swing out
+      // along this before striking back in.
+      const perpX = -uz;
+      const perpZ = ux;
+      engagement.ax = roam.baseAX;
+      engagement.az = roam.baseAZ;
+      engagement.bx = roam.baseBX;
+      engagement.bz = roam.baseBZ;
+      engagement.ux = ux;
+      engagement.uz = uz;
+
       if (!activeAttack || activeAttack.attacker !== "r1") {
-        animR1.offsetX = Math.sin(circleT * 0.7) * 9;
-        animR1.offsetZ = Math.sin(circleT) * 26;
-        animR1.yaw = Math.sin(circleT + Math.PI / 2) * 0.32;
+        animR1.offsetX = worldToAnimPx(roam.baseAX - -WORLD_HALF_GAP);
+        animR1.offsetZ = worldToAnimPx(roam.baseAZ);
+        animR1.yaw = roam.yawA;
         animR1.roll = 0;
         animR1.offsetY = Math.sin(t) * 4 * styleA.idleBobMult;
         // idleLean is signed toward the opponent (r1 faces right, so +lean tilts forward).
@@ -950,9 +1046,9 @@ export default function BattleCanvas({
         animR1.legPhase = Math.sin(t * 5);
       }
       if (!activeAttack || activeAttack.attacker !== "r2") {
-        animR2.offsetX = Math.cos(circleT * 0.7) * 9;
-        animR2.offsetZ = Math.cos(circleT * 1.1) * 26;
-        animR2.yaw = -Math.cos(circleT + Math.PI / 2) * 0.32;
+        animR2.offsetX = worldToAnimPx(roam.baseBX - WORLD_HALF_GAP);
+        animR2.offsetZ = worldToAnimPx(roam.baseBZ);
+        animR2.yaw = roam.yawB;
         animR2.roll = 0;
         animR2.offsetY = Math.cos(t * 0.9) * 4 * styleB.idleBobMult;
         // r2 faces left, so its forward lean is the negative direction.
@@ -987,11 +1083,21 @@ export default function BattleCanvas({
         }
 
         if (progress < 1) {
-          const dir = activeAttack.attacker === "r1" ? 1 : -1;
-          const attackerAnim = activeAttack.attacker === "r1" ? animR1 : animR2;
-          const defenderAnim = activeAttack.attacker === "r1" ? animR2 : animR1;
-          const attackerStyle = activeAttack.attacker === "r1" ? styleA : styleB;
-          const distance = (r2BaseX - r1BaseX) * 0.42 * attackerStyle.lungeMult;
+          const attackerIsA = activeAttack.attacker === "r1";
+          // Pitch (rot, ChickenModel's rotation.x) convention is per-rig, not
+          // per-frame facing — r1's base facing is +X, r2's is −X, so a
+          // "leaning forward" pitch needs the opposite sign for r2.
+          const dir = attackerIsA ? 1 : -1;
+          const attackerAnim = attackerIsA ? animR1 : animR2;
+          const defenderAnim = attackerIsA ? animR2 : animR1;
+          const attackerAnchorX = attackerIsA ? -WORLD_HALF_GAP : WORLD_HALF_GAP;
+          const defenderAnchorX = attackerIsA ? WORLD_HALF_GAP : -WORLD_HALF_GAP;
+          const attackerBaseX = attackerIsA ? roam.baseAX : roam.baseBX;
+          const attackerBaseZ = attackerIsA ? roam.baseAZ : roam.baseBZ;
+          const defenderBaseX = attackerIsA ? roam.baseBX : roam.baseAX;
+          const defenderBaseZ = attackerIsA ? roam.baseBZ : roam.baseAZ;
+          const attackerStyle = attackerIsA ? styleA : styleB;
+          const distanceWorld = gapDist * 0.42 * attackerStyle.lungeMult;
 
           // Phase timeline, as a fraction of (mass-scaled) attack duration — shared
           // across move kinds so the choreography's contact fraction keeps lining
@@ -1000,11 +1106,30 @@ export default function BattleCanvas({
           //   0.16–0.52  leap    — jump forward on an arc toward the opponent
           //   ~impactAt  strike  — full extension, the move's signature hit
           //   0.70–1.00  recover — settle back down to the base stance
-          const { reach, hop, lean, stretch, wingSwipe, legKick } = attackPoseFor(activeAttack.moveKind, progress);
+          const { reach, hop, lean, stretch, wingSwipe, legKick, lateral, spin, roll } = attackPoseFor(
+            activeAttack.moveKind,
+            progress
+          );
 
-          const rawLunge = reach * distance * dir;
-          attackerAnim.offsetX = Math.sign(rawLunge) * Math.min(Math.abs(rawLunge), MAX_LUNGE_PX);
+          // Forward lunge rides the live attacker→defender axis (any angle in
+          // the ring), clamped so a dash always leaves body clearance and can
+          // never sail through the opponent. Aerial moves add a perpendicular
+          // `lateral` swing-out so an aerial reads as looping around, not just
+          // dashing straight in.
+          const maxLungeWorld = Math.max(0, gapDist - BODY_CLEARANCE_WORLD);
+          const rawLungeWorld = reach * distanceWorld;
+          const lungeMagWorld =
+            Math.sign(rawLungeWorld) * Math.min(Math.abs(rawLungeWorld), maxLungeWorld);
+          const lateralWorld = (lateral ?? 0) * distanceWorld * 0.7;
+
+          const attackerX = attackerBaseX + ux * lungeMagWorld + perpX * lateralWorld;
+          const attackerZ = attackerBaseZ + uz * lungeMagWorld + perpZ * lateralWorld;
+
+          attackerAnim.offsetX = worldToAnimPx(attackerX - attackerAnchorX);
+          attackerAnim.offsetZ = worldToAnimPx(attackerZ);
           attackerAnim.offsetY = -hop;
+          attackerAnim.yaw = (attackerIsA ? roam.yawA : roam.yawB) + (spin ?? 0);
+          attackerAnim.roll = roll ?? 0;
           attackerAnim.rot = lean * dir;
           attackerAnim.scaleX = 1 - stretch * 0.08;
           attackerAnim.scaleY = 1 + stretch * 0.12;
@@ -1019,8 +1144,13 @@ export default function BattleCanvas({
             const flinchMult = STAGGER_FLINCH_MULT[activeAttack.stagger];
             const flinchP = Math.min(1, (progress - flinchStart) / Math.max(0.05, 1 - flinchStart));
             const flinch = Math.sin(flinchP * Math.PI);
-            const rawFlinch = -flinch * 18 * dir * flinchMult;
-            defenderAnim.offsetX = Math.sign(rawFlinch) * Math.min(Math.abs(rawFlinch), MAX_LUNGE_PX * 0.6);
+            const flinchMaxWorld = Math.max(0, gapDist - BODY_CLEARANCE_WORLD) * 0.35;
+            const flinchWorld = Math.min(flinch * 0.4 * flinchMult, flinchMaxWorld);
+
+            const defenderX = defenderBaseX + ux * flinchWorld;
+            const defenderZ = defenderBaseZ + uz * flinchWorld;
+            defenderAnim.offsetX = worldToAnimPx(defenderX - defenderAnchorX);
+            defenderAnim.offsetZ = worldToAnimPx(defenderZ);
             defenderAnim.rot = -flinch * 0.22 * dir * flinchMult;
             defenderAnim.wingPhase = flinch * 0.5 * Math.max(flinchMult, 0.6);
           }
@@ -1041,15 +1171,7 @@ export default function BattleCanvas({
         debugRef.current.phase = "APPROACH";
       }
 
-      // Debug-only: approximate world-space gap between fighters (nominal
-      // stage gap minus each fighter's current cosmetic lunge). BattleStage3D
-      // keeps fighters at fixed base X and only overlays a clamped lunge, so
-      // this is exact for the lunge itself but does not yet reflect a live
-      // approach/separate footwork system (spec §5/§6 — see limitations).
-      debugRef.current.distance =
-        WORLD_HALF_GAP * 2 -
-        Math.max(0, animR1.offsetX * PX_TO_WORLD) -
-        Math.max(0, -animR2.offsetX * PX_TO_WORLD);
+      debugRef.current.distance = gapDist;
 
       animR1.flash = Math.max(0, animR1.flash - 0.08);
       animR2.flash = Math.max(0, animR2.flash - 0.08);

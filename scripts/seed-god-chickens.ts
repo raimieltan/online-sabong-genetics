@@ -2,9 +2,9 @@
  * One-off seed script: creates 5 god-tier bloodlines (rooster + hen pair each,
  * 10 chickens total) for breeding-stock testing. Maxed IVs/EVs, every trait
  * in the pool, and the widest mutation combo the incompatibility graph in
- * lib/mutations.ts allows expressed together (giant + extra_toed + albino —
- * two_headed conflicts with extra_toed, luminescent conflicts with albino,
- * so those two are left out of this particular combo).
+ * lib/mutations.ts allows expressed together (giant + iron_spurs + albino —
+ * two_headed conflicts with iron_spurs/extra_wings, luminescent conflicts
+ * with albino, so those are left out of this particular combo).
  *
  * Run with: yarn god-seed
  */
@@ -47,11 +47,11 @@ function godPhysicalBlock(): PhysicalBlock {
   return block;
 }
 
-/** giant + extra_toed + albino: the largest fully-pairwise-compatible expressed set. */
+/** giant + iron_spurs + albino: the largest fully-pairwise-compatible expressed set. */
 function godMutationGenome(): MutationGenome {
   return {
     giant: { carrier: true, expressed: true },
-    extra_toed: { carrier: true, expressed: true },
+    iron_spurs: { carrier: true, expressed: true },
     albino: { carrier: true, expressed: true },
   };
 }

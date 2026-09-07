@@ -1,3 +1,8 @@
+import { BREED_PRESETS, pickRandomBreed, type BreedId } from "./breeds";
+import { deriveBehaviorProfile } from "./combat/behavior";
+import { emptyExperience } from "./combat/experience";
+import { inheritPhysicalTrait } from "./genetics";
+import { defaultTrainingState } from "./training/limits";
 import {
   FIGHTING_STYLES,
   GENETIC_STAT_KEYS,
@@ -96,8 +101,10 @@ function pickRandomFightingStyle(): FightingStyle {
   return FIGHTING_STYLES[Math.floor(Math.random() * FIGHTING_STYLES.length)];
 }
 
-function pickRandomColorScheme(): ChickenColorScheme {
-  return { ...COLOR_PALETTES[Math.floor(Math.random() * COLOR_PALETTES.length)] };
+function pickRandomColorScheme(breedId?: BreedId): ChickenColorScheme {
+  const base = COLOR_PALETTES[Math.floor(Math.random() * COLOR_PALETTES.length)];
+  const overrides = breedId ? BREED_PRESETS[breedId].colors : undefined;
+  return { ...base, ...overrides };
 }
 
 /** Baseline (all-1) physical block — gen-0 stock and any input that doesn't specify physique. */
@@ -107,12 +114,24 @@ function defaultPhysicalBlock(): PhysicalBlock {
   return block;
 }
 
-/** Uniform-random physical block across each trait's full rig-supported range, for gen-0 chickens. */
-function randomPhysicalBlock(): PhysicalBlock {
+/**
+ * Uniform-random physical block across each trait's full rig-supported range,
+ * for gen-0 chickens. When `breedId` is set, each trait the breed's preset
+ * specifies is blended toward that preset value (same weighted-blend-plus-
+ * noise shape as breeding inheritance) instead of pure uniform-random;
+ * unspecified traits stay fully random.
+ */
+function randomPhysicalBlock(breedId?: BreedId): PhysicalBlock {
   const block = {} as PhysicalBlock;
+  const preset = breedId ? BREED_PRESETS[breedId].traits : undefined;
   PHYSICAL_TRAIT_KEYS.forEach((key) => {
-    const { min, max } = PHYSICAL_TRAIT_RANGE[key];
-    block[key] = Number((min + Math.random() * (max - min)).toFixed(2));
+    const range = PHYSICAL_TRAIT_RANGE[key];
+    const rolled = range.min + Math.random() * (range.max - range.min);
+    const presetValue = preset?.[key];
+    block[key] =
+      presetValue !== undefined
+        ? inheritPhysicalTrait(presetValue, rolled, range)
+        : Number(rolled.toFixed(2));
   });
   return block;
 }
@@ -144,8 +163,10 @@ export type CreateChickenInput = {
   generation: number;
   parents: ChickenParentage;
   bloodlineId: string;
+  breed?: string;
   iv: StatBlock;
   physical?: PhysicalBlock;
+  colorScheme?: ChickenColorScheme;
   mutations?: MutationGenome;
   growthStage?: GrowthStage;
   traits?: Trait[];
@@ -158,6 +179,8 @@ export type CreateChickenInput = {
  * "active" status.
  */
 export function createChicken(input: CreateChickenInput): Chicken {
+  const fightingStyle = pickRandomFightingStyle();
+  const traits = input.traits ?? [];
   return {
     id: input.id ?? cryptoSafeId(input.name),
     name: input.name,
@@ -165,35 +188,44 @@ export function createChicken(input: CreateChickenInput): Chicken {
     generation: input.generation,
     parents: input.parents,
     bloodlineId: input.bloodlineId,
+    breed: input.breed,
     iv: input.iv,
     ev: zeroStatBlock(),
     physical: input.physical ?? defaultPhysicalBlock(),
     mutations: input.mutations ?? {},
-    traits: input.traits ?? [],
+    traits,
     age: 0,
     health: 100,
     energy: 100,
     record: zeroRecord(),
     status: "active",
-    growthStage: input.growthStage ?? "adult",
-    fightingStyle: pickRandomFightingStyle(),
-    colorScheme: pickRandomColorScheme(),
+    growthStage: input.growthStage ?? "chick",
+    fightingStyle,
+    colorScheme: input.colorScheme ?? pickRandomColorScheme(),
     injured: false,
     createdAt: Date.now(),
+    behavior: deriveBehaviorProfile(fightingStyle, traits),
+    experience: emptyExperience(),
+    condition: 100,
+    injuries: [],
+    trainingState: defaultTrainingState(),
   };
 }
 
 export type GenerateRandomChickenOptions = {
   name?: string;
   sex?: ChickenSex;
+  breedId?: BreedId;
 };
 
 /**
  * Generates a generation-0 chicken with random IVs and no known parents.
  * A gen-0 bird founds its own bloodline, so its bloodlineId matches its id.
+ * Rolls a breed archetype (see lib/breeds.ts) unless one is given explicitly.
  */
 export function generateRandomChicken(options: GenerateRandomChickenOptions = {}): Chicken {
   const id = cryptoSafeId(options.name ?? pickRandomName());
+  const breedId = "breedId" in options ? options.breedId : pickRandomBreed();
   return createChicken({
     id,
     name: options.name ?? pickRandomName(),
@@ -201,7 +233,9 @@ export function generateRandomChicken(options: GenerateRandomChickenOptions = {}
     generation: 0,
     parents: { fatherId: null, motherId: null },
     bloodlineId: id,
+    breed: breedId,
     iv: randomStatBlock(MIN_IV, MAX_IV),
-    physical: randomPhysicalBlock(),
+    physical: randomPhysicalBlock(breedId),
+    colorScheme: pickRandomColorScheme(breedId),
   });
 }

@@ -2,7 +2,7 @@ import type { CSSProperties } from "react";
 
 import type { Chicken, CombatRecord, GeneticStatKey } from "@/lib/types";
 import { GENETIC_STAT_KEYS } from "@/lib/types";
-import { effectiveStat } from "@/lib/combat";
+import { effectiveStat, type PveEncounterDefinition } from "@/lib/combat";
 import { RARITY_GEM, topRarity } from "@/lib/rarity";
 import { ChickenThumbnail } from "@/components/chicken3d/ChickenThumbnail";
 
@@ -158,11 +158,13 @@ function FighterPlate({
 export function MatchupScreen({
   chicken,
   opponent,
+  encounter,
   fighting,
   onFight,
 }: {
   chicken: Chicken;
   opponent: Chicken;
+  encounter?: PveEncounterDefinition | null;
   fighting: boolean;
   onFight: () => void;
 }) {
@@ -180,6 +182,13 @@ export function MatchupScreen({
 
         <FighterPlate fighter={opponent} corner="var(--color-blood)" record={opponentRecord} align="right" />
       </div>
+
+      {encounter && (
+        <div className="w-full max-w-lg rounded-lg border border-(--color-blood)/30 bg-black/25 p-3 text-center">
+          <p className="text-xs font-bold uppercase tracking-[0.18em] text-(--color-blood)">{encounter.name}</p>
+          <p className="mt-1 text-xs text-(--color-text-muted)">{encounter.description}</p>
+        </div>
+      )}
 
       <div className="w-full max-w-lg space-y-2.5 rounded-lg border border-(--color-gold)/15 bg-black/20 p-4">
         {GENETIC_STAT_KEYS.map((key) => (

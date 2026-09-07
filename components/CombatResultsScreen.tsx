@@ -27,6 +27,7 @@ export default function CombatResultsScreen({
 }: CombatResultsScreenProps) {
   const didWin = result.winnerId === playerChicken.id;
   const playerInjured = result.injuredChickenId === playerChicken.id;
+  const analysis = result.analysis?.[playerChicken.id];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm">
@@ -80,6 +81,15 @@ export default function CombatResultsScreen({
             <p className="mt-1 font-display text-lg font-semibold text-(--foreground)">{opponent.name}</p>
           </div>
         </div>
+
+        {analysis && (
+          <div className="mb-6 rounded-2xl border border-(--color-gold)/20 bg-black/25 p-4">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-(--color-text-muted)">
+              Battle Analysis
+            </p>
+            <p className="whitespace-pre-line text-sm leading-relaxed text-(--foreground)">{analysis}</p>
+          </div>
+        )}
 
         <div className="flex flex-col gap-3 sm:flex-row">
           {playerInjured ? (

@@ -13,13 +13,35 @@ import { ProceduralAnimationController } from "@/lib/animation/ProceduralAnimati
 import type { AnimIntent } from "@/lib/animation/types";
 import type { Chicken, ChickenColorScheme, PhysicalBlock } from "@/lib/types";
 
-const MODEL_PATHS: Record<Chicken["sex"], string> = {
-  rooster: "/3d-chicken/chicken_rooster.glb",
-  hen: "/3d-chicken/chicken_hen.glb",
-};
+// Both sexes share the single rigged mesh — there is no separate hen
+// geometry, so a hen is rendered as the same rig with a sex-specific pose
+// override (see applyHenOverride) rather than a different model.
+const MODEL_PATH = "/3d-chicken/rooster_rigged.glb";
 
 /** Bone scaled by "Giant" when the mutation is expressed. */
 const GIANT_SCALE = 1.4;
+
+/** All-1 baseline across the 18-trait genome, for callers that don't pass `physical`. */
+const DEFAULT_PHYSICAL_BLOCK: PhysicalBlock = {
+  scale: 1,
+  bodyGirth: 1,
+  bodyLength: 1,
+  chest: 1,
+  neckLength: 1,
+  neckThick: 1,
+  headSize: 1,
+  combSize: 1,
+  wattleSize: 1,
+  beakLength: 1,
+  wingSpan: 1,
+  wingSize: 1,
+  legLength: 1,
+  legThick: 1,
+  footSize: 1,
+  tailLength: 1,
+  tailSpread: 1,
+  tailArc: 1,
+};
 
 /** Converts the pixel-space offsets the 2D battle timeline produces into world units. */
 export const PX_TO_WORLD = 0.016;
@@ -123,25 +145,92 @@ function setPattern(material: THREE.MeshStandardMaterial | undefined, typeName: 
 }
 
 /**
- * Body size drives the Chest bone directly. Neck and WingL/WingR are children
- * of Chest, so they'd inherit that scale (inflating their OWN geometry along
- * with the torso) unless compensated — dividing by body cancels that out, so
- * they just reposition further from a bigger/smaller body instead of
- * stretching with it. Ported from chicken_viewer.html's applyProportions.
+ * Genome traits -> per-bone WORLD scale. Ported from roosterGenome.ts's
+ * worldScales/applyGenome: local scale = worldScale / parentWorldScale, so
+ * each part is independent — fattening the body does not inflate the head,
+ * a bigger Chest doesn't stretch the Neck/Wings hanging off it, etc.
  */
+const BONE_PARENT: Record<string, string | null> = {
+  Root: null,
+  Hips: "Root",
+  Spine: "Hips",
+  Chest: "Spine",
+  Neck: "Chest",
+  Head: "Neck",
+  Comb: "Head",
+  Wattle: "Head",
+  Beak: "Head",
+  WingL: "Chest",
+  WingL_Tip: "WingL",
+  WingR: "Chest",
+  WingR_Tip: "WingR",
+  Tail: "Hips",
+  Tail_Tip: "Tail",
+  ThighL: "Hips",
+  ShankL: "ThighL",
+  FootL: "ShankL",
+  ThighR: "Hips",
+  ShankR: "ThighR",
+  FootR: "ShankR",
+};
+
+function worldScales(t: PhysicalBlock): Record<string, [number, number, number]> {
+  const S: Record<string, [number, number, number]> = {
+    Root: [t.scale, t.scale, t.scale],
+    Hips: [t.bodyGirth, t.bodyGirth * 0.85 + 0.15, t.bodyLength],
+    Spine: [t.bodyGirth, t.bodyGirth * 0.85 + 0.15, t.bodyLength],
+    Chest: [t.chest, t.chest, t.chest],
+    Neck: [t.neckThick, t.neckLength, t.neckThick],
+    Head: [t.headSize, t.headSize, t.headSize],
+    Comb: [t.combSize * 0.6 + 0.4, t.combSize, t.combSize * 0.6 + 0.4],
+    Wattle: [t.wattleSize, t.wattleSize, t.wattleSize],
+    Beak: [1, 1, t.beakLength],
+    Tail: [t.tailSpread, t.tailArc, t.tailLength],
+    Tail_Tip: [t.tailSpread, t.tailArc, t.tailLength],
+  };
+  for (const s of ["L", "R"]) {
+    S[`Wing${s}`] = [t.wingSpan, t.wingSize, t.wingSize];
+    S[`Wing${s}_Tip`] = [t.wingSpan, t.wingSize, t.wingSize];
+    S[`Thigh${s}`] = [t.legThick, t.legLength, t.legThick];
+    S[`Shank${s}`] = [t.legThick, t.legLength, t.legThick];
+    S[`Foot${s}`] = [t.footSize, t.footSize, t.footSize];
+  }
+  return S;
+}
+
 function applyProportions(bones: Record<string, THREE.Object3D>, physical: PhysicalBlock) {
-  const { body, neck, legs, tail, wings } = physical;
-  bones["Chest"]?.scale.set(body, body, body);
-  const inv = 1 / body;
-  bones["Neck"]?.scale.set(inv, inv * neck, inv);
-  bones["WingL"]?.scale.set(inv * wings, inv * wings, inv * wings);
-  bones["WingR"]?.scale.set(inv * wings, inv * wings, inv * wings);
-  // Legs: scale only the thigh bone. Shank/foot are its children and stay at
-  // scale 1, so they simply reposition further down with a longer thigh.
-  bones["ThighL"]?.scale.set(1, legs, 1);
-  bones["ThighR"]?.scale.set(1, legs, 1);
-  // Tail has no child bones, so it's safe to scale on its own.
-  bones["Tail"]?.scale.set(1, tail, 1);
+  const W = worldScales(physical);
+  for (const name in BONE_PARENT) {
+    const bone = bones[name];
+    if (!bone) continue;
+    const w = W[name] ?? [1, 1, 1];
+    const parent = BONE_PARENT[name];
+    const pw = (parent && W[parent]) || [1, 1, 1];
+    bone.scale.set(w[0] / pw[0], w[1] / pw[1], w[2] / pw[2]);
+  }
+}
+
+/**
+ * Hens share the rooster's mesh — there is no separate hen geometry — so sex
+ * is expressed as a pose override applied after the genome scale: no crown
+ * (Comb/Wattle scaled toward 0) and a shorter, flatter tail than a rooster's
+ * genome would otherwise render. A hen's underlying trait *values* still
+ * breed/inherit normally; only this render-layer clamp differs by sex.
+ */
+const HEN_COMB_SCALE = 0.15;
+const HEN_TAIL_LENGTH_MULT = 0.55;
+const HEN_TAIL_ARC_MULT = 0.6;
+
+function applyHenOverride(bones: Record<string, THREE.Object3D>, physical: PhysicalBlock) {
+  bones["Comb"]?.scale.multiplyScalar(HEN_COMB_SCALE);
+  bones["Wattle"]?.scale.multiplyScalar(HEN_COMB_SCALE);
+  const tailScale: [number, number, number] = [
+    physical.tailSpread,
+    physical.tailArc * HEN_TAIL_ARC_MULT,
+    physical.tailLength * HEN_TAIL_LENGTH_MULT,
+  ];
+  bones["Tail"]?.scale.set(...tailScale);
+  bones["Tail_Tip"]?.scale.set(...tailScale);
 }
 
 /** Genome → expressed mutation tags drives the mutation-slot bone nodes and material overrides. */
@@ -153,24 +242,29 @@ function applyVisualTraits(
   const has = (tag: string) => visualTraits.includes(tag);
 
   if (has("ALBINO")) {
-    mats["M_Feathers"]?.color.set("#f5f2ea");
-    mats["M_Eyes"]?.color.set("#d94b3a");
+    for (const m of ["M_Feathers", "M_Hackle", "M_Wing", "M_Tail"]) mats[m]?.color.set("#f5f2ea");
   }
 
-  const feathers = mats["M_Feathers"];
-  if (feathers) {
-    feathers.emissive = new THREE.Color(has("LUMINESCENT") ? 0x4fffb0 : 0x000000);
-    feathers.emissiveIntensity = has("LUMINESCENT") ? 0.55 : 0;
+  for (const m of ["M_Feathers", "M_Hackle", "M_Wing"]) {
+    const mat = mats[m];
+    if (!mat) continue;
+    mat.emissive = new THREE.Color(has("LUMINESCENT") ? 0x4fffb0 : 0x000000);
+    mat.emissiveIntensity = has("LUMINESCENT") ? 0.55 : 0;
   }
 
-  const twoHeadedScale = has("TWO_HEADED") ? 1 : 0;
-  bones["Mut_TwoHeaded"]?.scale.set(twoHeadedScale, twoHeadedScale, twoHeadedScale);
-  const extraToeScale = has("EXTRA_TOED") ? 1 : 0;
-  bones["Mut_ExtraToe_L"]?.scale.set(extraToeScale, extraToeScale, extraToeScale);
-  bones["Mut_ExtraToe_R"]?.scale.set(extraToeScale, extraToeScale, extraToeScale);
+  // rooster_rigged.glb ships its mutation slot meshes visible at scale 1, so
+  // every slot must be set each render — expressed slots to 1, the rest to 0.
+  const setSlot = (name: string, on: boolean) => bones[name]?.scale.setScalar(on ? 1 : 0);
+  setSlot("Mut_SecondHead", has("TWO_HEADED"));
+  setSlot("Mut_Spur_L", has("IRON_SPURS"));
+  setSlot("Mut_Spur_R", has("IRON_SPURS"));
+  setSlot("Mut_ExtraWing_L", has("EXTRA_WINGS"));
+  setSlot("Mut_ExtraWing_R", has("EXTRA_WINGS"));
 
-  const giantScale = has("GIANT") ? GIANT_SCALE : 1;
-  bones["ChickenRoot"]?.scale.set(giantScale, giantScale, giantScale);
+  // multiplyScalar (not set) — Root's scale was already set from the `scale`
+  // trait in applyProportions; Giant multiplies on top of that instead of
+  // clobbering it.
+  if (has("GIANT")) bones["Root"]?.scale.multiplyScalar(GIANT_SCALE);
 }
 
 /**
@@ -222,7 +316,7 @@ export function ChickenModel({
   facing?: "left" | "right";
   basePosition?: [number, number, number];
 }) {
-  const { scene } = useGLTF(MODEL_PATHS[sex]);
+  const { scene } = useGLTF(MODEL_PATH);
   const group = useRef<THREE.Group>(null);
 
   const clonedScene = useMemo(() => {
@@ -252,20 +346,25 @@ export function ChickenModel({
       }
     });
 
-    mats["M_Feathers"]?.color.set(colorScheme.feathers);
-    mats["M_Details"]?.color.set(colorScheme.details);
-    mats["M_Eyes"]?.color.set(colorScheme.eyes);
+    // 1:1 onto the rig's 7 materials.
+    mats["M_Feathers"]?.color.set(colorScheme.body);
+    mats["M_Hackle"]?.color.set(colorScheme.hackle);
+    mats["M_Wing"]?.color.set(colorScheme.wings);
     mats["M_Tail"]?.color.set(colorScheme.tail);
+    mats["M_Comb"]?.color.set(colorScheme.comb);
+    mats["M_Beak"]?.color.set(colorScheme.beak);
+    mats["M_Legs"]?.color.set(colorScheme.shanks);
     if (mats["M_Feathers"]) {
       installPatternShader(mats["M_Feathers"]);
       setPattern(mats["M_Feathers"], colorScheme.pattern, colorScheme.patternColor);
     }
 
-    applyProportions(bones, physical ?? { body: 1, neck: 1, legs: 1, tail: 1, wings: 1 });
+    applyProportions(bones, physical ?? DEFAULT_PHYSICAL_BLOCK);
+    if (sex === "hen") applyHenOverride(bones, physical ?? DEFAULT_PHYSICAL_BLOCK);
     applyVisualTraits(bones, mats, mutations ? resolveVisualTraits({ mutations }) : []);
 
     return { scene: clone, bones };
-  }, [scene, colorScheme, physical, mutations]);
+  }, [scene, colorScheme, physical, mutations, sex]);
 
   // Procedural animation controller — rebuilt whenever the scene is re-cloned
   // (physical/mutation change) so it re-captures rest pose against the new bones.
@@ -302,7 +401,7 @@ export function ChickenModel({
         basePosition[2] + a.offsetZ * PX_TO_WORLD
       );
 
-      group.current.scale.set(a.scaleX, a.scaleY, a.scaleX);
+      group.current.scale.set(a.scaleX - 0.02, a.scaleY - 0.02, a.scaleX - 0.02);
 
       // --- procedural bone animation --------------------------------------
       // The group transform above owns world placement / facing / squash-
@@ -388,5 +487,4 @@ export function ChickenModel({
   );
 }
 
-useGLTF.preload(MODEL_PATHS.rooster);
-useGLTF.preload(MODEL_PATHS.hen);
+useGLTF.preload(MODEL_PATH);

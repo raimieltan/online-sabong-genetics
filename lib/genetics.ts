@@ -3,10 +3,13 @@ import {
   GENETIC_STAT_KEYS,
   PHYSICAL_TRAIT_KEYS,
   PHYSICAL_TRAIT_RANGE,
+  type ChickenColorScheme,
   type MutationGenome,
   type PhysicalBlock,
   type StatBlock,
 } from "./types";
+
+const COLOR_KEYS = ["body", "hackle", "wings", "tail", "comb", "beak", "shanks"] as const;
 
 export type Rng = () => number;
 
@@ -74,6 +77,91 @@ export function inheritPhysicalBlock(
   PHYSICAL_TRAIT_KEYS.forEach((key) => {
     result[key] = inheritPhysicalTrait(father[key], mother[key], PHYSICAL_TRAIT_RANGE[key], rng);
   });
+  return result;
+}
+
+function hexToRgb(hex: string): [number, number, number] {
+  const clean = hex.replace("#", "");
+  const n = parseInt(clean, 16);
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+}
+
+function rgbToHex(r: number, g: number, b: number): string {
+  const c = (v: number) => Math.round(clamp(v, 0, 255)).toString(16).padStart(2, "0");
+  return `#${c(r)}${c(g)}${c(b)}`;
+}
+
+function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
+  r /= 255;
+  g /= 255;
+  b /= 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  let h = 0;
+  const l = (max + min) / 2;
+  const d = max - min;
+  const s = d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1));
+  if (d !== 0) {
+    switch (max) {
+      case r:
+        h = ((g - b) / d) % 6;
+        break;
+      case g:
+        h = (b - r) / d + 2;
+        break;
+      default:
+        h = (r - g) / d + 4;
+    }
+    h /= 6;
+    if (h < 0) h += 1;
+  }
+  return [h, s, l];
+}
+
+function hslToRgb(h: number, s: number, l: number): [number, number, number] {
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs(((h * 6) % 2) - 1));
+  const m = l - c / 2;
+  let [r, g, b] = [0, 0, 0];
+  if (h < 1 / 6) [r, g, b] = [c, x, 0];
+  else if (h < 2 / 6) [r, g, b] = [x, c, 0];
+  else if (h < 3 / 6) [r, g, b] = [0, c, x];
+  else if (h < 4 / 6) [r, g, b] = [0, x, c];
+  else if (h < 5 / 6) [r, g, b] = [x, 0, c];
+  else [r, g, b] = [c, 0, x];
+  return [(r + m) * 255, (g + m) * 255, (b + m) * 255];
+}
+
+/** Blends two parent hex colors and drifts hue/lightness slightly, matching roosterGenome.ts's breed(). */
+function inheritColorHex(fatherHex: string, motherHex: string, rng: Rng): string {
+  const [fr, fg, fb] = hexToRgb(fatherHex);
+  const [mr, mg, mb] = hexToRgb(motherHex);
+  const w = rng();
+  const r = fr * (1 - w) + mr * w;
+  const g = fg * (1 - w) + mg * w;
+  const b = fb * (1 - w) + mb * w;
+
+  const [hRaw, s, lRaw] = rgbToHsl(r, g, b);
+  let h = hRaw;
+  let l = lRaw;
+  h = (h + (rng() - 0.5) * 0.05 + 1) % 1;
+  l = clamp(l + (rng() - 0.5) * 0.06, 0, 1);
+  const [dr, dg, db] = hslToRgb(h, s, l);
+  return rgbToHex(dr, dg, db);
+}
+
+/** Blends every one of the 7 material colors plus pattern/patternColor between both parents, with slight drift. */
+export function inheritColorScheme(
+  father: ChickenColorScheme,
+  mother: ChickenColorScheme,
+  rng: Rng = Math.random
+): ChickenColorScheme {
+  const result = {} as ChickenColorScheme;
+  for (const key of COLOR_KEYS) {
+    result[key] = inheritColorHex(father[key], mother[key], rng);
+  }
+  result.pattern = rng() < 0.5 ? father.pattern : mother.pattern;
+  result.patternColor = inheritColorHex(father.patternColor, mother.patternColor, rng);
   return result;
 }
 

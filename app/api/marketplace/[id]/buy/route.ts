@@ -30,6 +30,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
         fatherId: chicken.parents.fatherId,
         motherId: chicken.parents.motherId,
         bloodlineId: chicken.bloodlineId,
+        breed: chicken.breed,
         iv: chicken.iv,
         ev: chicken.ev,
         physical: chicken.physical,

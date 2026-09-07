@@ -4,6 +4,7 @@ import { use, useEffect, useState } from "react";
 import Link from "next/link";
 
 import type { Chicken, CombatResult } from "@/lib/types";
+import type { PveEncounterDefinition } from "@/lib/combat";
 import BattleCanvas from "@/components/BattleCanvas";
 import CombatResultsScreen from "@/components/CombatResultsScreen";
 import { MatchupScreen } from "@/components/battle/MatchupScreen";
@@ -23,6 +24,7 @@ export default function BattlePage({
   const [error, setError] = useState<string | null>(null);
   const [chicken, setChicken] = useState<Chicken | null>(null);
   const [opponent, setOpponent] = useState<Chicken | null>(null);
+  const [encounter, setEncounter] = useState<PveEncounterDefinition | null>(null);
   const [result, setResult] = useState<CombatResult | null>(null);
   const [log, setLog] = useState<CombatResult["log"]>([]);
   const [updatedChicken, setUpdatedChicken] = useState<Chicken | null>(null);
@@ -64,11 +66,15 @@ export default function BattlePage({
         }
         return;
       }
-      const loadedOpponent: Chicken = await opponentRes.json();
+      const { opponent: loadedOpponent, encounter: loadedEncounter } = (await opponentRes.json()) as {
+        opponent: Chicken;
+        encounter: PveEncounterDefinition;
+      };
 
       if (!cancelled) {
         setChicken(loadedChicken);
         setOpponent(loadedOpponent);
+        setEncounter(loadedEncounter);
         setPhase("ready");
       }
     }
@@ -114,7 +120,12 @@ export default function BattlePage({
 
     const opponentRes = await fetch(`/api/chickens/${chickenId}/opponent`, { method: "POST" });
     if (opponentRes.ok) {
-      setOpponent(await opponentRes.json());
+      const { opponent: nextOpponent, encounter: nextEncounter } = (await opponentRes.json()) as {
+        opponent: Chicken;
+        encounter: PveEncounterDefinition;
+      };
+      setOpponent(nextOpponent);
+      setEncounter(nextEncounter);
       setPhase("ready");
     } else {
       setPhase("error");
@@ -123,6 +134,10 @@ export default function BattlePage({
   }
 
   function handleFightAgain() {
+    if (updatedChicken) {
+      setChicken(updatedChicken);
+      setUpdatedChicken(null);
+    }
     setResult(null);
     setLog([]);
     setPhase("loading");
@@ -133,7 +148,12 @@ export default function BattlePage({
           setError("This chicken cannot battle right now");
           return;
         }
-        setOpponent(await res.json());
+        const { opponent: nextOpponent, encounter: nextEncounter } = (await res.json()) as {
+          opponent: Chicken;
+          encounter: PveEncounterDefinition;
+        };
+        setOpponent(nextOpponent);
+        setEncounter(nextEncounter);
         setPhase("ready");
       });
   }
@@ -186,6 +206,7 @@ export default function BattlePage({
           <MatchupScreen
             chicken={chicken}
             opponent={opponent}
+            encounter={encounter}
             fighting={phase === "fighting"}
             onFight={handleFight}
           />

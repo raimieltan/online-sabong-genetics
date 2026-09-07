@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { prisma } from "@/lib/db";
-import { canFight, generateMatchedOpponent } from "@/lib/combat";
+import { canFight, generatePveOpponent } from "@/lib/combat";
 import { getOrCreatePlayer } from "@/lib/player";
 import type { Chicken } from "@/lib/types";
 
@@ -17,7 +17,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     return NextResponse.json({ error: "Chicken cannot battle right now" }, { status: 400 });
   }
 
-  const opponent = generateMatchedOpponent(chicken as unknown as Chicken);
+  const { opponent, encounter } = generatePveOpponent(chicken as unknown as Chicken);
 
-  return NextResponse.json(opponent);
+  return NextResponse.json({ opponent, encounter });
 }

@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 
 import { canBreed } from "@/lib/growth";
 import type { Chicken, Egg } from "@/lib/types";
@@ -11,10 +12,19 @@ import { OffspringPreview } from "./OffspringPreview";
 const BREED_COST = 500;
 
 export default function BreedPage() {
+  return (
+    <Suspense fallback={null}>
+      <BreedPageContent />
+    </Suspense>
+  );
+}
+
+function BreedPageContent() {
+  const searchParams = useSearchParams();
   const [chickens, setChickens] = useState<Chicken[]>([]);
   const [eggs, setEggs] = useState<Egg[]>([]);
-  const [fatherId, setFatherId] = useState("");
-  const [motherId, setMotherId] = useState("");
+  const [fatherId, setFatherId] = useState(searchParams.get("fatherId") ?? "");
+  const [motherId, setMotherId] = useState(searchParams.get("motherId") ?? "");
   const [error, setError] = useState<string | null>(null);
   const [breeding, setBreeding] = useState(false);
 

@@ -1,0 +1,792 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Rooster Genetics Rig Viewer</title>
+<style>
+  :root{
+    --bg-1:#221c17;
+    --bg-2:#2f261e;
+    --panel:#f4ecdc;
+    --panel-line:#ddd0b0;
+    --ink:#2b241b;
+    --ink-soft:#6b6152;
+    --accent:#8a3b1e;
+    --accent-soft:#f2ddd0;
+    --gold:#d99a3f;
+    --danger:#a8432f;
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0; height:100%;
+    background:radial-gradient(120% 140% at 30% 0%, var(--bg-2), var(--bg-1));
+    color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif;
+    overflow:hidden;
+  }
+  #app{position:relative; width:100%; height:100%;}
+  #viewport{position:absolute; inset:0;}
+  #viewport canvas{display:block;}
+
+  .hud{position:absolute; top:16px; left:16px; color:#f4ecdc; max-width:300px;}
+  .hud h1{font-size:15px; font-weight:600; margin:0 0 2px; letter-spacing:0.01em;}
+  .hud p{font-size:12px; line-height:1.5; margin:0; color:#cfc3ac;}
+
+  #stats{
+    position:absolute; left:16px; bottom:16px; display:flex; gap:16px;
+    color:#f4ecdc; font-variant-numeric:tabular-nums;
+  }
+  #stats div small{display:block; font-size:9px; letter-spacing:.18em; color:#a1937c;}
+  #stats div b{font-size:19px; font-weight:600; color:var(--gold);}
+
+  #panel{
+    position:absolute; top:16px; right:16px; bottom:16px;
+    width:262px;
+    background:var(--panel);
+    border:1px solid var(--panel-line);
+    border-radius:14px;
+    padding:16px;
+    overflow-y:auto;
+    box-shadow:0 18px 40px rgba(0,0,0,0.35);
+  }
+  #panel::-webkit-scrollbar{width:6px;}
+  #panel::-webkit-scrollbar-thumb{background:var(--panel-line); border-radius:6px;}
+
+  .section{margin-bottom:18px;}
+  .section:last-child{margin-bottom:4px;}
+  .section-title{
+    font-size:11px; font-weight:600; color:var(--ink-soft);
+    margin:0 0 10px; padding-bottom:6px;
+    border-bottom:1px solid var(--panel-line);
+    display:flex; justify-content:space-between; align-items:center;
+  }
+  .section-title span{font-weight:400; font-size:10px;}
+
+  .swatch-row{
+    display:flex; align-items:center; justify-content:space-between;
+    margin-bottom:8px; font-size:12.5px;
+  }
+  .swatch-row span{color:var(--ink);}
+  .swatch-row input[type="color"]{
+    -webkit-appearance:none; appearance:none;
+    width:30px; height:22px; border:1px solid var(--panel-line);
+    border-radius:6px; padding:0; background:none; cursor:pointer;
+  }
+  .swatch-row input[type="color"]::-webkit-color-swatch-wrapper{padding:2px;}
+  .swatch-row input[type="color"]::-webkit-color-swatch{border-radius:4px; border:none;}
+  .swatch-row select{
+    font-size:12px; padding:5px 6px; border:1px solid var(--panel-line);
+    border-radius:6px; background:#fff; color:var(--ink); cursor:pointer;
+  }
+
+  .slider-row{
+    display:flex; align-items:center; justify-content:space-between;
+    margin-bottom:9px; font-size:12px; gap:8px;
+  }
+  .slider-row span{color:var(--ink); flex:none; width:74px;}
+  .slider-row input[type="range"]{flex:1; accent-color:var(--accent); cursor:pointer;}
+  .slider-row em{
+    font-style:normal; font-size:10.5px; color:var(--ink-soft);
+    width:26px; text-align:right; font-variant-numeric:tabular-nums;
+  }
+
+  .grid2{display:grid; grid-template-columns:1fr 1fr; gap:6px;}
+  .seg-btn{
+    padding:8px 0; border:1px solid var(--panel-line); background:#fff;
+    border-radius:9px; font-size:12.5px; cursor:pointer; color:var(--ink);
+  }
+  .seg-btn:hover{border-color:var(--accent);}
+  .seg-btn.active{background:var(--ink); color:#f4ecdc; border-color:var(--ink);}
+
+  .trait{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:8px 10px; margin-bottom:6px;
+    background:#fff; border:1px solid var(--panel-line); border-radius:9px;
+    font-size:12.5px; cursor:pointer; user-select:none;
+    transition:background .15s ease, border-color .15s ease;
+  }
+  .trait:hover{border-color:var(--accent);}
+  .trait.active{background:var(--accent-soft); border-color:var(--accent);}
+  .trait .dot{width:8px; height:8px; border-radius:50%; background:var(--panel-line); flex:none; margin-right:8px;}
+  .trait.active .dot{background:var(--accent);}
+  .trait-label{display:flex; align-items:center; flex:1;}
+  .trait-tag{font-size:10px; color:var(--ink-soft); font-variant-numeric:tabular-nums;}
+
+  button.action{
+    width:100%; padding:9px 10px; margin-top:4px;
+    background:var(--ink); color:#f4ecdc; border:none; border-radius:9px;
+    font-size:12.5px; cursor:pointer; font-weight:500;
+  }
+  button.action:hover{background:#40382c;}
+  button.action.secondary{background:#fff; color:var(--ink); border:1px solid var(--panel-line);}
+  button.action.secondary:hover{border-color:var(--accent);}
+
+  .note{font-size:11px; color:var(--ink-soft); line-height:1.5; margin-top:10px;}
+  code{background:#fff; border:1px solid var(--panel-line); border-radius:4px; padding:1px 4px; font-size:11px;}
+
+  #loading{
+    position:absolute; inset:0; display:flex; flex-direction:column; gap:14px;
+    align-items:center; justify-content:center;
+    color:#e9dec2; font-size:13px; letter-spacing:0.02em;
+  }
+  #drop{
+    border:1px dashed #6b5c47; border-radius:14px; padding:30px 34px;
+    text-align:center; cursor:pointer; background:rgba(0,0,0,.15);
+  }
+  #drop:hover{border-color:var(--gold);}
+  #drop b{display:block; font-size:14px; color:#f4ecdc; margin-bottom:6px;}
+  #drop small{color:#a1937c; line-height:1.6;}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="viewport"></div>
+
+  <div id="loading">
+    <div id="drop">
+      <b>Drop rooster_rigged.glb here</b>
+      <small>or click to browse<br/>21 bones · 5 mutation slots · 7 materials</small>
+    </div>
+    <input type="file" id="file" accept=".glb" style="display:none" />
+  </div>
+
+  <div class="hud">
+    <h1>Rooster Genetics Rig</h1>
+    <p>Skinned GLB · 21-bone skeleton · drag to orbit, scroll to zoom.<br/>Every slider drives a bone scale; the trait resolver (genome → expressed traits → visual traits) would set these at runtime.</p>
+  </div>
+
+  <div id="stats"></div>
+
+  <div id="panel">
+    <div class="section">
+      <div class="section-title">Bloodline presets</div>
+      <div class="grid2" id="breeds"></div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Frame <span>genetics</span></div>
+      <div id="grpFrame"></div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Head &amp; neck</div>
+      <div id="grpHead"></div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Wings, legs &amp; tail</div>
+      <div id="grpLimbs"></div>
+      <button class="action secondary" id="btnResetProps">Reset proportions</button>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Colour traits <span>genome</span></div>
+      <div class="swatch-row"><span>Body</span><input type="color" id="c_M_Feathers" value="#6b2111"/></div>
+      <div class="swatch-row"><span>Hackle</span><input type="color" id="c_M_Hackle" value="#c75c0f"/></div>
+      <div class="swatch-row"><span>Wings</span><input type="color" id="c_M_Wing" value="#4c1708"/></div>
+      <div class="swatch-row"><span>Tail</span><input type="color" id="c_M_Tail" value="#0d1714"/></div>
+      <div class="swatch-row"><span>Comb / wattle</span><input type="color" id="c_M_Comb" value="#b8100f"/></div>
+      <div class="swatch-row"><span>Beak</span><input type="color" id="c_M_Beak" value="#d9a83a"/></div>
+      <div class="swatch-row"><span>Shanks</span><input type="color" id="c_M_Legs" value="#cc9e33"/></div>
+      <div class="swatch-row">
+        <span>Pattern</span>
+        <select id="patternType">
+          <option value="SOLID">Solid</option>
+          <option value="BARRED">Barred</option>
+          <option value="LACED">Laced</option>
+          <option value="MOTTLED">Mottled</option>
+          <option value="SPANGLED">Spangled</option>
+        </select>
+      </div>
+      <div class="swatch-row"><span>Pattern colour</span><input type="color" id="colorPattern" value="#2a1c10"/></div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Mutation genes</div>
+      <div class="trait" data-mut="albino"><span class="trait-label"><span class="dot"></span>Albino</span><span class="trait-tag">recessive</span></div>
+      <div class="trait" data-mut="lumin"><span class="trait-label"><span class="dot"></span>Luminescent</span><span class="trait-tag">dominant</span></div>
+      <div class="trait" data-mut="twoHeaded"><span class="trait-label"><span class="dot"></span>Polycephaly</span><span class="trait-tag">anomalous</span></div>
+      <div class="trait" data-mut="extraWings"><span class="trait-label"><span class="dot"></span>Quad-wing</span><span class="trait-tag">anomalous</span></div>
+      <div class="trait" data-mut="ironSpurs"><span class="trait-label"><span class="dot"></span>Iron spurs</span><span class="trait-tag">recessive</span></div>
+      <div class="trait" data-mut="giant"><span class="trait-label"><span class="dot"></span>Giant</span><span class="trait-tag">codominant</span></div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Skeleton</div>
+      <button class="action" id="btnWalk">Play walk cycle</button>
+      <button class="action" id="btnFight">Play fight animation</button>
+      <button class="action secondary" id="btnBones">Show bones</button>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Genome</div>
+      <div class="grid2">
+        <button class="seg-btn" id="btnRandom">Randomise</button>
+        <button class="seg-btn" id="btnCopy">Copy JSON</button>
+      </div>
+      <div class="note">
+        Bones: <code>Root → Hips → Spine → Chest → Neck → Head → Comb/Beak/Wattle</code>, <code>WingL/R(+_Tip)</code>, <code>Tail → Tail_Tip</code>, <code>ThighL/R → ShankL/R → FootL/R</code>. Mutation slot nodes (<code>Mut_SecondHead</code>, <code>Mut_ExtraWing_L/R</code>, <code>Mut_Spur_L/R</code>) are parented to their bone and hidden at scale 0 until expressed. Feather patterns run as a live shader on cylindrical UVs — no baked textures.
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { SkeletonHelper } from "three";
+
+/* ---------------------------------------------------------------- */
+/*  Feather colour-pattern shader (unchanged from the earlier rig —   */
+/*  the new GLB ships cylindrical UVs so this still has a uv to read) */
+/* ---------------------------------------------------------------- */
+const PATTERN_TYPES = { SOLID: 0, BARRED: 1, LACED: 2, MOTTLED: 3, SPANGLED: 4 };
+
+function installPatternShader(material) {
+  if (!material || material.userData.patternInstalled) return;
+  material.userData.patternInstalled = true;
+  material.userData.patternUniforms = {
+    uPatternType: { value: PATTERN_TYPES.SOLID },
+    uSecondaryColor: { value: new THREE.Color(0x2a1c10) },
+    uPatternScale: { value: 8.0 },
+  };
+  material.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, material.userData.patternUniforms);
+    shader.vertexShader = shader.vertexShader
+      .replace("#include <uv_pars_vertex>", `#include <uv_pars_vertex>
+        varying vec2 vPatternUv;`)
+      .replace("#include <uv_vertex>", `#include <uv_vertex>
+        vPatternUv = uv;`);
+    shader.fragmentShader = shader.fragmentShader
+      .replace("#include <uv_pars_fragment>", `#include <uv_pars_fragment>
+        varying vec2 vPatternUv;`)
+      .replace("#include <common>", `#include <common>
+        uniform int uPatternType;
+        uniform vec3 uSecondaryColor;
+        uniform float uPatternScale;
+        float patternHash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
+        float patternNoise(vec2 p){
+          vec2 i = floor(p), f = fract(p);
+          float a = patternHash(i);
+          float b = patternHash(i + vec2(1.0,0.0));
+          float c = patternHash(i + vec2(0.0,1.0));
+          float d = patternHash(i + vec2(1.0,1.0));
+          vec2 u = f*f*(3.0-2.0*f);
+          return mix(mix(a,b,u.x), mix(c,d,u.x), u.y);
+        }
+        float patternMix(vec2 uv, int type, float scale){
+          if (type == 1) { return smoothstep(0.15, 0.5, sin(uv.y * scale * 3.14159)); }
+          else if (type == 2) {
+            vec2 cell = fract(uv * scale) - 0.5;
+            return smoothstep(0.36, 0.44, max(abs(cell.x), abs(cell.y)));
+          } else if (type == 3) {
+            return smoothstep(0.55, 0.7, patternNoise(uv * scale));
+          } else if (type == 4) {
+            vec2 cell = fract(uv * scale) - 0.5;
+            float d = length(cell);
+            float jitter = patternHash(floor(uv * scale));
+            return 1.0 - smoothstep(0.16, 0.22, d - jitter * 0.08);
+          }
+          return 0.0;
+        }`)
+      .replace("#include <color_fragment>", `#include <color_fragment>
+        {
+          float pm = patternMix(vPatternUv, uPatternType, uPatternScale);
+          diffuseColor.rgb = mix(diffuseColor.rgb, uSecondaryColor, pm);
+        }`);
+  };
+  material.needsUpdate = true;
+}
+
+function setPattern(material, typeName, secondaryHex, scale) {
+  if (!material || !material.userData.patternUniforms) return;
+  material.userData.patternUniforms.uPatternType.value = PATTERN_TYPES[typeName] ?? 0;
+  material.userData.patternUniforms.uSecondaryColor.value.set(secondaryHex);
+  if (scale) material.userData.patternUniforms.uPatternScale.value = scale;
+}
+
+/* ---------------------------------------------------------------- */
+/*  Genome definition                                                */
+/* ---------------------------------------------------------------- */
+const TRAITS = {
+  scale:      { label: "Overall",     min:0.70, max:1.40, group:"grpFrame" },
+  bodyGirth:  { label: "Girth",       min:0.70, max:1.60, group:"grpFrame" },
+  bodyLength: { label: "Body length", min:0.75, max:1.45, group:"grpFrame" },
+  chest:      { label: "Chest",       min:0.75, max:1.50, group:"grpFrame" },
+  headSize:   { label: "Head",        min:0.65, max:1.70, group:"grpHead" },
+  combSize:   { label: "Comb",        min:0.20, max:2.60, group:"grpHead" },
+  wattleSize: { label: "Wattle",      min:0.20, max:2.20, group:"grpHead" },
+  beakLength: { label: "Beak",        min:0.70, max:1.90, group:"grpHead" },
+  neckLength: { label: "Neck length", min:0.60, max:2.00, group:"grpHead" },
+  neckThick:  { label: "Neck thick",  min:0.60, max:1.70, group:"grpHead" },
+  wingSpan:   { label: "Wing span",   min:0.70, max:2.00, group:"grpLimbs" },
+  wingSize:   { label: "Wing size",   min:0.70, max:1.60, group:"grpLimbs" },
+  legLength:  { label: "Leg length",  min:0.55, max:1.90, group:"grpLimbs" },
+  legThick:   { label: "Leg thick",   min:0.60, max:1.80, group:"grpLimbs" },
+  footSize:   { label: "Foot",        min:0.70, max:1.60, group:"grpLimbs" },
+  tailLength: { label: "Tail length", min:0.50, max:1.80, group:"grpLimbs" },
+  tailSpread: { label: "Tail spread", min:0.60, max:1.80, group:"grpLimbs" },
+  tailArc:    { label: "Tail arc",    min:0.60, max:1.80, group:"grpLimbs" },
+};
+
+const MUT_NODES = {
+  twoHeaded:  ["Mut_SecondHead"],
+  extraWings: ["Mut_ExtraWing_L", "Mut_ExtraWing_R"],
+  ironSpurs:  ["Mut_Spur_L", "Mut_Spur_R"],
+};
+
+const BASE_COLORS = {
+  M_Feathers:"#6b2111", M_Hackle:"#c75c0f", M_Wing:"#4c1708",
+  M_Tail:"#0d1714", M_Comb:"#b8100f", M_Beak:"#d9a83a", M_Legs:"#cc9e33",
+};
+
+const BREEDS = {
+  Texas:   { traits:{ bodyGirth:1.25, chest:1.30, legThick:1.30, combSize:0.55, tailLength:0.85, scale:1.15 },
+             colors:{ M_Feathers:"#f2ead8", M_Hackle:"#f7f2e4", M_Wing:"#e6dcc4", M_Tail:"#efe7d3" } },
+  Sweater: { traits:{ neckLength:1.25, wingSpan:1.20, legLength:1.25, tailLength:1.25, bodyGirth:0.90 },
+             colors:{ M_Feathers:"#7d2a12", M_Hackle:"#e0891d", M_Tail:"#101c18", M_Wing:"#5a1c0c" } },
+  Asil:    { traits:{ bodyGirth:1.30, neckThick:1.50, combSize:0.25, wattleSize:0.30, tailLength:0.60, legThick:1.45, headSize:1.20 },
+             colors:{ M_Feathers:"#3d2016", M_Hackle:"#8a4a20", M_Tail:"#150f0c" } },
+  Kelso:   { traits:{ legLength:1.20, wingSpan:1.25, tailArc:1.35, tailSpread:1.25, bodyLength:1.10 },
+             colors:{ M_Feathers:"#5b2a3a", M_Hackle:"#d4a02c", M_Tail:"#0a1420" } },
+  Hatch:   { traits:{ chest:1.35, bodyGirth:1.15, beakLength:1.25, combSize:0.70, legThick:1.25 },
+             colors:{ M_Feathers:"#7a2f10", M_Hackle:"#b8480e", M_Legs:"#c9b24f" } },
+};
+
+const state = {
+  traits: Object.fromEntries(Object.keys(TRAITS).map(k => [k, 1])),
+  colors: { ...BASE_COLORS },
+  mut: { albino:false, lumin:false, twoHeaded:false, extraWings:false, ironSpurs:false, giant:false },
+  pattern: "SOLID", patternColor: "#2a1c10",
+};
+
+/* genome traits -> per-bone WORLD scale. Each bone's local scale is then
+   worldScale / parentWorldScale, so a fatter torso repositions the head
+   without inflating it — the same compensation idea as the old rig, but
+   derived instead of hand-written per bone. */
+function worldScales(t) {
+  const S = {
+    Root:  [t.scale, t.scale, t.scale],
+    Hips:  [t.bodyGirth, t.bodyGirth * 0.85 + 0.15, t.bodyLength],
+    Spine: [t.bodyGirth, t.bodyGirth * 0.85 + 0.15, t.bodyLength],
+    Chest: [t.chest, t.chest, t.chest],
+    Neck:  [t.neckThick, t.neckLength, t.neckThick],
+    Head:  [t.headSize, t.headSize, t.headSize],
+    Comb:  [t.combSize * 0.6 + 0.4, t.combSize, t.combSize * 0.6 + 0.4],
+    Wattle:[t.wattleSize, t.wattleSize, t.wattleSize],
+    Beak:  [1, 1, t.beakLength],
+    Tail:     [t.tailSpread, t.tailArc, t.tailLength],
+    Tail_Tip: [t.tailSpread, t.tailArc, t.tailLength],
+  };
+  for (const s of ["L", "R"]) {
+    S[`Wing${s}`]     = [t.wingSpan, t.wingSize, t.wingSize];
+    S[`Wing${s}_Tip`] = [t.wingSpan, t.wingSize, t.wingSize];
+    S[`Thigh${s}`]    = [t.legThick, t.legLength, t.legThick];
+    S[`Shank${s}`]    = [t.legThick, t.legLength, t.legThick];
+    S[`Foot${s}`]     = [t.footSize, t.footSize, t.footSize];
+  }
+  return S;
+}
+
+function deriveStats() {
+  const t = state.traits, m = state.mut;
+  return {
+    DMG: Math.round(28 * (t.legThick*0.5 + t.footSize*0.3 + t.chest*0.4) * (m.ironSpurs ? 1.25 : 1)),
+    SPD: Math.round(34 * (1.6 - t.bodyGirth*0.35) * (t.legLength*0.55 + 0.5)),
+    STA: Math.round(30 * (t.chest*0.7 + t.bodyGirth*0.4)),
+    DEF: Math.round(26 * (t.bodyGirth*0.6 + t.wingSpan*0.35 + t.neckThick*0.25)),
+    AGR: Math.round(24 * (t.combSize*0.45 + t.wattleSize*0.25 + t.headSize*0.5) * (m.twoHeaded ? 1.4 : 1)),
+    LCK: Math.round(18 * (0.6 + (m.twoHeaded?0.9:0) + (m.extraWings?0.6:0))),
+  };
+}
+
+/* ---------------------------------------------------------------- */
+/*  Scene                                                            */
+/* ---------------------------------------------------------------- */
+const viewportEl = document.getElementById("viewport");
+const loadingEl  = document.getElementById("loading");
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x241e18);
+scene.fog = new THREE.Fog(0x241e18, 4.0, 11.0);
+
+const camera = new THREE.PerspectiveCamera(38, 1, 0.02, 60);
+camera.position.set(1.05, 0.80, 1.45);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+viewportEl.appendChild(renderer.domElement);
+
+function resize() {
+  const w = viewportEl.clientWidth, h = viewportEl.clientHeight;
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  renderer.setSize(w, h);
+}
+window.addEventListener("resize", resize);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.52, 0);
+controls.enableDamping = true;
+controls.minDistance = 0.6;
+controls.maxDistance = 4.5;
+controls.maxPolarAngle = Math.PI * 0.55;
+
+const hemi = new THREE.HemisphereLight(0xfff2d8, 0x2a2016, 0.65);
+scene.add(hemi);
+const key = new THREE.DirectionalLight(0xffe9c2, 2.4);
+key.position.set(2.0, 3.0, 1.7);
+key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048);
+key.shadow.camera.left = -1.6; key.shadow.camera.right = 1.6;
+key.shadow.camera.top = 1.6;   key.shadow.camera.bottom = -1.6;
+key.shadow.bias = -0.0012;
+scene.add(key);
+const rim = new THREE.DirectionalLight(0x8fb8ff, 0.6);
+rim.position.set(-2.2, 1.1, -1.9);
+scene.add(rim);
+
+const ground = new THREE.Mesh(
+  new THREE.CircleGeometry(3.0, 64),
+  new THREE.MeshStandardMaterial({ color: 0x3a3125, roughness: 1 })
+);
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+/* ---------------------------------------------------------------- */
+/*  Model                                                            */
+/* ---------------------------------------------------------------- */
+let roosterRoot = null, mats = {}, nodes = {}, bones = {}, parentOf = {}, restLocal = {};
+let skeletonHelper = null;
+let prev = performance.now();
+let walking = false, walkT = 0, fighting = false, fightT = 0;
+
+const loader = new GLTFLoader();
+
+function ingest(gltf) {
+  if (roosterRoot) {
+    scene.remove(roosterRoot);
+    if (skeletonHelper) { scene.remove(skeletonHelper); skeletonHelper = null; }
+  }
+  mats = {}; nodes = {}; bones = {}; parentOf = {}; restLocal = {};
+  roosterRoot = gltf.scene;
+  roosterRoot.traverse((obj) => {
+    if (obj.isMesh) {
+      obj.castShadow = true;
+      obj.receiveShadow = true;
+      obj.frustumCulled = false;
+      const add = (m) => { if (m && m.name) mats[m.name] = m; };
+      if (Array.isArray(obj.material)) obj.material.forEach(add); else add(obj.material);
+    }
+    if (obj.name) nodes[obj.name] = obj;
+    if (obj.isBone) {
+      bones[obj.name] = obj;
+      parentOf[obj.name] = (obj.parent && obj.parent.isBone) ? obj.parent.name : null;
+      restLocal[obj.name] = obj.position.clone();
+    }
+  });
+  scene.add(roosterRoot);
+  loadingEl.style.display = "none";
+  applyAll();
+}
+
+function loadBuffer(buf) {
+  loader.parse(buf, "", ingest, (err) => {
+    document.querySelector("#drop b").textContent = "failed to parse — see console";
+    console.error(err);
+  });
+}
+
+// If the page is served over http(s) and the GLB sits next to it, just load it.
+fetch("rooster_rigged.glb")
+  .then(r => r.ok ? r.arrayBuffer() : Promise.reject())
+  .then(loadBuffer)
+  .catch(() => { /* file:// — fall through to the drop zone */ });
+
+const fileInput = document.getElementById("file");
+document.getElementById("drop").addEventListener("click", () => fileInput.click());
+fileInput.addEventListener("change", (e) => {
+  const f = e.target.files[0];
+  if (f) f.arrayBuffer().then(loadBuffer);
+});
+["dragover","drop"].forEach(ev => document.body.addEventListener(ev, e => e.preventDefault()));
+document.body.addEventListener("drop", (e) => {
+  const f = e.dataTransfer.files[0];
+  if (f) f.arrayBuffer().then(loadBuffer);
+});
+
+/* ---------------------------------------------------------------- */
+/*  Applying state                                                   */
+/* ---------------------------------------------------------------- */
+function applyProportions() {
+  if (!roosterRoot) return;
+  const W = worldScales(state.traits);
+  const giant = state.mut.giant ? 1.4 : 1;
+  for (const name in bones) {
+    const w = W[name] || [1,1,1];
+    const p = parentOf[name];
+    const pw = (p && W[p]) || [1,1,1];
+    bones[name].scale.set(w[0]/pw[0], w[1]/pw[1], w[2]/pw[2]);
+  }
+  if (bones["Root"]) bones["Root"].scale.multiplyScalar(giant);
+}
+
+function applyColors() {
+  for (const k in BASE_COLORS) {
+    const m = mats[k];
+    if (!m) continue;
+    m.color.set(state.mut.albino ? "#f5f2ea" : state.colors[k]);
+  }
+  if (state.mut.albino && mats["M_Comb"]) mats["M_Comb"].color.set("#e8a49a");
+  const feathers = mats["M_Feathers"];
+  if (feathers) {
+    feathers.emissive = new THREE.Color(state.mut.lumin ? 0x4fffb0 : 0x000000);
+    feathers.emissiveIntensity = state.mut.lumin ? 0.55 : 0;
+  }
+  ["M_Feathers","M_Hackle","M_Wing","M_Tail"].forEach(n => {
+    installPatternShader(mats[n]);
+    setPattern(mats[n], state.pattern, state.patternColor);
+  });
+}
+
+function applyMutations() {
+  for (const k in MUT_NODES) {
+    const on = state.mut[k] ? 1 : 0;
+    MUT_NODES[k].forEach(n => { if (nodes[n]) nodes[n].scale.setScalar(on); });
+  }
+}
+
+function renderStats() {
+  const s = deriveStats();
+  document.getElementById("stats").innerHTML =
+    Object.entries(s).map(([k,v]) => `<div><small>${k}</small><b>${v}</b></div>`).join("");
+}
+
+function applyAll() {
+  applyColors();
+  applyMutations();
+  applyProportions();
+  renderStats();
+}
+
+/* ---------------------------------------------------------------- */
+/*  UI                                                               */
+/* ---------------------------------------------------------------- */
+const sliderEls = {};
+for (const [k, t] of Object.entries(TRAITS)) {
+  const row = document.createElement("div");
+  row.className = "slider-row";
+  row.innerHTML = `<span>${t.label}</span>
+    <input type="range" min="${t.min}" max="${t.max}" step="0.01" value="1" />
+    <em>1.00</em>`;
+  const input = row.querySelector("input"), read = row.querySelector("em");
+  input.addEventListener("input", () => {
+    state.traits[k] = parseFloat(input.value);
+    read.textContent = state.traits[k].toFixed(2);
+    applyProportions(); renderStats();
+  });
+  sliderEls[k] = { input, read };
+  document.getElementById(t.group).appendChild(row);
+}
+
+function syncSliders() {
+  for (const k in sliderEls) {
+    sliderEls[k].input.value = state.traits[k];
+    sliderEls[k].read.textContent = state.traits[k].toFixed(2);
+  }
+}
+function syncSwatches() {
+  for (const k in BASE_COLORS) {
+    const el = document.getElementById("c_" + k);
+    if (el) el.value = state.colors[k];
+  }
+}
+
+document.getElementById("btnResetProps").addEventListener("click", () => {
+  for (const k in state.traits) state.traits[k] = 1;
+  syncSliders(); applyProportions(); renderStats();
+});
+
+for (const k in BASE_COLORS) {
+  document.getElementById("c_" + k).addEventListener("input", (e) => {
+    state.colors[k] = e.target.value;
+    applyColors();
+  });
+}
+document.getElementById("patternType").addEventListener("change", (e) => {
+  state.pattern = e.target.value; applyColors();
+});
+document.getElementById("colorPattern").addEventListener("input", (e) => {
+  state.patternColor = e.target.value; applyColors();
+});
+
+document.querySelectorAll(".trait").forEach((el) => {
+  el.addEventListener("click", () => {
+    const k = el.dataset.mut;
+    state.mut[k] = el.classList.toggle("active");
+    applyAll();
+  });
+});
+
+const breedWrap = document.getElementById("breeds");
+Object.keys(BREEDS).forEach((name) => {
+  const b = document.createElement("button");
+  b.className = "seg-btn"; b.textContent = name;
+  b.addEventListener("click", () => {
+    breedWrap.querySelectorAll(".seg-btn").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    for (const k in state.traits) state.traits[k] = 1;
+    Object.assign(state.traits, BREEDS[name].traits);
+    state.colors = { ...BASE_COLORS, ...(BREEDS[name].colors || {}) };
+    syncSliders(); syncSwatches(); applyAll();
+  });
+  breedWrap.appendChild(b);
+});
+
+const gauss = () => {
+  let u = 0, v = 0;
+  while (!u) u = Math.random();
+  while (!v) v = Math.random();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+};
+document.getElementById("btnRandom").addEventListener("click", () => {
+  for (const [k, t] of Object.entries(TRAITS)) {
+    const mid = (t.min + t.max) / 2;
+    state.traits[k] = Math.min(t.max, Math.max(t.min, mid + gauss() * (t.max - t.min) * 0.22));
+  }
+  const hue = Math.random();
+  const hsl = (h, s, l) => "#" + new THREE.Color().setHSL(h, s, l).getHexString();
+  state.colors = { ...BASE_COLORS };
+  state.colors.M_Feathers = hsl(hue, 0.45 + Math.random()*0.3, 0.16 + Math.random()*0.3);
+  state.colors.M_Hackle   = hsl((hue + 0.06) % 1, 0.6 + Math.random()*0.35, 0.35 + Math.random()*0.3);
+  state.colors.M_Wing     = hsl(hue, 0.5, 0.12 + Math.random()*0.2);
+  state.colors.M_Tail     = hsl((hue + 0.5) % 1, 0.35, 0.06 + Math.random()*0.12);
+  syncSliders(); syncSwatches(); applyAll();
+});
+
+document.getElementById("btnCopy").addEventListener("click", function () {
+  const txt = JSON.stringify(state, null, 2);
+  navigator.clipboard?.writeText(txt);
+  console.log(txt);
+  this.textContent = "Copied";
+  setTimeout(() => { this.textContent = "Copy JSON"; }, 1200);
+});
+
+document.getElementById("btnWalk").addEventListener("click", function () {
+  walking = !walking;
+  if (walking) { fighting = false; document.getElementById("btnFight").textContent = "Play fight animation"; }
+  else resetActionPose();
+  this.textContent = walking ? "Stop walk cycle" : "Play walk cycle";
+});
+document.getElementById("btnFight").addEventListener("click", function () {
+  fighting = !fighting;
+  if (fighting) { walking = false; document.getElementById("btnWalk").textContent = "Play walk cycle"; }
+  else resetActionPose();
+  this.textContent = fighting ? "Stop fight animation" : "Play fight animation";
+});
+document.getElementById("btnBones").addEventListener("click", function () {
+  if (skeletonHelper) {
+    scene.remove(skeletonHelper); skeletonHelper = null;
+    this.textContent = "Show bones"; return;
+  }
+  let skinned = null;
+  if (roosterRoot) roosterRoot.traverse(o => { if (o.isSkinnedMesh) skinned = o; });
+  if (skinned) {
+    skeletonHelper = new SkeletonHelper(skinned);
+    skeletonHelper.material.linewidth = 2;
+    scene.add(skeletonHelper);
+    this.textContent = "Hide bones";
+  }
+});
+
+/* ---------------------------------------------------------------- */
+/*  Animation — same rotation-driven approach, retimed for this rig  */
+/*  (model is 1.0 units tall, so Hips rest at y = 0.42 not 0.22)     */
+/* ---------------------------------------------------------------- */
+const rot = (n, axis, v) => { if (bones[n]) bones[n].rotation[axis] = v; };
+
+function animateWalk(dt) {
+  if (!walking) return;
+  walkT += dt * 5.0;
+  const swing = Math.sin(walkT), opp = Math.sin(walkT + Math.PI);
+  rot("ThighL","x", swing * 0.5);
+  rot("ThighR","x", opp * 0.5);
+  rot("ShankL","x", Math.max(0, -swing) * 0.65);
+  rot("ShankR","x", Math.max(0, -opp) * 0.65);
+  rot("Neck","x", Math.sin(walkT * 2) * 0.08);
+  rot("Head","x", -Math.sin(walkT * 2) * 0.14);
+  rot("Tail","x", swing * 0.12);
+  rot("Spine","z", Math.sin(walkT) * 0.03);
+  if (bones["Hips"]) bones["Hips"].position.y = restLocal["Hips"].y + Math.abs(Math.sin(walkT * 2)) * 0.022;
+}
+
+function animateFight(dt) {
+  if (!fighting) return;
+  fightT += dt * 8;
+  const flap = Math.sin(fightT), fast = Math.sin(fightT * 1.7);
+  rot("WingL","z", 0.9 + flap * 0.35); rot("WingL","x", fast * 0.25);
+  rot("WingR","z", -0.9 - flap * 0.35); rot("WingR","x", -fast * 0.25);
+  rot("WingL_Tip","z", 0.4 + flap * 0.3);
+  rot("WingR_Tip","z", -0.4 - flap * 0.3);
+  rot("Spine","x", 0.22 + Math.sin(fightT * 2) * 0.03);
+  rot("Chest","x", 0.14);
+  rot("Neck","x", 0.28 + Math.sin(fightT * 2.5) * 0.22);
+  rot("Head","x", Math.sin(fightT * 2.5 + 0.3) * 0.3);
+  const kick = Math.sin(fightT * 2), kickOpp = Math.sin(fightT * 2 + Math.PI);
+  rot("ThighL","x", kick * 0.75);
+  rot("ThighR","x", kickOpp * 0.75);
+  rot("ShankL","x", Math.max(0, -kick) * 0.9);
+  rot("ShankR","x", Math.max(0, -kickOpp) * 0.9);
+  rot("Tail","x", 0.18 + Math.sin(fightT * 3) * 0.08);
+  if (bones["Hips"]) bones["Hips"].position.y = restLocal["Hips"].y + Math.abs(Math.sin(fightT * 2)) * 0.035;
+}
+
+function resetActionPose() {
+  ["ThighL","ThighR","ShankL","ShankR","Neck","Head","Tail","Spine","Chest",
+   "WingL","WingR","WingL_Tip","WingR_Tip"].forEach((n) => {
+    if (bones[n]) bones[n].rotation.set(0, 0, 0);
+  });
+  if (bones["Hips"]) bones["Hips"].position.y = restLocal["Hips"].y;
+}
+
+function idleBreathe(t) {
+  if (walking || fighting || !bones["Chest"]) return;
+  rot("Chest","z", Math.sin(t * 1.6) * 0.02);
+  rot("Head","y", Math.sin(t * 0.7) * 0.15);
+  rot("Neck","x", Math.sin(t * 1.3 + 1) * 0.03);
+  rot("Tail","x", Math.sin(t * 1.1) * 0.03);
+  if (bones["Chest"]) bones["Chest"].position.y = restLocal["Chest"].y + Math.sin(t * 1.7) * 0.005;
+}
+
+resize();
+renderStats();
+function tick(now) {
+  const dt = Math.min(0.05, (now - prev) / 1000);
+  prev = now;
+  controls.update();
+  if (roosterRoot) {
+    animateWalk(dt);
+    animateFight(dt);
+    idleBreathe(now / 1000);
+  }
+  renderer.render(scene, camera);
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+</script>
+</body>
+</html>

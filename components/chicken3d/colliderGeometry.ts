@@ -23,8 +23,25 @@ const BASELINE_WING_RADIUS = 0.05;
 const BASELINE_WING_HALF_HEIGHT = 0.14;
 const BASELINE_WING_OFFSET_X = 0.13;
 
+/** Same composites ChickenModel.tsx/physicalProfile.ts use to fold the 18-trait genome into the old 5-axis shape these baselines were tuned against. */
+function bodyAxis(physical: PhysicalBlock): number {
+  return (physical.bodyGirth + physical.bodyLength + physical.chest) / 3;
+}
+function neckAxis(physical: PhysicalBlock): number {
+  return (physical.neckLength + physical.neckThick) / 2;
+}
+function legsAxis(physical: PhysicalBlock): number {
+  return physical.legLength;
+}
+function wingsAxis(physical: PhysicalBlock): number {
+  return (physical.wingSpan + physical.wingSize) / 2;
+}
+
 export function getZoneColliders(physical: PhysicalBlock): Record<HitZone, ZoneColliderSpec> {
-  const { body, neck, legs, wings } = physical;
+  const body = bodyAxis(physical);
+  const neck = neckAxis(physical);
+  const legs = legsAxis(physical);
+  const wings = wingsAxis(physical);
 
   const legHeight = BASELINE_LEG_HEIGHT * legs;
   const bodyRadius = BASELINE_BODY_RADIUS * body;
@@ -81,7 +98,8 @@ export function getZoneColliders(physical: PhysicalBlock): Record<HitZone, ZoneC
 
 /** One solid capsule approximating the whole standing bird — drives the real rigid-body physics. */
 export function getBodyCapsule(physical: PhysicalBlock): CapsuleSpec {
-  const { body, legs } = physical;
+  const body = bodyAxis(physical);
+  const legs = legsAxis(physical);
   const legHeight = BASELINE_LEG_HEIGHT * legs;
   const bodyRadius = BASELINE_BODY_RADIUS * body;
   const bodyHalfHeight = BASELINE_BODY_HALF_HEIGHT * body;

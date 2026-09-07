@@ -26,13 +26,19 @@ const KNOCKBACK_IMPULSE: Record<StaggerLevel, number> = {
 };
 
 const KNOCKDOWN_TORQUE = 1.4;
-const KNOCKDOWN_RECOVER_MS = 1300;
+/** How long a non-fatal knockdown keeps the body toppled before the physics rig rights it — exported so BattleCanvas can time the matching "getup" animation intent (spec: a knocked-down-but-not-KO'd bird gets back up). */
+export const KNOCKDOWN_RECOVER_MS = 700;
 /** A trip wobbles the body (partial topple, smaller torque) then catches itself much faster than a full knockdown. */
 const STUMBLE_TORQUE = 0.55;
 const STUMBLE_RECOVER_MS = 450;
 /** Recovery timers scale by defenderRecoveryRatio (speed/stamina + style), clamped so genetics tune it, never break it. */
 const RECOVERY_RATIO_MIN = 0.7;
 const RECOVERY_RATIO_MAX = 1.5;
+
+/** Same clamped scaling `scheduleUprightRecovery` applies internally — exported so callers can line up a cosmetic beat (e.g. the "getup" animation intent) with the physics recovery. */
+export function scaledRecoveryMs(baseMs: number, recoveryRatio: number): number {
+  return Math.min(baseMs * RECOVERY_RATIO_MAX, Math.max(baseMs * RECOVERY_RATIO_MIN, baseMs / recoveryRatio));
+}
 
 export interface ChickenPhysicsHandle {
   /**
@@ -107,10 +113,7 @@ export const ChickenPhysicsRig = forwardRef<ChickenPhysicsHandle, ChickenPhysics
       () => {
         /** Unlocks XZ rotation for a topple/wobble, then re-locks upright after `ms` (scaled by recovery ratio). */
         const scheduleUprightRecovery = (ms: number, recoveryRatio: number) => {
-          const recoverMs = Math.min(
-            ms * RECOVERY_RATIO_MAX,
-            Math.max(ms * RECOVERY_RATIO_MIN, ms / recoveryRatio)
-          );
+          const recoverMs = scaledRecoveryMs(ms, recoveryRatio);
           if (uprightTimer.current) clearTimeout(uprightTimer.current);
           uprightTimer.current = setTimeout(() => {
             if (!mounted.current) return;
@@ -138,6 +141,11 @@ export const ChickenPhysicsRig = forwardRef<ChickenPhysicsHandle, ChickenPhysics
             const len = Math.hypot(dirX, dirZ) || 1;
             const nx = dirX / len;
             const nz = dirZ / len;
+            // Zero out any residual velocity from a prior hit first — otherwise
+            // repeated knockbacks stack on top of each other (linearDamping alone
+            // can't dissipate them fast enough across a long fight) and the rig
+            // drifts upward/outward without bound over many rounds.
+            body.setLinvel({ x: 0, y: 0, z: 0 }, true);
             body.applyImpulse({ x: nx * magnitude, y: magnitude * 0.15, z: nz * magnitude }, true);
 
             if (stagger === "stumble") {
@@ -179,11 +187,11 @@ export const ChickenPhysicsRig = forwardRef<ChickenPhysicsHandle, ChickenPhysics
         friction={0.9}
         restitution={0}
       >
-        <CapsuleCollider
+        {/* <CapsuleCollider
           args={[bodyCapsule.halfHeight, bodyCapsule.radius]}
           position={bodyCapsule.position}
           mass={bodyMass}
-        />
+        /> */}
         {HIT_ZONES.map((zone) => {
           const spec = scaleSpec(zoneColliders[zone], worldScale);
           return (

@@ -30,6 +30,7 @@ export type MarketListingRow = {
   fatherId: string | null;
   motherId: string | null;
   bloodlineId: string;
+  breed?: string;
   iv: StatBlock;
   physical: PhysicalBlock;
   mutations: MutationGenome;
@@ -50,6 +51,7 @@ export function generateListing(): MarketListingRow {
     fatherId: chicken.parents.fatherId,
     motherId: chicken.parents.motherId,
     bloodlineId: chicken.bloodlineId,
+    breed: chicken.breed,
     iv: chicken.iv,
     physical: chicken.physical,
     mutations: chicken.mutations,
@@ -69,6 +71,7 @@ export function listingToChicken(listing: MarketListingRow): Chicken {
     generation: listing.generation,
     parents: { fatherId: listing.fatherId, motherId: listing.motherId },
     bloodlineId: listing.bloodlineId,
+    breed: listing.breed,
     iv: listing.iv,
     ev: Object.fromEntries(Object.keys(listing.iv).map((key) => [key, 0])) as StatBlock,
     physical: listing.physical,

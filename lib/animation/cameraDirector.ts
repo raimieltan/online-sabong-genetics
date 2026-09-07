@@ -59,57 +59,62 @@ export interface CameraImpulse {
 
 const NEUTRAL: CueFraming = { radiusMul: 1, heightAdd: 0, fovAdd: 0, focusBias: 0, pushIn: 0, pushDecay: 1 };
 
+// The battle backdrop is a fixed painted sabong pit shot from the rim, so the
+// camera holds that one framing for the whole fight — distance and FOV stay put
+// on every cue (no punch-in on attacks). Cues still shift *focus* toward the
+// fighter being hit and fire a decaying shake, so impacts read without the
+// camera lurching around.
 const CUES: Record<CameraCueName, CueFraming> = {
-  battle_start: { radiusMul: 1.28, heightAdd: 0.55, fovAdd: 4, focusBias: 0, pushIn: 0, pushDecay: 1.5 },
-  approach: { radiusMul: 1.05, heightAdd: 0.1, fovAdd: 0, focusBias: 0.12, pushIn: 0, pushDecay: 1 },
-  attack: { radiusMul: 0.94, heightAdd: -0.05, fovAdd: -2, focusBias: 0.3, pushIn: 0.12, pushDecay: 0.5 },
+  battle_start: { radiusMul: 1.04, heightAdd: 0.12, fovAdd: 0, focusBias: 0, pushIn: 0, pushDecay: 1.5 },
+  approach: { radiusMul: 1, heightAdd: 0, fovAdd: 0, focusBias: 0.1, pushIn: 0, pushDecay: 1 },
+  attack: { radiusMul: 1, heightAdd: 0, fovAdd: 0, focusBias: 0.22, pushIn: 0, pushDecay: 0.5 },
   impact_light: {
-    radiusMul: 0.9,
-    heightAdd: -0.05,
-    fovAdd: -3,
-    focusBias: 0.4,
-    pushIn: 0.18,
+    radiusMul: 1,
+    heightAdd: 0,
+    fovAdd: 0,
+    focusBias: 0.3,
+    pushIn: 0,
     pushDecay: 0.4,
     shake: { strength: 0.05, duration: 0.16, frequency: 32 },
   },
   impact_heavy: {
-    radiusMul: 0.82,
-    heightAdd: -0.08,
-    fovAdd: -6,
-    focusBias: 0.5,
-    pushIn: 0.32,
+    radiusMul: 1,
+    heightAdd: 0,
+    fovAdd: 0,
+    focusBias: 0.4,
+    pushIn: 0,
     pushDecay: 0.5,
     shake: { strength: 0.13, duration: 0.28, frequency: 26 },
   },
   critical: {
-    radiusMul: 0.72,
-    heightAdd: -0.02,
-    fovAdd: -9,
-    focusBias: 0.62,
-    pushIn: 0.42,
+    radiusMul: 1,
+    heightAdd: 0,
+    fovAdd: 0,
+    focusBias: 0.5,
+    pushIn: 0,
     pushDecay: 0.65,
     shake: { strength: 0.2, duration: 0.34, frequency: 22 },
   },
-  knockback: { radiusMul: 0.98, heightAdd: 0.05, fovAdd: -1, focusBias: 0.55, pushIn: 0.1, pushDecay: 0.6 },
+  knockback: { radiusMul: 1, heightAdd: 0, fovAdd: 0, focusBias: 0.45, pushIn: 0, pushDecay: 0.6 },
   knockdown: {
-    radiusMul: 1.12,
-    heightAdd: 0.35,
-    fovAdd: 2,
-    focusBias: 0.5,
+    radiusMul: 1,
+    heightAdd: 0,
+    fovAdd: 0,
+    focusBias: 0.4,
     pushIn: 0,
     pushDecay: 0.8,
     shake: { strength: 0.09, duration: 0.4, frequency: 18 },
   },
   death: {
-    radiusMul: 0.9,
-    heightAdd: 0.1,
-    fovAdd: -4,
-    focusBias: 0.72,
-    pushIn: 0.15,
+    radiusMul: 1,
+    heightAdd: 0,
+    fovAdd: 0,
+    focusBias: 0.6,
+    pushIn: 0,
     pushDecay: 1.2,
     shake: { strength: 0.11, duration: 0.45, frequency: 16 },
   },
-  victory: { radiusMul: 0.85, heightAdd: 0.15, fovAdd: -3, focusBias: 0.8, pushIn: 0.1, pushDecay: 1.4 },
+  victory: { radiusMul: 1, heightAdd: 0.08, fovAdd: 0, focusBias: 0.65, pushIn: 0, pushDecay: 1.4 },
   neutral: NEUTRAL,
 };
 
@@ -162,9 +167,12 @@ export class CameraDirector {
 
   constructor(opts: CameraDirectorOpts) {
     this.opts = {
-      orbitPeriodMs: 24000,
-      orbitArc: 1.15,
-      center: { x: 0, y: -0.15, z: 0 },
+      orbitPeriodMs: 30000,
+      // Tight swing (~9° each side of front-on). The battle backdrop is a fixed
+      // painted pit, so a wide orbit would slide the fighters out of it — this
+      // keeps them seated in the arena while still giving the frame some life.
+      orbitArc: 0.16,
+      center: { x: 0, y: -0.25, z: 0 },
       ...opts,
     };
     this.fov = opts.fov;

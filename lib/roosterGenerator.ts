@@ -25,11 +25,41 @@ const RANDOM_NAME_POOL: readonly string[] = [
   "Ember",
 ];
 
-/** Dark-neon palette families from the design spec (reds / greens / browns), remapped onto the new rig's materials. */
+/** Dark-neon palette families from the design spec (reds / greens / browns), remapped onto the rig's 7 materials. */
 export const COLOR_PALETTES: readonly ChickenColorScheme[] = [
-  { feathers: "#d4514f", details: "#ff0000", eyes: "#050505", tail: "#ff4444", pattern: "SOLID", patternColor: "#5c1f1d" },
-  { feathers: "#4a7c59", details: "#ff0000", eyes: "#050505", tail: "#66cc88", pattern: "BARRED", patternColor: "#1c3a26" },
-  { feathers: "#8b6f47", details: "#ff0000", eyes: "#050505", tail: "#a0826d", pattern: "MOTTLED", patternColor: "#4a3521" },
+  {
+    body: "#d4514f",
+    hackle: "#e0891d",
+    wings: "#4c1708",
+    tail: "#ff4444",
+    comb: "#b8100f",
+    beak: "#d9a83a",
+    shanks: "#cc9e33",
+    pattern: "SOLID",
+    patternColor: "#5c1f1d",
+  },
+  {
+    body: "#4a7c59",
+    hackle: "#c75c0f",
+    wings: "#2f5a3e",
+    tail: "#66cc88",
+    comb: "#b8100f",
+    beak: "#d9a83a",
+    shanks: "#cc9e33",
+    pattern: "BARRED",
+    patternColor: "#1c3a26",
+  },
+  {
+    body: "#8b6f47",
+    hackle: "#c9a24f",
+    wings: "#4c1708",
+    tail: "#a0826d",
+    comb: "#b8100f",
+    beak: "#d9a83a",
+    shanks: "#cc9e33",
+    pattern: "MOTTLED",
+    patternColor: "#4a3521",
+  },
 ];
 
 function cryptoSafeId(seed: string): string {

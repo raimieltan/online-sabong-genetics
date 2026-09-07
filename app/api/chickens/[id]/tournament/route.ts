@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 
+import { hasActiveInjury } from "@/lib/career/injuries";
 import { prisma } from "@/lib/db";
-import { canFight, finalHealthPercent } from "@/lib/combat";
+import { applyFightOutcome, canFight, finalHealthPercent } from "@/lib/combat";
 import { generateBracketOpponents, runTournament } from "@/lib/tournament";
 import { getOrCreatePlayer } from "@/lib/player";
 import type { Chicken, CombatRecord } from "@/lib/types";
@@ -38,14 +39,26 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     decisions: record.decisions + outcome.matches.filter((m) => m.outcomeReason === "timeout").length,
   };
 
+  // Fold every bracket match's experience/behavior-drift/condition/injury deltas
+  // in sequence — a tournament run is a real string of battles, not one fight.
+  let running: Chicken = chicken;
+  for (const match of outcome.matches) {
+    const delta = applyFightOutcome(running, match);
+    running = { ...running, behavior: delta.behavior, experience: delta.experience, condition: delta.condition, injuries: delta.injuries };
+  }
+
   const [updatedChicken, updatedPlayer] = await Promise.all([
     prisma.chicken.update({
       where: { id },
       data: {
         record: updatedRecord,
         health: finalHealthPercent(lastMatch, chicken),
-        injured: wasInjured,
+        injured: wasInjured || hasActiveInjury(running.injuries ?? []),
         status: wasInjured ? "injured" : chicken.status,
+        behavior: running.behavior,
+        experience: running.experience,
+        condition: running.condition,
+        injuries: running.injuries,
       },
     }),
     outcome.tokensAwarded > 0

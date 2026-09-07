@@ -1,5 +1,5 @@
 import { MUTATION_POOL } from "./mutations";
-import type { Chicken } from "./types";
+import type { Chicken, GeneticStatKey } from "./types";
 
 /**
  * Combat-facing physical profile, derived from the 5 raw proportion genes
@@ -31,16 +31,47 @@ function toModifier(ratio: number): number {
 }
 
 export function resolvePhysicalProfile(chicken: Pick<Chicken, "physical">): PhysicalProfile {
-  const { body, legs, wings } = chicken.physical;
+  const { bodyGirth, bodyLength, chest, legLength, legThick, footSize, wingSpan, wingSize, neckThick } =
+    chicken.physical;
+
+  const body = (bodyGirth + bodyLength + chest) / 3;
+  const wings = (wingSpan + wingSize) / 2;
 
   return {
     mass: toModifier(body),
-    reach: toModifier(legs),
-    mobility: toModifier((wings + legs) / (2 * body)),
-    stability: toModifier(body / legs),
-    wingControl: toModifier(wings / body),
-    kickPower: toModifier((body + legs) / 2),
+    reach: toModifier(legLength),
+    mobility: toModifier((wings + legLength) / (2 * bodyGirth)),
+    stability: toModifier((bodyGirth + neckThick) / (2 * legLength)),
+    wingControl: toModifier(wings / chest),
+    kickPower: toModifier((legThick + footSize + bodyGirth) / 3),
   };
+}
+
+/**
+ * Second, independent bounded modifier — a more direct trait→stat path
+ * (spirit of roosterGenome.ts's deriveStats, re-derived for this game's 6
+ * GeneticStatKeys) layered on top of `resolvePhysicalProfile`'s modifiers in
+ * effectiveStat(). Same 0.85–1.15 cap and centralization principle: combat
+ * never reads raw traits itself.
+ */
+export function traitStatModifier(chicken: Pick<Chicken, "physical">, key: GeneticStatKey): number {
+  const t = chicken.physical;
+  switch (key) {
+    case "power":
+      return toModifier((t.legThick + t.footSize + t.chest) / 3);
+    case "speed":
+      return toModifier((t.legLength + 1 / t.bodyGirth) / 2);
+    case "stamina":
+      return toModifier((t.chest + t.bodyGirth) / 2);
+    case "defense":
+      return toModifier((t.bodyGirth + t.wingSpan + t.neckThick) / 3);
+    case "accuracy":
+      return toModifier((t.headSize + t.beakLength + t.neckLength) / 3);
+    case "agility":
+      return toModifier((t.legLength + t.wingSpan + 1 / t.bodyGirth) / 3);
+    default:
+      return 1;
+  }
 }
 
 /** Genome → expressed mutation tags for the render layer (spec item 16) — the model never reads raw genetics. */
