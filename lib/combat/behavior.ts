@@ -1,5 +1,7 @@
 import { ACTION_DEFINITIONS } from "./actions";
 import { styleWeight } from "./stylePolicy";
+import { commandActionModifier, type PlayerCommand } from "./command";
+import { deriveCombatIdentity } from "./identity";
 import type { PhysicalProfile } from "../physicalProfile";
 import type {
   BehavioralProfile,
@@ -139,6 +141,8 @@ export type DecisionContext = {
   style: FightingStyle;
   /** This fighter's own PhysicalProfile — feeds the cost term below, never the "what do I want" term above. */
   physical: PhysicalProfile;
+  /** A live player (or Auto-Coach) command biasing this turn's action choice — null when none is pending. */
+  pendingCommand: PlayerCommand | null;
   rng: Rng;
 };
 
@@ -191,6 +195,7 @@ export function scoreAction(profile: BehavioralProfile, action: CombatAction, ct
   // StylePolicy is what decides intent (spec Phase A pipeline): scales only
   // the base per-action term above, not the contextual bonuses below.
   score += base * styleWeight(ctx.style, action, ctx.opponentContextState);
+  score += base * commandActionModifier(ctx.pendingCommand, deriveCombatIdentity(profile), action);
 
   const fatigueRatio = ctx.fatigue / 100;
   if (action === "HEAVY_ATTACK" || action === "PRESSURE") score -= fatigueRatio * 0.8;

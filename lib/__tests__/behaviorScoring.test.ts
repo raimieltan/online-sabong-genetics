@@ -17,6 +17,7 @@ function baseCtx(overrides: Partial<DecisionContext> = {}): DecisionContext {
     opponentModel: emptyOpponentModel(),
     style: "balanced",
     physical: { mass: 1, reach: 1, mobility: 1, stability: 1, wingControl: 1, kickPower: 1 },
+    pendingCommand: null,
     rng: () => 0.5,
     ...overrides,
   };
@@ -42,4 +43,18 @@ test("high mass does not directly boost PRESSURE/HEAVY_ATTACK score (mass is not
   const highMass = baseCtx({ physical: { mass: 1.15, reach: 1, mobility: 1, stability: 1, wingControl: 1, kickPower: 1 } });
   const baseline = baseCtx();
   assert.equal(scoreAction(profile, "HEAVY_ATTACK", highMass), scoreAction(profile, "HEAVY_ATTACK", baseline));
+});
+
+test("a pending PRESS command raises PRESSURE's score over the same context with no command", () => {
+  const profile = ARCHETYPE_PROFILES.balanced;
+  const withPress = scoreAction(profile, "PRESSURE", baseCtx({ pendingCommand: "PRESS" }));
+  const withoutCommand = scoreAction(profile, "PRESSURE", baseCtx({ pendingCommand: null }));
+  assert.ok(withPress > withoutCommand);
+});
+
+test("a pending PRESS command does not change RECOVER's score (untargeted action)", () => {
+  const profile = ARCHETYPE_PROFILES.balanced;
+  const withPress = scoreAction(profile, "RECOVER", baseCtx({ pendingCommand: "PRESS" }));
+  const withoutCommand = scoreAction(profile, "RECOVER", baseCtx({ pendingCommand: null }));
+  assert.equal(withPress, withoutCommand);
 });
