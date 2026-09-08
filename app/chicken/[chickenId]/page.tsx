@@ -17,6 +17,7 @@ import { deriveBehaviorProfile } from "@/lib/combat/behavior";
 import { emptyExperience } from "@/lib/combat/experience";
 import { summarizeCareer } from "@/lib/career/retirement";
 import { growthFactor } from "@/lib/growth";
+import { setPlayerCredits } from "@/lib/playerStore";
 import type { BehavioralProfile, CombatExperience, CombatExperienceCategory } from "@/lib/types";
 
 import { StatBar } from "./StatBar";
@@ -179,6 +180,8 @@ function ChickenDetailPageContent({ params }: { params: Promise<{ chickenId: str
     if (!confirm(`Sell ${chicken.name} for Battle Credits? This can't be undone.`)) return;
     const res = await fetch(`/api/chickens/${chickenId}/sell`, { method: "POST" });
     if (!res.ok) return;
+    const body: { credits: number } = await res.json();
+    setPlayerCredits(body.credits);
     router.push("/coop");
   }
 

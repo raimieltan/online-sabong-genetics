@@ -26,7 +26,7 @@ const RANK_TITLE = [
   { minWins: 0, title: "Rookie" },
 ] as const;
 
-function rankTitle(wins: number): string {
+export function rankTitle(wins: number): string {
   return RANK_TITLE.find((tier) => wins >= tier.minWins)?.title ?? "Rookie";
 }
 
@@ -52,7 +52,7 @@ function seededRng(seed: string): () => number {
  * one — seeded by the opponent's id (stable per matchup) and its stat total (stronger
  * opponents read as more battle-tested), per the design brief's "mock the AI data" ask.
  */
-function mockOpponentRecord(opponent: Chicken): CombatRecord {
+export function mockOpponentRecord(opponent: Chicken): CombatRecord {
   const rng = seededRng(opponent.id);
   const statTotal = GENETIC_STAT_KEYS.reduce((sum, key) => sum + effectiveStat(opponent, key), 0);
   const strength = Math.min(1, Math.max(0, (statTotal - 250) / 350));
@@ -68,7 +68,7 @@ function mockOpponentRecord(opponent: Chicken): CombatRecord {
   };
 }
 
-function StatCompareRow({
+export function StatCompareRow({
   statKey,
   a,
   b,
@@ -113,7 +113,7 @@ function StatCompareRow({
   );
 }
 
-function FighterPlate({
+export function FighterPlate({
   fighter,
   corner,
   record,

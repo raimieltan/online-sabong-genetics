@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useSyncExternalStore } from "react";
 
 import { mockPlayer } from "@/lib/mockPlayer";
+import { getPlayerSnapshot, refreshPlayer, subscribePlayer } from "@/lib/playerStore";
 
 function CurrencyPill({
   icon,
@@ -35,22 +36,15 @@ function CurrencyPill({
  * system yet, so this reads from `mockPlayer` — see that file's note.
  */
 export function TopBar() {
-  const [credits, setCredits] = useState(mockPlayer.coins);
-  const [tournamentTokens, setTournamentTokens] = useState(0);
+  const { credits, tournamentTokens } = useSyncExternalStore(
+    subscribePlayer,
+    getPlayerSnapshot,
+    getPlayerSnapshot,
+  );
   const xpPct = Math.round((mockPlayer.xp / mockPlayer.xpToNext) * 100);
 
   useEffect(() => {
-    let cancelled = false;
-    fetch("/api/player")
-      .then((res) => res.json())
-      .then((player: { credits: number; tournamentTokens: number }) => {
-        if (cancelled) return;
-        setCredits(player.credits);
-        setTournamentTokens(player.tournamentTokens);
-      });
-    return () => {
-      cancelled = true;
-    };
+    refreshPlayer();
   }, []);
 
   return (

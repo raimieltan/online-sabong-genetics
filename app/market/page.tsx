@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import type { MarketListingRow } from "@/lib/marketplace";
 import { RARITY_BORDER, RARITY_GEM, topRarity } from "@/lib/rarity";
 import { ChickenThumbnail } from "@/components/chicken3d/ChickenThumbnail";
+import { setPlayerCredits } from "@/lib/playerStore";
 
 const SEX_ICON: Record<string, string> = { rooster: "🐓", hen: "🐔" };
 
@@ -29,6 +30,7 @@ export default function MarketPage() {
       if (cancelled) return;
       setListings(data.listings);
       setCredits(data.credits);
+      setPlayerCredits(data.credits);
       setLoading(false);
     });
     return () => {

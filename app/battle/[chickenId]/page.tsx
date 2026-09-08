@@ -9,6 +9,7 @@ import type { BattleReport } from "@/lib/combat/battleReport";
 import BattleCanvas from "@/components/BattleCanvas";
 import CombatResultsScreen from "@/components/CombatResultsScreen";
 import { MatchupScreen } from "@/components/battle/MatchupScreen";
+import { setPlayerCredits } from "@/lib/playerStore";
 
 type Phase = "loading" | "ready" | "fighting" | "replaying" | "result" | "error";
 
@@ -108,6 +109,7 @@ export default function BattlePage({
     setLog(body.log);
     setUpdatedChicken(body.chicken);
     setCreditsEarned(body.creditsEarned ?? 0);
+    if (typeof body.credits === "number") setPlayerCredits(body.credits);
     setBattleReport(body.battleReport ?? null);
     setPhase("replaying");
   }

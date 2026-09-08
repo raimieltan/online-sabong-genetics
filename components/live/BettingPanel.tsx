@@ -36,7 +36,7 @@ export function BettingPanel({
   const locked = placedBet !== null;
 
   return (
-    <div className="fixed inset-x-0 bottom-0 z-30 flex justify-center p-4 sm:p-6">
+    <div className="fixed inset-x-0 bottom-0 z-30 flex justify-center p-4 sm:p-6 md:left-56">
       <div className="panel-wood flex w-full max-w-2xl flex-col gap-4 rounded-2xl border-t-2 border-(--color-gold)/40 p-5 shadow-2xl">
         <div className="flex items-center justify-between">
           <p className="text-xs font-semibold uppercase tracking-[0.2em] text-red-500">Betting Open</p>

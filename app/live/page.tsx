@@ -6,6 +6,7 @@ import BattleCanvas from "@/components/BattleCanvas";
 import { BattleReportPanel } from "@/components/BattleReportPanel";
 import { BettingPanel } from "@/components/live/BettingPanel";
 import { ComicCommentary, type CommentaryBurst } from "@/components/live/ComicCommentary";
+import { LiveMatchupPreview } from "@/components/live/LiveMatchupPreview";
 import {
   commentaryForBoutStart,
   commentaryForImpact,
@@ -13,6 +14,7 @@ import {
 } from "@/lib/liveCommentary";
 import type { BattleReport } from "@/lib/combat/battleReport";
 import type { BetSide } from "@/lib/live/bets";
+import { setPlayerCredits } from "@/lib/playerStore";
 import type { Chicken, CombatLogEntry, CombatResult } from "@/lib/types";
 
 type Phase = "loading" | "betting" | "fighting" | "intermission" | "error";
@@ -112,6 +114,7 @@ export default function LivePage() {
     const body: LiveResolveResponse = await res.json();
     setRound(body);
     setCredits(body.credits);
+    setPlayerCredits(body.credits);
     setRoundId((n) => n + 1);
     setCaption(commentaryForBoutStart(body.chickenA.name, body.chickenB.name, body.mode));
     setPhase("fighting");
@@ -134,6 +137,7 @@ export default function LivePage() {
     const body: LiveMatchupResponse = await res.json();
     setMatchup(body);
     setCredits(body.credits);
+    setPlayerCredits(body.credits);
     setPhase("betting");
 
     const expiresAt = new Date(body.expiresAt).getTime();
@@ -154,6 +158,7 @@ export default function LivePage() {
     if (!res.ok) return;
     const body: { credits: number } = await res.json();
     setCredits(body.credits);
+    setPlayerCredits(body.credits);
     setPlacedBet({ side, amount });
   }
 
@@ -255,26 +260,27 @@ export default function LivePage() {
         </div>
       </div>
 
-      <div className="relative mx-auto aspect-[16/9] w-full max-w-[142.2vh] overflow-hidden">
-        {round ? (
-          <>
-            <BattleCanvas
-              key={roundId}
-              chickenA={round.chickenA}
-              chickenB={round.chickenB}
-              log={round.log}
-              audioEnabled={audioEnabled}
-              onReplayEnd={handleReplayEnd}
-              onImpact={handleImpact}
-            />
-            <ComicCommentary bursts={bursts} caption={caption} />
-          </>
-        ) : (
-          <div className="flex h-full items-center justify-center">
-            <p className="font-comic text-3xl text-(--color-text-muted)">VS</p>
-          </div>
-        )}
-      </div>
+      {round ? (
+        <div className="relative mx-auto aspect-[16/9] w-full max-w-[142.2vh] overflow-hidden">
+          <BattleCanvas
+            key={roundId}
+            chickenA={round.chickenA}
+            chickenB={round.chickenB}
+            log={round.log}
+            audioEnabled={audioEnabled}
+            onReplayEnd={handleReplayEnd}
+            onImpact={handleImpact}
+          />
+          <ComicCommentary bursts={bursts} caption={caption} />
+        </div>
+      ) : (
+        // No fixed aspect box here (unlike the BattleCanvas replay above) — the
+        // betting panel below is `fixed` to the viewport bottom, so this needs
+        // its own scroll room (pb-*) rather than a cropped fixed-height stage.
+        <div className="mx-auto w-full max-w-[142.2vh] pb-72 sm:pb-64">
+          <LiveMatchupPreview chickenA={matchup.chickenA} chickenB={matchup.chickenB} />
+        </div>
+      )}
 
       {phase === "betting" && (
         <BettingPanel
@@ -291,7 +297,7 @@ export default function LivePage() {
       )}
 
       {phase === "intermission" && round && winner && loser && (
-        <div className="fixed inset-x-0 bottom-0 z-30 flex justify-center p-4 sm:p-6">
+        <div className="fixed inset-x-0 bottom-0 z-30 flex justify-center p-4 sm:p-6 md:left-56">
           <div className="panel-wood flex w-full max-w-lg flex-col items-center gap-2 rounded-2xl border-t-2 border-(--color-gold)/40 p-5 text-center shadow-2xl">
             <p className="font-comic text-2xl tracking-wide text-(--color-gold-bright) sm:text-3xl">
               Panalo si {winner.name}!
