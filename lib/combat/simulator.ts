@@ -7,6 +7,7 @@ import { createInjuryRecord, rollInjurySeverity } from "./injuries";
 import { decayMomentum, momentumRiskNudge } from "./momentum";
 import { applyMentalState, deriveMentalState } from "./mentalState";
 import { deriveCombatIdentity, withIdentity } from "./identity";
+import { shouldForceEngagement, STALEMATE_TURNS } from "./inactivity";
 import { deriveContextState } from "./positioning";
 import { isOffensive, resolveExchange } from "./resolution";
 import { effectiveStat } from "./stats";
@@ -24,8 +25,6 @@ import type {
 export type Rng = () => number;
 
 export const MAX_TURNS = 300;
-/** Consecutive no-damage turns before we force an offensive action, so two reactive fighters can't just sit and stare (spec anti-stalemate). */
-const STALEMATE_TURNS = 15;
 
 function pickForcedOffensiveAction(legal: readonly CombatAction[]): CombatAction | null {
   const priority: readonly CombatAction[] = ["LIGHT_ATTACK", "PRESSURE", "HEAVY_ATTACK"];
@@ -127,6 +126,7 @@ export function simulateBattle(chickenA: Chicken, chickenB: Chicken, rng: Rng = 
       style: chickenA.fightingStyle,
       physical: physicalA,
       pendingCommand: stateA.pendingCommand,
+      noDamageStreak,
       experience: stateA.experience,
       opponentModel: stateA.opponentModel,
       rng,
@@ -143,6 +143,7 @@ export function simulateBattle(chickenA: Chicken, chickenB: Chicken, rng: Rng = 
       style: chickenB.fightingStyle,
       physical: physicalB,
       pendingCommand: stateB.pendingCommand,
+      noDamageStreak,
       experience: stateB.experience,
       opponentModel: stateB.opponentModel,
       rng,

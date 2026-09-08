@@ -19,6 +19,8 @@ function baseCtx(overrides: Partial<DecisionContext> = {}): DecisionContext {
     opponentModel: emptyOpponentModel(),
     style: "balanced",
     physical: { mass: 1, reach: 1, mobility: 1, stability: 1, wingControl: 1, kickPower: 1 },
+    pendingCommand: null,
+    noDamageStreak: 0,
     rng: () => 0.5,
     ...overrides,
   };

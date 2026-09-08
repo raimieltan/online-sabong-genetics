@@ -2,6 +2,7 @@ import { ACTION_DEFINITIONS } from "./actions";
 import { styleWeight } from "./stylePolicy";
 import { commandActionModifier, type PlayerCommand } from "./command";
 import { deriveCombatIdentity } from "./identity";
+import { inactivityPressureBonus } from "./inactivity";
 import type { PhysicalProfile } from "../physicalProfile";
 import type {
   BehavioralProfile,
@@ -143,6 +144,8 @@ export type DecisionContext = {
   physical: PhysicalProfile;
   /** A live player (or Auto-Coach) command biasing this turn's action choice — null when none is pending. */
   pendingCommand: PlayerCommand | null;
+  /** Consecutive no-damage turns this fight — drives inactivityPressureBonus's anti-stalemate ramp. */
+  noDamageStreak: number;
   rng: Rng;
 };
 
@@ -213,6 +216,10 @@ export function scoreAction(profile: BehavioralProfile, action: CombatAction, ct
     score += ctx.opponentModel.aggressionRead * 0.3;
     const recentHeavies = ctx.opponentModel.recentActions.filter((a) => a === "HEAVY_ATTACK").length;
     if (recentHeavies >= 2) score += Math.min(0.5, ctx.experience.adaptation / 200);
+  }
+
+  if (action === "PRESSURE" || action === "LIGHT_ATTACK" || action === "COUNTER") {
+    score += inactivityPressureBonus(ctx.noDamageStreak);
   }
 
   score -= (def.staminaCost > 0 ? def.staminaCost / ctx.maxStamina : 0) * 0.5;
