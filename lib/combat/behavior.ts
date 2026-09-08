@@ -1,4 +1,6 @@
 import { ACTION_DEFINITIONS } from "./actions";
+import { styleWeight } from "./stylePolicy";
+import type { PhysicalProfile } from "../physicalProfile";
 import type {
   BehavioralProfile,
   CombatAction,
@@ -129,8 +131,14 @@ export type DecisionContext = {
   position: number;
   distance: CombatDistance;
   contextState: CombatContextState;
+  /** The opponent's own derived context state this turn — drives styleWeight's fight-state shifts (e.g. press an EXHAUSTED opponent). */
+  opponentContextState: CombatContextState;
   experience: CombatExperience;
   opponentModel: OpponentModel;
+  /** This fighter's own fightingStyle — feeds styleWeight. */
+  style: FightingStyle;
+  /** This fighter's own PhysicalProfile — feeds the cost term below, never the "what do I want" term above. */
+  physical: PhysicalProfile;
   rng: Rng;
 };
 
@@ -143,6 +151,7 @@ export type DecisionContext = {
 export function scoreAction(profile: BehavioralProfile, action: CombatAction, ctx: DecisionContext): number {
   const def = ACTION_DEFINITIONS[action];
   let score = 0;
+  let base = 0;
 
   // Every style still keeps LIGHT_ATTACK as its default (gamefowl close
   // distance and strike), but the margin over other actions now tracks each
@@ -154,30 +163,34 @@ export function scoreAction(profile: BehavioralProfile, action: CombatAction, ct
   // forfeiting its own offense the rest of the time.
   switch (action) {
     case "LIGHT_ATTACK":
-      score += 0.22 + profile.aggression * 0.6 + (1 - profile.caution) * 0.2;
+      base += 0.22 + profile.aggression * 0.6 + (1 - profile.caution) * 0.2;
       break;
     case "HEAVY_ATTACK":
-      score += profile.aggression * profile.riskTolerance * 1.3;
+      base += profile.aggression * profile.riskTolerance * 1.3;
       break;
     case "PRESSURE":
-      score += profile.pressurePreference * 1.15 + profile.persistence * 0.1;
+      base += profile.pressurePreference * 1.15 + profile.persistence * 0.1;
       break;
     case "EVADE":
-      score += profile.caution * 0.15 + (1 - profile.riskTolerance) * 0.1;
+      base += profile.caution * 0.15 + (1 - profile.riskTolerance) * 0.1;
       break;
     case "COUNTER":
-      score += profile.counterPreference * 0.85 + Math.min(0.5, ctx.experience.counter / 400);
+      base += profile.counterPreference * 0.85 + Math.min(0.5, ctx.experience.counter / 400);
       break;
     case "GUARD":
-      score += profile.caution * 0.15 + profile.persistence * 0.05;
+      base += profile.caution * 0.15 + profile.persistence * 0.05;
       break;
     case "RECOVER":
-      score += profile.recoveryPreference * 0.18 + profile.persistence * 0.05;
+      base += profile.recoveryPreference * 0.18 + profile.persistence * 0.05;
       break;
     case "REPOSITION":
-      score += (profile.caution + profile.patience) * 0.15;
+      base += (profile.caution + profile.patience) * 0.15;
       break;
   }
+
+  // StylePolicy is what decides intent (spec Phase A pipeline): scales only
+  // the base per-action term above, not the contextual bonuses below.
+  score += base * styleWeight(ctx.style, action, ctx.opponentContextState);
 
   const fatigueRatio = ctx.fatigue / 100;
   if (action === "HEAVY_ATTACK" || action === "PRESSURE") score -= fatigueRatio * 0.8;
@@ -206,6 +219,15 @@ export function scoreAction(profile: BehavioralProfile, action: CombatAction, ct
   score -= def.commitment * (1 - profile.riskTolerance) * 0.4;
 
   score += (ctx.rng() - 0.5) * 0.3;
+
+  // PhysicalProfile changes what an action costs, not what the rooster wants
+  // (spec Phase A): low mobility/high mass makes REPOSITION/EVADE less
+  // attractive and more stamina-costly to attempt. Never applied to
+  // PRESSURE/HEAVY_ATTACK — mass is not a hidden fighting style.
+  if (action === "REPOSITION" || action === "EVADE") {
+    score -= Math.max(0, 1 - ctx.physical.mobility) * 1.2;
+    score -= Math.max(0, 1 - ctx.physical.mass ** -1) * 0.4;
+  }
 
   return score;
 }
