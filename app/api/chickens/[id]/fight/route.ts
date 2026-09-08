@@ -31,11 +31,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   const won = result.winnerId === chicken.id;
   const outcome = applyFightOutcome(chicken, result);
   const battleReport = buildBattleReport(chicken, result, chicken.id, outcome);
+  // `newTraits` is a derived summary field for the battle report, not a Chicken
+  // column — passing it through to Prisma throws a validation error.
+  const { newTraits: _newTraits, ...persistedOutcome } = outcome;
 
   const [updated, updatedPlayer] = await Promise.all([
     prisma.chicken.update({
       where: { id },
-      data: outcome,
+      data: persistedOutcome,
     }),
     won
       ? prisma.player.update({

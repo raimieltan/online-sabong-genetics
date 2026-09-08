@@ -56,10 +56,18 @@ export async function POST() {
   if (ownedSides.length > 0) {
     const outcomeA = applyFightOutcome(chickenA, result);
     const outcomeB = mode === "pvp" ? applyFightOutcome(chickenB, result) : undefined;
+    // `newTraits` is a derived summary field for the battle report, not a Chicken
+    // column — passing it through to Prisma throws a validation error.
+    const { newTraits: _newTraitsA, ...persistedA } = outcomeA;
+    let persistedB: Omit<typeof outcomeA, "newTraits"> | undefined;
+    if (outcomeB) {
+      const { newTraits: _newTraitsB, ...rest } = outcomeB;
+      persistedB = rest;
+    }
     const [rowA, rowB] = await Promise.all([
-      prisma.chicken.update({ where: { id: chickenA.id }, data: outcomeA }),
-      outcomeB
-        ? prisma.chicken.update({ where: { id: chickenB.id }, data: outcomeB })
+      prisma.chicken.update({ where: { id: chickenA.id }, data: persistedA }),
+      persistedB
+        ? prisma.chicken.update({ where: { id: chickenB.id }, data: persistedB })
         : Promise.resolve(chickenB),
     ]);
     updatedA = rowA as unknown as Chicken;
