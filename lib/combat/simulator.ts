@@ -6,7 +6,7 @@ import { clampFatigue, fatigueGain, fatigueRecoveryPerTurn, fatigueStatMultiplie
 import { createInjuryRecord, rollInjurySeverity } from "./injuries";
 import { decayMomentum } from "./momentum";
 import { deriveContextState } from "./positioning";
-import { resolveExchange } from "./resolution";
+import { isOffensive, resolveExchange } from "./resolution";
 import { effectiveStat } from "./stats";
 import { makeCombatantState, type CombatantState } from "./state";
 import { resolvePhysicalProfile } from "../physicalProfile";
@@ -22,6 +22,16 @@ import type {
 export type Rng = () => number;
 
 export const MAX_TURNS = 300;
+/** Consecutive no-damage turns before we force an offensive action, so two reactive fighters can't just sit and stare (spec anti-stalemate). */
+const STALEMATE_TURNS = 15;
+
+function pickForcedOffensiveAction(legal: readonly CombatAction[]): CombatAction | null {
+  const priority: readonly CombatAction[] = ["LIGHT_ATTACK", "PRESSURE", "HEAVY_ATTACK"];
+  for (const action of priority) {
+    if (legal.includes(action)) return action;
+  }
+  return null;
+}
 
 function categoryForAction(action: CombatAction): CombatExperienceCategory {
   switch (action) {
@@ -66,6 +76,7 @@ export function simulateBattle(chickenA: Chicken, chickenB: Chicken, rng: Rng = 
   const log: CombatLogEntry[] = [];
 
   let turn = 0;
+  let noDamageStreak = 0;
   let outcomeReason: CombatResult["outcomeReason"] = "timeout";
   let injuredChickenId: string | null = null;
   let winner: CombatantState = stateA;
@@ -127,8 +138,17 @@ export function simulateBattle(chickenA: Chicken, chickenB: Chicken, rng: Rng = 
       rng,
     };
 
-    const actionA = chooseAction(stateA.behavior, legalA, decisionCtxA);
-    const actionB = chooseAction(stateB.behavior, legalB, decisionCtxB);
+    let actionA = chooseAction(stateA.behavior, legalA, decisionCtxA);
+    let actionB = chooseAction(stateB.behavior, legalB, decisionCtxB);
+
+    if (noDamageStreak >= STALEMATE_TURNS && !isOffensive(actionA) && !isOffensive(actionB)) {
+      const forceA = stateA.behavior.caution <= stateB.behavior.caution;
+      const forced = pickForcedOffensiveAction(forceA ? legalA : legalB);
+      if (forced) {
+        if (forceA) actionA = forced;
+        else actionB = forced;
+      }
+    }
 
     const initiativeA = initiativeScore(chickenA, actionA, physicalA.mobility, stateA.fatigue, rng);
     const initiativeB = initiativeScore(chickenB, actionB, physicalB.mobility, stateB.fatigue, rng);
@@ -257,6 +277,9 @@ export function simulateBattle(chickenA: Chicken, chickenB: Chicken, rng: Rng = 
         loser = reDefenderState;
       }
     }
+
+    const turnDamage = outcome.hit.damage + (outcome.returnExchange?.hit.damage ?? 0);
+    noDamageStreak = turnDamage > 0 ? 0 : noDamageStreak + 1;
   }
 
   if (!fightOver) {

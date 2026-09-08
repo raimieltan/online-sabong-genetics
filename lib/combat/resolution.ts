@@ -69,7 +69,7 @@ function staggerLevelToTurns(level: StaggerLevel): number {
   return 0;
 }
 
-function isOffensive(action: CombatAction): boolean {
+export function isOffensive(action: CombatAction): boolean {
   return action === "LIGHT_ATTACK" || action === "HEAVY_ATTACK" || action === "PRESSURE";
 }
 

@@ -157,7 +157,7 @@ export function scoreAction(profile: BehavioralProfile, action: CombatAction, ct
       score += profile.caution * 0.15 + (1 - profile.riskTolerance) * 0.1;
       break;
     case "COUNTER":
-      score += profile.counterPreference * 0.85 + ctx.experience.counter / 400;
+      score += profile.counterPreference * 0.85 + Math.min(0.5, ctx.experience.counter / 400);
       break;
     case "GUARD":
       score += profile.caution * 0.15 + profile.persistence * 0.05;

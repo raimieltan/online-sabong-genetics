@@ -48,16 +48,16 @@
     "semantic_hash": "ca5d2fb409ecd2da1fc85ebd07cc40b6"
   },
   "AGENTS.md": {
-    "mtime": 1788828727.3051496,
-    "seen": 1788828815.5191522,
-    "ast_hash": "9a8fa616875bad492cabe30baf03fbf0",
-    "semantic_hash": ""
+    "mtime": 1788483157.911712,
+    "seen": 1788483580.1758158,
+    "ast_hash": "01e8142356e15c3404e0d84c48187cd0",
+    "semantic_hash": "01e8142356e15c3404e0d84c48187cd0"
   },
   "CLAUDE.md": {
-    "mtime": 1788828727.3061965,
-    "seen": 1788828815.5191529,
-    "ast_hash": "2f648c65a5931854618913fa19549dd5",
-    "semantic_hash": ""
+    "mtime": 1788483157.91264,
+    "seen": 1788483580.175817,
+    "ast_hash": "5c27369b226fcf2be8a6cfe52224e767",
+    "semantic_hash": "5c27369b226fcf2be8a6cfe52224e767"
   },
   "README.md": {
     "mtime": 1788482977.5119448,
@@ -1014,10 +1014,10 @@
     "semantic_hash": "f4cb063dfe5dfc4b5e5d1581026a4bcf"
   },
   "lib/combat/behavior.ts": {
-    "mtime": 1788828797.6941252,
-    "seen": 1788828815.517765,
-    "ast_hash": "86bacc62273d8bdbe3b11236a2819c6d",
-    "semantic_hash": ""
+    "mtime": 1788783841.2832093,
+    "seen": 1788828404.9161012,
+    "ast_hash": "4d5b7dd4d33c9f7ca83f450e41ef2fd7",
+    "semantic_hash": "4d5b7dd4d33c9f7ca83f450e41ef2fd7"
   },
   "lib/combat/events.ts": {
     "mtime": 1788715335.4104466,
@@ -1068,16 +1068,16 @@
     "semantic_hash": "2cd26e259b6c18112085759a64993341"
   },
   "lib/combat/resolution.ts": {
-    "mtime": 1788828797.6944854,
-    "seen": 1788828815.517946,
-    "ast_hash": "5d0e20d216a433c576280f6dd80f5f5b",
-    "semantic_hash": ""
+    "mtime": 1788783841.2835877,
+    "seen": 1788828404.91611,
+    "ast_hash": "9d74bc9db7a3287d809066155d8efaeb",
+    "semantic_hash": "9d74bc9db7a3287d809066155d8efaeb"
   },
   "lib/combat/simulator.ts": {
-    "mtime": 1788828797.6948578,
-    "seen": 1788828815.517947,
-    "ast_hash": "fb93dc0e2b13e8d4b432a83e3b7f62c7",
-    "semantic_hash": ""
+    "mtime": 1788768564.74914,
+    "seen": 1788828404.91611,
+    "ast_hash": "972b451aa609faac44bab4af3956c83a",
+    "semantic_hash": "972b451aa609faac44bab4af3956c83a"
   },
   "lib/combat/state.ts": {
     "mtime": 1788715233.332495,
@@ -1390,143 +1390,5 @@
     "seen": 1788828404.9162219,
     "ast_hash": "5e1f2bd4075e670dd63b0400fdc03120",
     "semantic_hash": "5e1f2bd4075e670dd63b0400fdc03120"
-  },
-  "docker-compose.yml": {
-    "mtime": 1788523956.4672604,
-    "seen": 1788828815.5191731,
-    "ast_hash": "264564e95fbadf8d42917a27fc670ad1",
-    "semantic_hash": ""
-  },
-  "docs/combat-system-v2.md": {
-    "mtime": 1788624296.491472,
-    "seen": 1788828815.5191739,
-    "ast_hash": "302ada43a47130c9ab4248307b8977c0",
-    "semantic_hash": ""
-  },
-  "docs/coop-redesign-v2.md": {
-    "mtime": 1788668752.7762647,
-    "seen": 1788828815.5191748,
-    "ast_hash": "4217073649241f0fcc6753c1207fca83",
-    "semantic_hash": ""
-  },
-  "docs/genetic-system.md": {
-    "mtime": 1788523032.230679,
-    "seen": 1788828815.519176,
-    "ast_hash": "8a1ce5ca3c9e4b5dc82a0e670c43d1c7",
-    "semantic_hash": ""
-  },
-  "docs/genetics-training-combat-overview.md": {
-    "mtime": 1788746247.5210755,
-    "seen": 1788828815.519177,
-    "ast_hash": "13154612d72f506156a0ce1aff3673f8",
-    "semantic_hash": ""
-  },
-  "docs/rooster-training-medical-v3-progress.md": {
-    "mtime": 1788787013.3078349,
-    "seen": 1788828815.519178,
-    "ast_hash": "a3b3ad752c3304f93c6c5a76e1268d25",
-    "semantic_hash": ""
-  },
-  "docs/superpowers/plans/2026-09-04-genetics-breeding.md": {
-    "mtime": 1788520883.7856414,
-    "seen": 1788828815.519179,
-    "ast_hash": "8cab858333e96c37473adc904f8d2e9f",
-    "semantic_hash": ""
-  },
-  "docs/superpowers/plans/2026-09-04-rooster-arena-mvp.md": {
-    "mtime": 1788484138.4291887,
-    "seen": 1788828815.51918,
-    "ast_hash": "04473f11cff347e99492dd8df06671bb",
-    "semantic_hash": ""
-  },
-  "docs/superpowers/plans/2026-09-07-facilities-training-gym.md": {
-    "mtime": 1788765031.9382777,
-    "seen": 1788828815.519181,
-    "ast_hash": "a9681892561a6889fd9fb17c0c9ff3cb",
-    "semantic_hash": ""
-  },
-  "docs/superpowers/plans/2026-09-07-training-phase1-foundation.md": {
-    "mtime": 1788828467.4819672,
-    "seen": 1788828815.519181,
-    "ast_hash": "3a751828169894b809189720f59680e3",
-    "semantic_hash": ""
-  },
-  "docs/superpowers/specs/2026-09-04-combat-design.md": {
-    "mtime": 1788528643.93999,
-    "seen": 1788828815.519182,
-    "ast_hash": "1387fec581bb793d15f9af9437b560b8",
-    "semantic_hash": ""
-  },
-  "docs/superpowers/specs/2026-09-04-genetics-breeding-design.md": {
-    "mtime": 1788520583.9796836,
-    "seen": 1788828815.5191832,
-    "ast_hash": "0aaa29e40d6389b58682f780c0b3177e",
-    "semantic_hash": ""
-  },
-  "docs/superpowers/specs/2026-09-04-hatching-growth-design.md": {
-    "mtime": 1788524686.970201,
-    "seen": 1788828815.5191839,
-    "ast_hash": "088e5bb6716eda5f1a426b9b2b7602f3",
-    "semantic_hash": ""
-  },
-  "docs/superpowers/specs/2026-09-04-rooster-arena-design.md": {
-    "mtime": 1788483969.7295506,
-    "seen": 1788828815.5191848,
-    "ast_hash": "ab17fc53fa42cdab7c262731e58d8655",
-    "semantic_hash": ""
-  },
-  "docs/superpowers/specs/2026-09-04-training-design.md": {
-    "mtime": 1788526793.537818,
-    "seen": 1788828815.519186,
-    "ast_hash": "0cdfa288a4d9af1c8a8aaf119de656dc",
-    "semantic_hash": ""
-  },
-  "docs/superpowers/specs/2026-09-06-procedural-rooster-animation-design.md": {
-    "mtime": 1788624415.746115,
-    "seen": 1788828815.519187,
-    "ast_hash": "f34d0297c916226331367285102f9dab",
-    "semantic_hash": ""
-  },
-  "docs/superpowers/specs/2026-09-07-rig-genome-integration-design.md": {
-    "mtime": 1788712965.0749667,
-    "seen": 1788828815.519187,
-    "ast_hash": "6d9f6be62d8c41cb026134a70ee32abf",
-    "semantic_hash": ""
-  },
-  "docs/superpowers/specs/2026-09-07-training-phase1-foundation-design.md": {
-    "mtime": 1788788650.7120094,
-    "seen": 1788828815.519188,
-    "ast_hash": "7de899dfedffa13f26c89a6c91da8422",
-    "semantic_hash": ""
-  },
-  "docs/superpowers/specs/gamefowl_dynasty_full_mechanics.md": {
-    "mtime": 1788519828.1840568,
-    "seen": 1788828815.519189,
-    "ast_hash": "b8e92375d3af9dbdcffb00065797ecf8",
-    "semantic_hash": ""
-  },
-  "public/3d-chicken/chicken_viewer.html": {
-    "mtime": 1788582730.9934301,
-    "seen": 1788828815.51919,
-    "ast_hash": "4ded19c034c6cf1677bfb148c7b59592",
-    "semantic_hash": ""
-  },
-  "public/3d-chicken/rooster_viewer.html": {
-    "mtime": 1788710897.5758836,
-    "seen": 1788828815.519191,
-    "ast_hash": "49989e0d3434206d5e74dd2d6c22ff1c",
-    "semantic_hash": ""
-  },
-  "public/background/arena-background.png": {
-    "mtime": 1788669690.8014617,
-    "seen": 1788828815.519191,
-    "ast_hash": "38847bf5830cfc5a8d2973c82f6655c2",
-    "semantic_hash": ""
-  },
-  "public/new-chickens/rooster_preview.png": {
-    "mtime": 1788547268.5586696,
-    "seen": 1788828815.5192351,
-    "ast_hash": "6824014d8989626ac9b06985401d7082",
-    "semantic_hash": ""
   }
 }
