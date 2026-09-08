@@ -40,6 +40,7 @@ import { roamPose, DEFAULT_ROAM } from "@/lib/animation/arenaRoam";
 import { damp } from "@/lib/animation/math";
 import { impactKindFor } from "@/lib/animation/impactVfx";
 import type { CameraCueName } from "@/lib/animation/cameraDirector";
+import { momentumHitStopBonus } from "@/lib/animation/momentumHitStop";
 
 interface BattleCanvasProps {
   chickenA: Chicken;
@@ -590,6 +591,10 @@ export default function BattleCanvas({
     let turnInterval = 850;
     let logIndex = 0;
     let replayEnded = false;
+    // Momentum juice (spec Phase B): last-seen momentum per fighter, so a big
+    // swing on the turn that lands can add a touch of extra hit-stop.
+    let prevMomentumA = 0;
+    let prevMomentumB = 0;
 
     const maxHpA = maxHealth(chickenA);
     const maxHpB = maxHealth(chickenB);
@@ -698,6 +703,8 @@ export default function BattleCanvas({
       hitZone: HitZone | null;
       impactFired: boolean;
       fireImpact: (impactNow: number) => void;
+      /** Change in the attacker's momentum this turn vs last turn — feeds momentumHitStopBonus. */
+      momentumSwing: number;
     } | null = null;
 
     /** Camera cue for a resolved hit (spec §21) — mirrors combatPresentation's cameraCueForResult, kept local since BattleCanvas already owns the per-turn entry shape. */
@@ -759,6 +766,22 @@ export default function BattleCanvas({
         const defenderVisual = isAAttacking ? visualB : visualA;
         const targetX = isAAttacking ? r2BaseX : r1BaseX;
         const targetColor = isAAttacking ? visualB.colorScheme.body : visualA.colorScheme.body;
+
+        // Momentum juice: how much the attacker's momentum moved this turn,
+        // vs. the last turn we saw for that same fighter. `entry.momentum`
+        // is keyed by role (whoever attacked this turn), not by fighter.
+        const prevAttackerMomentum = isAAttacking ? prevMomentumA : prevMomentumB;
+        const attackerMomentum = entry.momentum?.attacker ?? prevAttackerMomentum;
+        const momentumSwing = attackerMomentum - prevAttackerMomentum;
+        if (entry.momentum) {
+          if (isAAttacking) {
+            prevMomentumA = entry.momentum.attacker;
+            prevMomentumB = entry.momentum.defender;
+          } else {
+            prevMomentumB = entry.momentum.attacker;
+            prevMomentumA = entry.momentum.defender;
+          }
+        }
 
         // Effects (HP, sound, particles, flash) are deferred to IMPACT_AT below,
         // fired once the fighter's wings/talons actually reach the target.
@@ -965,6 +988,7 @@ export default function BattleCanvas({
           hitZone: entry.hitZone,
           impactFired: false,
           fireImpact,
+          momentumSwing,
         };
         emitCue({
           attacker: activeAttack.attacker,
@@ -1071,7 +1095,8 @@ export default function BattleCanvas({
           const choreo = getChoreography(attackStateForMove(activeAttack.moveKind));
           const hitStopSeconds = activeAttack.isMiss
             ? 0
-            : hitStopFor(choreo, activeAttack.stagger, activeAttack.isCritical);
+            : hitStopFor(choreo, activeAttack.stagger, activeAttack.isCritical) +
+              momentumHitStopBonus(activeAttack.momentumSwing);
           hitStop.trigger(hitStopSeconds, rawNow);
           debugRef.current.hitStopMs = hitStopSeconds * 1000;
           debugRef.current.phase = "IMPACT";
