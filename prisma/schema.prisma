@@ -184,6 +184,26 @@ model Tournament {
   @@index([playerId, chickenId, status])
 }
 
+/** A pending or resolved pre-fight bet for the /live feed (spec: /live betting feature).
+ * chickenA/chickenB are snapshotted as Json rather than FKs because NPC opponents (and
+ * exhibition-mode chickens) are generated in-memory and never persisted to Chicken rows. */
+model LiveMatch {
+  id        String   @id @default(uuid())
+  playerId  String
+  mode      String
+  chickenA  Json
+  chickenB  Json
+  oddsA     Float
+  oddsB     Float
+  betSide   String?
+  betAmount Int?
+  status    String   @default("open")
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([playerId, status])
+}
+
 model MedicalTreatment {
   id            String    @id @default(uuid())
   playerId      String

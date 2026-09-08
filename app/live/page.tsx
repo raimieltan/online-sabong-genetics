@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import BattleCanvas from "@/components/BattleCanvas";
 import { BattleReportPanel } from "@/components/BattleReportPanel";
+import { BettingPanel } from "@/components/live/BettingPanel";
 import { ComicCommentary, type CommentaryBurst } from "@/components/live/ComicCommentary";
 import {
   commentaryForBoutStart,
@@ -11,9 +12,10 @@ import {
   commentaryForResult,
 } from "@/lib/liveCommentary";
 import type { BattleReport } from "@/lib/combat/battleReport";
+import type { BetSide } from "@/lib/live/bets";
 import type { Chicken, CombatLogEntry, CombatResult } from "@/lib/types";
 
-type Phase = "loading" | "fighting" | "intermission" | "error";
+type Phase = "loading" | "betting" | "fighting" | "intermission" | "error";
 type LiveMode = "pve" | "pvp" | "exhibition";
 
 const AUDIO_STORAGE_KEY = "rooster-arena-audio-enabled";
@@ -25,7 +27,18 @@ const MODE_LABEL: Record<LiveMode, string> = {
   exhibition: "Exhibition Bout",
 };
 
-type LiveNextResponse = {
+type LiveMatchupResponse = {
+  matchId: string;
+  mode: LiveMode;
+  chickenA: Chicken;
+  chickenB: Chicken;
+  oddsA: number;
+  oddsB: number;
+  expiresAt: string;
+  credits: number;
+};
+
+type LiveResolveResponse = {
   mode: LiveMode;
   chickenA: Chicken;
   chickenB: Chicken;
@@ -37,12 +50,20 @@ type LiveNextResponse = {
   credits: number;
   battleReportA?: BattleReport;
   battleReportB?: BattleReport;
+  betSide: BetSide | null;
+  betAmount: number | null;
+  betWon: boolean | null;
+  betPayout: number;
 };
 
 export default function LivePage() {
   const [phase, setPhase] = useState<Phase>("loading");
   const [error, setError] = useState<string | null>(null);
-  const [round, setRound] = useState<LiveNextResponse | null>(null);
+  const [matchup, setMatchup] = useState<LiveMatchupResponse | null>(null);
+  const [round, setRound] = useState<LiveResolveResponse | null>(null);
+  const [credits, setCredits] = useState(0);
+  const [placedBet, setPlacedBet] = useState<{ side: BetSide; amount: number } | null>(null);
+  const [msRemaining, setMsRemaining] = useState(0);
   // BattleCanvas is never unmounted between rounds on this page (unlike /battle,
   // which toggles it in/out of the tree), so its own HUD state won't reset on
   // new props alone — force a remount each round via key so it re-inits fresh,
@@ -58,6 +79,8 @@ export default function LivePage() {
 
   const burstIdRef = useRef(0);
   const intermissionTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const bettingTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const bettingTick = useRef<ReturnType<typeof setInterval> | null>(null);
 
   function toggleAudio() {
     setAudioEnabled((prev) => {
@@ -67,32 +90,81 @@ export default function LivePage() {
     });
   }
 
-  const loadNext = useCallback(async () => {
-    setPhase("loading");
-    setBursts([]);
-    setCaption(null);
+  function clearBettingTimers() {
+    if (bettingTimeout.current) clearTimeout(bettingTimeout.current);
+    if (bettingTick.current) clearInterval(bettingTick.current);
+  }
 
-    const res = await fetch("/api/live/next", { method: "POST" });
+  const resolveMatch = useCallback(async (matchId: string) => {
+    clearBettingTimers();
+
+    const res = await fetch("/api/live/resolve", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ matchId }),
+    });
     if (!res.ok) {
       setError("The sabungan feed lost connection.");
       setPhase("error");
       return;
     }
 
-    const body: LiveNextResponse = await res.json();
+    const body: LiveResolveResponse = await res.json();
     setRound(body);
+    setCredits(body.credits);
     setRoundId((n) => n + 1);
     setCaption(commentaryForBoutStart(body.chickenA.name, body.chickenB.name, body.mode));
     setPhase("fighting");
   }, []);
 
+  const openBetting = useCallback(async () => {
+    setPhase("loading");
+    setBursts([]);
+    setCaption(null);
+    setRound(null);
+    setPlacedBet(null);
+
+    const res = await fetch("/api/live/matchup", { method: "POST" });
+    if (!res.ok) {
+      setError("The sabungan feed lost connection.");
+      setPhase("error");
+      return;
+    }
+
+    const body: LiveMatchupResponse = await res.json();
+    setMatchup(body);
+    setCredits(body.credits);
+    setPhase("betting");
+
+    const expiresAt = new Date(body.expiresAt).getTime();
+    setMsRemaining(expiresAt - Date.now());
+    bettingTick.current = setInterval(() => {
+      setMsRemaining(Math.max(0, expiresAt - Date.now()));
+    }, 250);
+    bettingTimeout.current = setTimeout(() => resolveMatch(body.matchId), expiresAt - Date.now());
+  }, [resolveMatch]);
+
+  async function placeBet(side: BetSide, amount: number) {
+    if (!matchup) return;
+    const res = await fetch("/api/live/bet", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ matchId: matchup.matchId, side, amount }),
+    });
+    if (!res.ok) return;
+    const body: { credits: number } = await res.json();
+    setCredits(body.credits);
+    setPlacedBet({ side, amount });
+  }
+
   useEffect(() => {
-    const initial = setTimeout(loadNext, 0);
+    const initial = setTimeout(openBetting, 0);
     return () => {
       clearTimeout(initial);
+      clearBettingTimers();
       if (intermissionTimer.current) clearTimeout(intermissionTimer.current);
     };
-  }, [loadNext]);
+  }, [openBetting]);
 
   function handleImpact(entry: CombatLogEntry) {
     if (!round) return;
@@ -116,7 +188,7 @@ export default function LivePage() {
       setCaption(commentaryForResult(round.result, winner.name));
     }
     setPhase("intermission");
-    intermissionTimer.current = setTimeout(loadNext, INTERMISSION_MS);
+    intermissionTimer.current = setTimeout(openBetting, INTERMISSION_MS);
   }
 
   if (phase === "error") {
@@ -125,7 +197,7 @@ export default function LivePage() {
         <div className="panel-wood rounded-lg border-t-2 border-red-800/60 p-6 text-center">
           <p className="text-red-400">{error}</p>
           <button
-            onClick={loadNext}
+            onClick={openBetting}
             className="mt-4 inline-block text-(--color-gold-bright) hover:underline"
           >
             Reconnect
@@ -135,7 +207,7 @@ export default function LivePage() {
     );
   }
 
-  if (!round) {
+  if (!matchup) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-(--color-ink)">
         <p className="text-(--color-text-muted)">🔴 Tuning in to the sabungan...</p>
@@ -144,9 +216,13 @@ export default function LivePage() {
   }
 
   const winner =
-    round.result.winnerId === round.chickenA.id ? round.updatedA ?? round.chickenA : round.updatedB ?? round.chickenB;
+    round && round.result.winnerId === round.chickenA.id
+      ? round.updatedA ?? round.chickenA
+      : round?.updatedB ?? round?.chickenB;
   const loser =
-    round.result.winnerId === round.chickenA.id ? round.updatedB ?? round.chickenB : round.updatedA ?? round.chickenA;
+    round && round.result.winnerId === round.chickenA.id
+      ? round.updatedB ?? round.chickenB
+      : round?.updatedA ?? round?.chickenA;
 
   return (
     <main className="min-h-screen bg-(--color-ink)">
@@ -160,11 +236,11 @@ export default function LivePage() {
             Live
           </span>
           <h1 className="flex items-center gap-2 font-display text-lg font-semibold text-(--foreground) sm:text-xl">
-            🐓 {round.chickenA.name} <span className="text-(--color-text-muted)">vs</span> {round.chickenB.name}
+            🐓 {matchup.chickenA.name} <span className="text-(--color-text-muted)">vs</span> {matchup.chickenB.name}
           </h1>
           <div className="flex items-center gap-3">
             <span className="hidden rounded-full border border-(--color-gold)/30 bg-black/30 px-3 py-1 text-xs uppercase tracking-wide text-(--color-text-muted) sm:inline">
-              {MODE_LABEL[round.mode]}
+              {MODE_LABEL[matchup.mode]}
             </span>
             <button
               type="button"
@@ -180,19 +256,41 @@ export default function LivePage() {
       </div>
 
       <div className="relative mx-auto aspect-[16/9] w-full max-w-[142.2vh] overflow-hidden">
-        <BattleCanvas
-          key={roundId}
-          chickenA={round.chickenA}
-          chickenB={round.chickenB}
-          log={round.log}
-          audioEnabled={audioEnabled}
-          onReplayEnd={handleReplayEnd}
-          onImpact={handleImpact}
-        />
-        <ComicCommentary bursts={bursts} caption={caption} />
+        {round ? (
+          <>
+            <BattleCanvas
+              key={roundId}
+              chickenA={round.chickenA}
+              chickenB={round.chickenB}
+              log={round.log}
+              audioEnabled={audioEnabled}
+              onReplayEnd={handleReplayEnd}
+              onImpact={handleImpact}
+            />
+            <ComicCommentary bursts={bursts} caption={caption} />
+          </>
+        ) : (
+          <div className="flex h-full items-center justify-center">
+            <p className="font-comic text-3xl text-(--color-text-muted)">VS</p>
+          </div>
+        )}
       </div>
 
-      {phase === "intermission" && (
+      {phase === "betting" && (
+        <BettingPanel
+          key={matchup.matchId}
+          chickenA={matchup.chickenA}
+          chickenB={matchup.chickenB}
+          oddsA={matchup.oddsA}
+          oddsB={matchup.oddsB}
+          credits={credits}
+          msRemaining={msRemaining}
+          placedBet={placedBet}
+          onPlaceBet={placeBet}
+        />
+      )}
+
+      {phase === "intermission" && round && winner && loser && (
         <div className="fixed inset-x-0 bottom-0 z-30 flex justify-center p-4 sm:p-6">
           <div className="panel-wood flex w-full max-w-lg flex-col items-center gap-2 rounded-2xl border-t-2 border-(--color-gold)/40 p-5 text-center shadow-2xl">
             <p className="font-comic text-2xl tracking-wide text-(--color-gold-bright) sm:text-3xl">
@@ -201,6 +299,21 @@ export default function LivePage() {
             <p className="text-xs uppercase tracking-[0.2em] text-(--color-text-muted)">
               {loser.name} sits this one out to recover
             </p>
+            {round.betSide && (
+              <p
+                className={`text-sm font-semibold ${
+                  round.betWon ? "text-(--color-gold-bright)" : "text-red-400"
+                }`}
+              >
+                {round.betWon
+                  ? `🪙 Won ${round.betPayout} credits on ${
+                      round.betSide === "A" ? round.chickenA.name : round.chickenB.name
+                    }!`
+                  : `Lost your ${round.betAmount}-credit bet on ${
+                      round.betSide === "A" ? round.chickenA.name : round.chickenB.name
+                    }`}
+              </p>
+            )}
             {round.creditsEarned > 0 && (
               <p className="text-sm font-semibold text-(--color-gold-bright)">
                 🪙 +{round.creditsEarned} Battle Credits

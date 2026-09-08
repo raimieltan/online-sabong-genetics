@@ -119,17 +119,11 @@
     "ast_hash": "40afa59e2bc6f8a23dab9f85be09f433",
     "semantic_hash": ""
   },
-  "app/api/chickens/[id]/heal/route.ts": {
-    "mtime": 1788715852.415189,
-    "seen": 1788828404.915927,
-    "ast_hash": "335b710298a0a4f2a07b832e9b4eb87a",
-    "semantic_hash": "335b710298a0a4f2a07b832e9b4eb87a"
-  },
   "app/api/chickens/[id]/medical/route.ts": {
-    "mtime": 1788785656.4192908,
-    "seen": 1788828404.9159281,
-    "ast_hash": "fc80d244dbf112332feb170dfa3475af",
-    "semantic_hash": "fc80d244dbf112332feb170dfa3475af"
+    "mtime": 1788841098.639955,
+    "seen": 1788842086.400269,
+    "ast_hash": "a9a7ed4bff8c613e248859cd95cff37b",
+    "semantic_hash": ""
   },
   "app/api/chickens/[id]/opponent/route.ts": {
     "mtime": 1788745270.5783763,
@@ -233,12 +227,6 @@
     "ast_hash": "3c18e770b3c0e7a61578211b7d671815",
     "semantic_hash": "3c18e770b3c0e7a61578211b7d671815"
   },
-  "app/api/live/next/route.ts": {
-    "mtime": 1788839665.5112205,
-    "seen": 1788840441.725297,
-    "ast_hash": "b5805ecb877f2379a5cb5d2f97d19932",
-    "semantic_hash": ""
-  },
   "app/api/marketplace/[id]/buy/route.ts": {
     "mtime": 1788713743.0799549,
     "seen": 1788828404.915942,
@@ -282,9 +270,9 @@
     "semantic_hash": "3bb92de98e3b51dbb612bc0a5eba9ada"
   },
   "app/battle/[chickenId]/page.tsx": {
-    "mtime": 1788838195.3047235,
-    "seen": 1788840441.725575,
-    "ast_hash": "7c7a48deb9125662e942dab1656e36e4",
+    "mtime": 1788841203.3543901,
+    "seen": 1788842086.401651,
+    "ast_hash": "3cb8d0ab17b4c5949eaea64cdfcc5cfb",
     "semantic_hash": ""
   },
   "app/breed/OffspringPreview.tsx": {
@@ -312,16 +300,16 @@
     "semantic_hash": "af260781408d32b2e01788350f7810af"
   },
   "app/chicken/[chickenId]/page.tsx": {
-    "mtime": 1788839098.1395848,
-    "seen": 1788840441.7257202,
-    "ast_hash": "807eaa6ba57007a1c4e8017f42a90544",
+    "mtime": 1788841155.7984638,
+    "seen": 1788842086.40182,
+    "ast_hash": "fe5addda4a6219caca3a9871858f1ba6",
     "semantic_hash": ""
   },
   "app/clinic/page.tsx": {
-    "mtime": 1788785821.6361012,
-    "seen": 1788828404.915951,
-    "ast_hash": "1765d500a771927e4f37f192ab1db1dc",
-    "semantic_hash": "1765d500a771927e4f37f192ab1db1dc"
+    "mtime": 1788841136.3570142,
+    "seen": 1788842086.401821,
+    "ast_hash": "d534276741eebc6051df8a6419756ae3",
+    "semantic_hash": ""
   },
   "app/coop/ChickenCard.tsx": {
     "mtime": 1788658223.8944352,
@@ -372,9 +360,9 @@
     "semantic_hash": "c2c65700da0f41606ac107fc803bb282"
   },
   "app/live/page.tsx": {
-    "mtime": 1788838860.7260408,
-    "seen": 1788840441.726047,
-    "ast_hash": "d849dfae72ab9303f76b65ca829ec357",
+    "mtime": 1788842025.2568908,
+    "seen": 1788842086.402179,
+    "ast_hash": "1eb47812a716bb289c6db836ba02f406",
     "semantic_hash": ""
   },
   "app/market/page.tsx": {
@@ -396,9 +384,9 @@
     "semantic_hash": "e08ad378b367f03b2e332bd3894f834f"
   },
   "app/pve/[bossId]/fight/[chickenId]/page.tsx": {
-    "mtime": 1788838835.2544494,
-    "seen": 1788840441.7261791,
-    "ast_hash": "088ed2348c4bed91e75a74eb93b2f3c1",
+    "mtime": 1788841230.6799204,
+    "seen": 1788842086.4023502,
+    "ast_hash": "da28f6974b731ceaa5e154a006d109bb",
     "semantic_hash": ""
   },
   "app/pve/[bossId]/page.tsx": {
@@ -432,9 +420,9 @@
     "semantic_hash": "c2efb55f92c2cb2e6dfca26b186b5c6a"
   },
   "components/CombatResultsScreen.tsx": {
-    "mtime": 1788838163.7478302,
-    "seen": 1788840441.726284,
-    "ast_hash": "fe78fea64853f2ff3f6954d05626aafc",
+    "mtime": 1788841168.5710669,
+    "seen": 1788842086.402594,
+    "ast_hash": "0e79d58b4b9576a90c67c98095a5be92",
     "semantic_hash": ""
   },
   "components/ConditionMonitor.tsx": {
@@ -670,12 +658,6 @@
     "seen": 1788828404.9160619,
     "ast_hash": "abb879ba686b4dce7b04d8623e2fec88",
     "semantic_hash": "abb879ba686b4dce7b04d8623e2fec88"
-  },
-  "lib/__tests__/heal-route.test.ts": {
-    "mtime": 1788528988.9912004,
-    "seen": 1788828404.9160619,
-    "ast_hash": "badb48113627c3253c7aba43857fe620",
-    "semantic_hash": "badb48113627c3253c7aba43857fe620"
   },
   "lib/__tests__/marketplace-route.test.ts": {
     "mtime": 1788568880.0915408,
@@ -978,9 +960,9 @@
     "semantic_hash": "8db992867a3b1f0035f8697efb72b361"
   },
   "lib/combat.ts": {
-    "mtime": 1788839025.1446056,
-    "seen": 1788840441.729262,
-    "ast_hash": "e35dfbee626d8c519e131a5f521fb6a1",
+    "mtime": 1788841868.2567694,
+    "seen": 1788842086.406611,
+    "ast_hash": "cbdd1030d3a2ad28ca0656893be19319",
     "semantic_hash": ""
   },
   "lib/combat/actions.ts": {
@@ -1182,10 +1164,10 @@
     "semantic_hash": "0b77c95cc6e19a7338fdf0d1f03ff733"
   },
   "lib/medical/service.ts": {
-    "mtime": 1788785965.946801,
-    "seen": 1788828404.9161248,
-    "ast_hash": "e68fd43ebf9cce36a19b02f884146d26",
-    "semantic_hash": "e68fd43ebf9cce36a19b02f884146d26"
+    "mtime": 1788841092.0647507,
+    "seen": 1788842086.4080598,
+    "ast_hash": "7eb1a9181fb0eaf4e5791ee69b9adb8b",
+    "semantic_hash": ""
   },
   "lib/medical/status.ts": {
     "mtime": 1788785507.4206216,
@@ -1194,10 +1176,10 @@
     "semantic_hash": "bc5d3aba855e51b7e3d607a5d532fa4e"
   },
   "lib/medical/treatment.ts": {
-    "mtime": 1788785553.4282026,
-    "seen": 1788828404.916126,
-    "ast_hash": "27571275385b110c2e34eaf7237628af",
-    "semantic_hash": "27571275385b110c2e34eaf7237628af"
+    "mtime": 1788841059.9493644,
+    "seen": 1788842086.408101,
+    "ast_hash": "cb352b9f81c2c005327df443445bcc64",
+    "semantic_hash": ""
   },
   "lib/mockPlayer.ts": {
     "mtime": 1788568583.3343935,
@@ -1695,6 +1677,48 @@
     "mtime": 1788828984.7618277,
     "seen": 1788840441.730708,
     "ast_hash": "b6155244528f87d2c45eca97a75d181d",
+    "semantic_hash": ""
+  },
+  "app/api/live/bet/route.ts": {
+    "mtime": 1788841838.954296,
+    "seen": 1788842086.4011898,
+    "ast_hash": "19b1111684638784a34f71160c7cf5a6",
+    "semantic_hash": ""
+  },
+  "app/api/live/matchup/route.ts": {
+    "mtime": 1788841830.3882866,
+    "seen": 1788842086.401192,
+    "ast_hash": "3021067a2c62895290668a14e9025385",
+    "semantic_hash": ""
+  },
+  "app/api/live/resolve/route.ts": {
+    "mtime": 1788841857.6601796,
+    "seen": 1788842086.401194,
+    "ast_hash": "78865ce97c6927be26d16873bba6575f",
+    "semantic_hash": ""
+  },
+  "components/live/BettingPanel.tsx": {
+    "mtime": 1788842021.3390915,
+    "seen": 1788842086.403459,
+    "ast_hash": "beb02bc6f0456c586fc8a66e1d63266e",
+    "semantic_hash": ""
+  },
+  "lib/live/bets.ts": {
+    "mtime": 1788841822.8780124,
+    "seen": 1788842086.4077828,
+    "ast_hash": "b039854a236ba4dd57724904c543e354",
+    "semantic_hash": ""
+  },
+  "lib/live/matchup.ts": {
+    "mtime": 1788841807.036506,
+    "seen": 1788842086.407785,
+    "ast_hash": "aa68cc69e578f651acfe7727549c5afb",
+    "semantic_hash": ""
+  },
+  "lib/live/odds.ts": {
+    "mtime": 1788841815.6180158,
+    "seen": 1788842086.407787,
+    "ast_hash": "97e1394c1a7d487c0536dcd58d585196",
     "semantic_hash": ""
   }
 }

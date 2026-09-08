@@ -58,7 +58,7 @@ export function simulateFight(chickenA: Chicken, chickenB: Chicken, rng: Rng = M
   return simulateBattle(chickenA, chickenB, rng);
 }
 
-/** Persistable field updates for one side of a resolved fight — shared by `/api/chickens/[id]/fight` and `/api/live/next` so both apply the same rules to an owned chicken. */
+/** Persistable field updates for one side of a resolved fight — shared by `/api/chickens/[id]/fight` and `/api/live/resolve` so both apply the same rules to an owned chicken. */
 export type FightOutcomeUpdate = {
   record: CombatRecord;
   health: number;
