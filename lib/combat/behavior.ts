@@ -206,11 +206,6 @@ export function scoreAction(profile: BehavioralProfile, action: CombatAction, ct
   if (ctx.contextState === "EXHAUSTED" && action === "RECOVER") score += 0.4;
   if (ctx.contextState === "VULNERABLE" && action === "GUARD") score += 0.3;
 
-  const momentumRatio = ctx.momentum / 100;
-  if (momentumRatio > 0.2 && (action === "PRESSURE" || action === "HEAVY_ATTACK")) score += momentumRatio * 0.4;
-  if (momentumRatio < -0.2 && (action === "GUARD" || action === "EVADE" || action === "REPOSITION"))
-    score += -momentumRatio * 0.4;
-
   if (ctx.position < 0 && (action === "REPOSITION" || action === "EVADE")) score += (-ctx.position / 2) * 0.5;
   if (ctx.position > 0 && (action === "PRESSURE" || action === "HEAVY_ATTACK")) score += (ctx.position / 2) * 0.4;
 

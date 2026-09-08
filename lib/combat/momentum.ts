@@ -34,3 +34,17 @@ export function momentumDelta(event: MomentumEvent): number {
   if (event.opponentFatigued) delta += 3;
   return delta;
 }
+
+/**
+ * Momentum's only mechanical effect (spec Phase B) — nudges *this fighter's
+ * own* effective riskTolerance a small, capped amount, independently of the
+ * opponent's momentum. Explicitly not a damage/accuracy/hit-stop-magnitude
+ * multiplier. The 0.12 cap keeps a single swing from compounding into a
+ * runaway snowball — a losing fighter's caution always comes from their own
+ * falling momentum, never suppressed further by the winner's rising one.
+ */
+export const MOMENTUM_RISK_NUDGE_CAP = 0.12;
+
+export function momentumRiskNudge(momentum: number): number {
+  return (clampMomentum(momentum) / MOMENTUM_MAX) * MOMENTUM_RISK_NUDGE_CAP;
+}
