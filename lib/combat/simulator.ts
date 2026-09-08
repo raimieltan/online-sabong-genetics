@@ -4,7 +4,9 @@ import { chooseAction, type DecisionContext } from "./behavior";
 import { gainExperience, updateOpponentModel } from "./experience";
 import { clampFatigue, fatigueGain, fatigueRecoveryPerTurn, fatigueStatMultiplier } from "./fatigue";
 import { createInjuryRecord, rollInjurySeverity } from "./injuries";
-import { decayMomentum } from "./momentum";
+import { decayMomentum, momentumRiskNudge } from "./momentum";
+import { applyMentalState, deriveMentalState } from "./mentalState";
+import { deriveCombatIdentity, withIdentity } from "./identity";
 import { deriveContextState } from "./positioning";
 import { isOffensive, resolveExchange } from "./resolution";
 import { effectiveStat } from "./stats";
@@ -124,6 +126,7 @@ export function simulateBattle(chickenA: Chicken, chickenB: Chicken, rng: Rng = 
       opponentContextState: contextB,
       style: chickenA.fightingStyle,
       physical: physicalA,
+      pendingCommand: stateA.pendingCommand,
       experience: stateA.experience,
       opponentModel: stateA.opponentModel,
       rng,
@@ -139,13 +142,36 @@ export function simulateBattle(chickenA: Chicken, chickenB: Chicken, rng: Rng = 
       opponentContextState: contextA,
       style: chickenB.fightingStyle,
       physical: physicalB,
+      pendingCommand: stateB.pendingCommand,
       experience: stateB.experience,
       opponentModel: stateB.opponentModel,
       rng,
     };
 
-    let actionA = chooseAction(stateA.behavior, legalA, decisionCtxA);
-    let actionB = chooseAction(stateB.behavior, legalB, decisionCtxB);
+    stateA.mentalState = deriveMentalState({
+      hpRatio: stateA.hp / stateA.maxHp,
+      staminaRatio: stateA.stamina / stateA.maxStamina,
+      momentum: stateA.momentum,
+      recentExchangeResult: stateA.wasHitLastTurn ? "taken" : "neutral",
+      experience: stateA.experience,
+    });
+    stateB.mentalState = deriveMentalState({
+      hpRatio: stateB.hp / stateB.maxHp,
+      staminaRatio: stateB.stamina / stateB.maxStamina,
+      momentum: stateB.momentum,
+      recentExchangeResult: stateB.wasHitLastTurn ? "taken" : "neutral",
+      experience: stateB.experience,
+    });
+
+    const identityA = applyMentalState(deriveCombatIdentity(stateA.behavior), stateA.mentalState);
+    const identityB = applyMentalState(deriveCombatIdentity(stateB.behavior), stateB.mentalState);
+    identityA.riskTolerance = Math.min(1, Math.max(0, identityA.riskTolerance + momentumRiskNudge(stateA.momentum)));
+    identityB.riskTolerance = Math.min(1, Math.max(0, identityB.riskTolerance + momentumRiskNudge(stateB.momentum)));
+    const effectiveProfileA = withIdentity(stateA.behavior, identityA);
+    const effectiveProfileB = withIdentity(stateB.behavior, identityB);
+
+    let actionA = chooseAction(effectiveProfileA, legalA, decisionCtxA);
+    let actionB = chooseAction(effectiveProfileB, legalB, decisionCtxB);
 
     if (noDamageStreak >= STALEMATE_TURNS && !isOffensive(actionA) && !isOffensive(actionB)) {
       const forceA = stateA.behavior.caution <= stateB.behavior.caution;

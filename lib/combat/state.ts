@@ -1,6 +1,8 @@
 import { deriveBehaviorProfile } from "./behavior";
 import { emptyExperience, emptyOpponentModel } from "./experience";
 import { maxHealth } from "./stats";
+import type { MentalState } from "./mentalState";
+import type { PlayerCommand } from "./command";
 import type { BehavioralProfile, Chicken, CombatDistance, CombatExperience, OpponentModel } from "../types";
 
 export const MAX_HEALTH = 100;
@@ -28,6 +30,10 @@ export type CombatantState = {
   opponentModel: OpponentModel;
   battleExperienceGain: CombatExperience;
   wasHitLastTurn: boolean;
+  mentalState: MentalState;
+  commandPoints: number;
+  pendingCommand: PlayerCommand | null;
+  pendingCommandTurnsLeft: number;
 };
 
 export function makeCombatantState(chicken: Chicken): CombatantState {
@@ -49,5 +55,9 @@ export function makeCombatantState(chicken: Chicken): CombatantState {
     opponentModel: emptyOpponentModel(),
     battleExperienceGain: emptyExperience(),
     wasHitLastTurn: false,
+    mentalState: "calm",
+    commandPoints: 0,
+    pendingCommand: null,
+    pendingCommandTurnsLeft: 0,
   };
 }
