@@ -85,6 +85,11 @@ const BEHAVIOR_ICON: Record<keyof BehavioralProfile, string> = {
 
 const EXPERIENCE_CAP = 500;
 
+/** V2 psychological/career stats (spec §44, §46-48) — defaults match `battleReport.ts`'s pre-fight fallbacks. */
+const DEFAULT_CONFIDENCE = 50;
+const DEFAULT_MORALE = 75;
+const DEFAULT_STRESS = 0;
+
 const MUTATION_RARITY_COLOR: Record<MutationRarity, string> = {
   common: "border-neutral-600 text-neutral-300",
   uncommon: "border-emerald-600 text-emerald-300",
@@ -405,6 +410,21 @@ function ChickenDetailPageContent({ params }: { params: Promise<{ chickenId: str
                   </p>
                 ))}
               </div>
+            </div>
+
+            <div className="border-t border-(--color-parchment-dark) pt-4">
+              <h3 className="mb-2 font-display font-semibold">🧠 Combat Mindset</h3>
+              <div className="space-y-2.5">
+                <StatBar icon="😎" label="confidence" value={chicken.confidence ?? DEFAULT_CONFIDENCE} max={100} />
+                <StatBar icon="🎗️" label="morale" value={chicken.morale ?? DEFAULT_MORALE} max={100} />
+                <StatBar icon="😣" label="stress" value={chicken.stress ?? DEFAULT_STRESS} max={100} />
+              </div>
+              <p className="mt-2 text-xs opacity-70">
+                🎖️ {chicken.battleHardening ?? 0} clean fights survived
+                {(chicken.battleHardening ?? 0) < 15 && !chicken.traits.some((t) => t.id === "veteran")
+                  ? ` · ${15 - (chicken.battleHardening ?? 0)} more to Veteran`
+                  : ""}
+              </p>
             </div>
 
             <div className="border-t border-(--color-parchment-dark) pt-4">

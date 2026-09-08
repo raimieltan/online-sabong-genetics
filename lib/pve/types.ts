@@ -5,14 +5,49 @@ import type {
   StatBlock,
 } from "../types";
 
-export type PveBossId = "rookie" | "brawler" | "striker" | "veteran" | "champion";
+export type PveBossId =
+  | "rookie"
+  | "scrapper"
+  | "brawler"
+  | "charger"
+  | "wall"
+  | "striker"
+  | "grinder"
+  | "feint-master"
+  | "pressure-king"
+  | "veteran"
+  | "iron-rooster"
+  | "phantom"
+  | "executioner"
+  | "champion"
+  | "challenger"
+  | "tactician"
+  | "berserker"
+  | "counter-master"
+  | "warlord"
+  | "apex";
 
 export const PVE_BOSS_ORDER: readonly PveBossId[] = [
   "rookie",
+  "scrapper",
   "brawler",
+  "charger",
+  "wall",
   "striker",
+  "grinder",
+  "feint-master",
+  "pressure-king",
   "veteran",
+  "iron-rooster",
+  "phantom",
+  "executioner",
   "champion",
+  "challenger",
+  "tactician",
+  "berserker",
+  "counter-master",
+  "warlord",
+  "apex",
 ];
 
 /** Coarse 0–10 bars shown on the boss preview (§14) — authored intent, not derived from IVs. */

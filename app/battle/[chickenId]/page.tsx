@@ -5,6 +5,7 @@ import Link from "next/link";
 
 import type { Chicken, CombatResult } from "@/lib/types";
 import type { PveEncounterDefinition } from "@/lib/combat";
+import type { BattleReport } from "@/lib/combat/battleReport";
 import BattleCanvas from "@/components/BattleCanvas";
 import CombatResultsScreen from "@/components/CombatResultsScreen";
 import { MatchupScreen } from "@/components/battle/MatchupScreen";
@@ -29,6 +30,7 @@ export default function BattlePage({
   const [log, setLog] = useState<CombatResult["log"]>([]);
   const [updatedChicken, setUpdatedChicken] = useState<Chicken | null>(null);
   const [creditsEarned, setCreditsEarned] = useState(0);
+  const [battleReport, setBattleReport] = useState<BattleReport | null>(null);
   const [audioEnabled, setAudioEnabled] = useState(() => {
     if (typeof window === "undefined") return true;
     const stored = window.localStorage.getItem(AUDIO_STORAGE_KEY);
@@ -106,6 +108,7 @@ export default function BattlePage({
     setLog(body.log);
     setUpdatedChicken(body.chicken);
     setCreditsEarned(body.creditsEarned ?? 0);
+    setBattleReport(body.battleReport ?? null);
     setPhase("replaying");
   }
 
@@ -116,6 +119,7 @@ export default function BattlePage({
     setChicken(healed);
     setResult(null);
     setLog([]);
+    setBattleReport(null);
     setPhase("loading");
 
     const opponentRes = await fetch(`/api/chickens/${chickenId}/opponent`, { method: "POST" });
@@ -140,6 +144,7 @@ export default function BattlePage({
     }
     setResult(null);
     setLog([]);
+    setBattleReport(null);
     setPhase("loading");
     fetch(`/api/chickens/${chickenId}/opponent`, { method: "POST" })
       .then(async (res) => {
@@ -218,6 +223,7 @@ export default function BattlePage({
           playerChicken={updatedChicken ?? chicken}
           opponent={opponent}
           creditsEarned={creditsEarned}
+          battleReport={battleReport ?? undefined}
           onFightAgain={handleFightAgain}
           onHeal={handleHeal}
         />

@@ -1,12 +1,16 @@
 "use client";
 
 import type { Chicken, CombatResult } from "@/lib/types";
+import type { BattleReport } from "@/lib/combat/battleReport";
+import { BattleReportPanel } from "@/components/BattleReportPanel";
 
 interface CombatResultsScreenProps {
   result: CombatResult;
   playerChicken: Chicken;
   opponent: Chicken;
   creditsEarned?: number;
+  /** Structured post-fight summary (spec §70) for `playerChicken`'s side, when the fight route computed one. */
+  battleReport?: BattleReport;
   onFightAgain: () => void;
   onHeal: () => void;
 }
@@ -22,6 +26,7 @@ export default function CombatResultsScreen({
   playerChicken,
   opponent,
   creditsEarned = 0,
+  battleReport,
   onFightAgain,
   onHeal,
 }: CombatResultsScreenProps) {
@@ -90,6 +95,8 @@ export default function CombatResultsScreen({
             <p className="whitespace-pre-line text-sm leading-relaxed text-(--foreground)">{analysis}</p>
           </div>
         )}
+
+        {battleReport && <div className="mb-6"><BattleReportPanel report={battleReport} /></div>}
 
         <div className="flex flex-col gap-3 sm:flex-row">
           {playerInjured ? (

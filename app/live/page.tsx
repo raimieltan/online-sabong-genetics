@@ -3,12 +3,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import BattleCanvas from "@/components/BattleCanvas";
+import { BattleReportPanel } from "@/components/BattleReportPanel";
 import { ComicCommentary, type CommentaryBurst } from "@/components/live/ComicCommentary";
 import {
   commentaryForBoutStart,
   commentaryForImpact,
   commentaryForResult,
 } from "@/lib/liveCommentary";
+import type { BattleReport } from "@/lib/combat/battleReport";
 import type { Chicken, CombatLogEntry, CombatResult } from "@/lib/types";
 
 type Phase = "loading" | "fighting" | "intermission" | "error";
@@ -33,6 +35,8 @@ type LiveNextResponse = {
   log: CombatLogEntry[];
   creditsEarned: number;
   credits: number;
+  battleReportA?: BattleReport;
+  battleReportB?: BattleReport;
 };
 
 export default function LivePage() {
@@ -201,6 +205,16 @@ export default function LivePage() {
               <p className="text-sm font-semibold text-(--color-gold-bright)">
                 🪙 +{round.creditsEarned} Battle Credits
               </p>
+            )}
+            {(round.battleReportA || round.battleReportB) && (
+              <div className="mt-3 grid w-full gap-3 text-left sm:grid-cols-2">
+                {round.battleReportA && (
+                  <BattleReportPanel report={round.battleReportA} title={round.chickenA.name} />
+                )}
+                {round.battleReportB && (
+                  <BattleReportPanel report={round.battleReportB} title={round.chickenB.name} />
+                )}
+              </div>
             )}
             <p className="mt-1 text-xs text-(--color-text-muted)">Susunod na laban sa ilang saglit...</p>
           </div>

@@ -1,4 +1,5 @@
 import { battleAftermath } from "./combat/aftermath";
+import { evaluateBattleTraits } from "./combat/battleTraits";
 import { deriveBehaviorProfile, driftBehaviorProfile } from "./combat/behavior";
 import { rollHitZone } from "./combat/resolution";
 import { simulateBattle, MAX_TURNS as SIM_MAX_TURNS } from "./combat/simulator";
@@ -12,6 +13,7 @@ import type {
   CombatRecord,
   CombatResult,
   InjuryRecord,
+  Trait,
 } from "./types";
 
 export type Rng = () => number;
@@ -70,6 +72,9 @@ export type FightOutcomeUpdate = {
   morale: number;
   stress: number;
   battleHardening: number;
+  traits: Trait[];
+  /** Traits newly earned by this fight (spec §43-44) — subset of `traits`, empty on most fights. */
+  newTraits: Trait[];
 };
 
 /**
@@ -111,6 +116,8 @@ export function applyFightOutcome(chicken: Chicken, result: CombatResult): Fight
   const newInjuries = result.newInjuries?.[chicken.id] ?? [];
   const injuries = [...(chicken.injuries ?? []), ...newInjuries];
   const aftermath = battleAftermath(chicken, result, chicken.id, wasInjured, newInjuries);
+  const earnedTraits = evaluateBattleTraits(chicken, aftermath, injuries);
+  const traits = earnedTraits.length ? [...chicken.traits, ...earnedTraits] : chicken.traits;
 
   return {
     record: {
@@ -131,6 +138,8 @@ export function applyFightOutcome(chicken: Chicken, result: CombatResult): Fight
     morale: aftermath.morale,
     stress: aftermath.stress,
     battleHardening: aftermath.battleHardening,
+    traits,
+    newTraits: earnedTraits,
   };
 }
 

@@ -88,6 +88,15 @@ export function deriveBehaviorProfile(fightingStyle: FightingStyle, traits: read
     base.caution = clamp01(base.caution - 0.15);
   }
   if (hasTrait(traits, "iron-stamina")) base.recoveryPreference = clamp01(base.recoveryPreference - 0.1);
+  if (hasTrait(traits, "veteran")) {
+    base.persistence = clamp01(base.persistence + 0.1);
+    base.riskTolerance = clamp01(base.riskTolerance - 0.05);
+  }
+  if (hasTrait(traits, "battle-scarred")) {
+    base.caution = clamp01(base.caution + 0.15);
+    base.riskTolerance = clamp01(base.riskTolerance - 0.15);
+    base.counterPreference = clamp01(base.counterPreference + 0.1);
+  }
   return base;
 }
 

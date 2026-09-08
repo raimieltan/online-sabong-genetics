@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 
 import type { Chicken, CombatResult } from "@/lib/types";
 import type { BossListEntry } from "@/lib/pve/types";
+import type { BattleReport } from "@/lib/combat/battleReport";
 import BattleCanvas from "@/components/BattleCanvas";
 import CombatResultsScreen from "@/components/CombatResultsScreen";
 
@@ -21,6 +22,7 @@ type FightResponse = {
   rewards: { credits: number; firstClear: boolean; experienceMultiplier: number };
   chicken: Chicken;
   summary: { durationTurns: number; outcomeReason: string; analysis: string | null };
+  battleReport: BattleReport;
 };
 
 function stars(n: number): string {
@@ -162,6 +164,7 @@ export default function BossFightPage({
             playerChicken={fight.chicken}
             opponent={fight.bossFighter}
             creditsEarned={fight.rewards.credits}
+            battleReport={fight.battleReport}
             onFightAgain={() => window.location.reload()}
             onHeal={handleHeal}
           />

@@ -141,6 +141,8 @@ function resolveHit(params: {
   const defenderAgility = effectiveStat(defender.chicken, "agility") * defenderPhysical.mobility * fatigueStatMultiplier(defender.fatigue);
   let missChance = forceMiss ? 1 : Math.max(0, ((defenderAgility - accuracy) / 100) * 0.15);
   if (hasTrait(attacker.chicken, "calm")) missChance *= 0.7;
+  if (hasTrait(attacker.chicken, "veteran")) missChance *= 0.85;
+  if (hasTrait(attacker.chicken, "battle-scarred")) missChance *= 1.15;
   const isMiss = rng() < missChance;
 
   if (isMiss) {
