@@ -159,6 +159,9 @@ export async function resolveBossFight(
 
   const outcome = applyFightOutcome(chicken, result);
   const battleReport = buildBattleReport(chicken, result, chicken.id, outcome);
+  // `newTraits` is a derived summary field for the battle report, not a Chicken
+  // column — strip it before persisting (mirrors the other two fight routes).
+  const { newTraits: _newTraits, ...persistedOutcome } = outcome;
   const existing = rows.get(boss.id);
   const firstClear = won && (existing?.clearCount ?? 0) === 0;
   const credits = won
@@ -168,7 +171,7 @@ export async function resolveBossFight(
     : 0;
 
   const [updatedChicken, updatedPlayer, progressRow] = await prisma.$transaction(async (tx) => {
-    const uc = await tx.chicken.update({ where: { id: chickenId }, data: outcome });
+    const uc = await tx.chicken.update({ where: { id: chickenId }, data: persistedOutcome });
 
     const up = credits > 0
       ? await tx.player.update({ where: { id: playerId }, data: { credits: { increment: credits } } })
