@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { generateRandomChicken } from "@/lib/chickenGenerator";
 import { applyFightOutcome, canFight, generateMatchedOpponent, simulateFight } from "@/lib/combat";
+import { buildBattleReport, type BattleReport } from "@/lib/combat/battleReport";
 import { prisma } from "@/lib/db";
 import { BATTLE_WIN_CREDITS, earnCredits } from "@/lib/economy";
 import { getOrCreatePlayer } from "@/lib/player";
@@ -49,16 +50,22 @@ export async function POST() {
   let updatedB: Chicken = chickenB;
   let creditsEarned = 0;
   let credits = player.credits;
+  let battleReportA: BattleReport | undefined;
+  let battleReportB: BattleReport | undefined;
 
   if (ownedSides.length > 0) {
+    const outcomeA = applyFightOutcome(chickenA, result);
+    const outcomeB = mode === "pvp" ? applyFightOutcome(chickenB, result) : undefined;
     const [rowA, rowB] = await Promise.all([
-      prisma.chicken.update({ where: { id: chickenA.id }, data: applyFightOutcome(chickenA, result) }),
-      mode === "pvp"
-        ? prisma.chicken.update({ where: { id: chickenB.id }, data: applyFightOutcome(chickenB, result) })
+      prisma.chicken.update({ where: { id: chickenA.id }, data: outcomeA }),
+      outcomeB
+        ? prisma.chicken.update({ where: { id: chickenB.id }, data: outcomeB })
         : Promise.resolve(chickenB),
     ]);
     updatedA = rowA as unknown as Chicken;
     updatedB = rowB as unknown as Chicken;
+    battleReportA = buildBattleReport(chickenA, result, chickenA.id, outcomeA);
+    battleReportB = outcomeB ? buildBattleReport(chickenB, result, chickenB.id, outcomeB) : undefined;
 
     if (ownedSides.some((c) => c.id === result.winnerId)) {
       creditsEarned = BATTLE_WIN_CREDITS;
@@ -78,6 +85,8 @@ export async function POST() {
     updatedB,
     result,
     log: result.log,
+    battleReportA,
+    battleReportB,
     creditsEarned,
     credits,
   });

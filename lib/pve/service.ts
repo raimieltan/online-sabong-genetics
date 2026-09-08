@@ -1,6 +1,7 @@
 import type { PveProgress } from "@prisma/client";
 
 import { applyFightOutcome, canFight, simulateFight } from "../combat";
+import { buildBattleReport, type BattleReport } from "../combat/battleReport";
 import { deriveBehaviorProfile } from "../combat/behavior";
 import { emptyExperience } from "../combat/experience";
 import { createChicken } from "../chickenGenerator";
@@ -115,6 +116,7 @@ export type BossFightResult = {
     outcomeReason: string;
     analysis: string | null;
   };
+  battleReport: BattleReport;
 };
 
 /**
@@ -156,6 +158,7 @@ export async function resolveBossFight(
   }
 
   const outcome = applyFightOutcome(chicken, result);
+  const battleReport = buildBattleReport(chicken, result, chicken.id, outcome);
   const existing = rows.get(boss.id);
   const firstClear = won && (existing?.clearCount ?? 0) === 0;
   const credits = won
@@ -211,6 +214,7 @@ export async function resolveBossFight(
       outcomeReason: result.outcomeReason,
       analysis: result.analysis?.[chicken.id] ?? null,
     },
+    battleReport,
   };
 }
 

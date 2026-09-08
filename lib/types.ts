@@ -289,6 +289,10 @@ export type Chicken = {
   stress?: number;
   /** Morale 0-100 (spec §46); wins/good recovery raise it, losses/injury/overtraining lower it. */
   morale?: number;
+  /** Battle self-belief 0-100 (spec §44); wins/streaks raise it, losses/bad injuries lower it — read by combat decision-weighting, not a flat stat buff. */
+  confidence?: number;
+  /** Lifetime count of fights survived without a career-altering injury (spec §44) — feeds veteran trait eligibility, never decays. */
+  battleHardening?: number;
   trainingState?: TrainingState;
 };
 

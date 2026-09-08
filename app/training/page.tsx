@@ -10,6 +10,7 @@ import { TRAINING_CATEGORIES, type Chicken, type InjuryRecord, type TrainingCate
 import { trainingLocks } from "@/lib/medical/rehab";
 import { battleEligibility } from "@/lib/medical/eligibility";
 import { describeMedicalStatus, medicalStatus } from "@/lib/medical/status";
+import { experienceInsights } from "@/lib/training/insights";
 
 type FacilityViewDTO = { id: string; level: number; capacity: number; efficiency: number; unlockedPrograms: ProgramId[] };
 type SessionDTO = {
@@ -111,6 +112,11 @@ function TrainingPageContent() {
   );
   const locks = trainingLocks(selectedActiveInjuries);
   const selectedEligibility = selected ? battleEligibility(selected) : null;
+  const selectedInsights = selected
+    ? experienceInsights(
+        selected.experience ?? { offensive: 0, defensive: 0, evasion: 0, counter: 0, pressure: 0, recovery: 0, adaptation: 0 },
+      )
+    : [];
 
   return (
     <main className="mx-auto min-h-screen max-w-4xl p-6">
@@ -194,6 +200,15 @@ function TrainingPageContent() {
             )}
             {selectedEligibility && !selectedEligibility.eligible && (
               <p className="mt-1 text-amber-700">⚠ {selectedEligibility.reasons.join(" · ")}</p>
+            )}
+            {selectedInsights.length > 0 && (
+              <div className="mt-2 space-y-1">
+                {selectedInsights.map((insight) => (
+                  <p key={insight.weakCategory} className="text-(--color-gold-bright)">
+                    💡 {insight.message}
+                  </p>
+                ))}
+              </div>
             )}
           </div>
         )}

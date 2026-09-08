@@ -1,3 +1,4 @@
+import { battleAftermath } from "./combat/aftermath";
 import { deriveBehaviorProfile, driftBehaviorProfile } from "./combat/behavior";
 import { rollHitZone } from "./combat/resolution";
 import { simulateBattle, MAX_TURNS as SIM_MAX_TURNS } from "./combat/simulator";
@@ -65,6 +66,10 @@ export type FightOutcomeUpdate = {
   experience: CombatExperience;
   condition: number;
   injuries: InjuryRecord[];
+  confidence: number;
+  morale: number;
+  stress: number;
+  battleHardening: number;
 };
 
 /**
@@ -105,6 +110,7 @@ export function applyFightOutcome(chicken: Chicken, result: CombatResult): Fight
   const condition = Math.max(0, Math.min(100, (chicken.condition ?? 100) + conditionDelta));
   const newInjuries = result.newInjuries?.[chicken.id] ?? [];
   const injuries = [...(chicken.injuries ?? []), ...newInjuries];
+  const aftermath = battleAftermath(chicken, result, chicken.id, wasInjured, newInjuries);
 
   return {
     record: {
@@ -121,6 +127,10 @@ export function applyFightOutcome(chicken: Chicken, result: CombatResult): Fight
     experience,
     condition,
     injuries,
+    confidence: aftermath.confidence,
+    morale: aftermath.morale,
+    stress: aftermath.stress,
+    battleHardening: aftermath.battleHardening,
   };
 }
 
