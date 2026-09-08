@@ -65,3 +65,32 @@ console.log(
     ? "PASS — manual coaching beats Auto-Coach at equal-ish rooster strength"
     : "FAIL — manual coaching does not beat Auto-Coach; revisit scoring/compliance tuning before Phase C"
 );
+
+/**
+ * Test D (spec): a legible chain — opponent overcommits, weaker fighter's
+ * momentum swings, fight becomes genuinely competitive — not a coinflip and
+ * not a guaranteed "press WAIT, magically win." This traces one manual-coach
+ * trial's log and reports whether the weaker fighter was ever VULNERABLE/
+ * DISADVANTAGE before ending the fight ADVANTAGE/DOMINANT or winning outright.
+ */
+function traceComeback(seed: number): void {
+  const weaker = buildFighter("counter", "Weaker", 55, 30);
+  const stronger = buildFighter("aggressive", "Stronger", 80, 60);
+  const result = simulateBattle(weaker, stronger, seededRng(seed), { coachA: readerCoach, coachB: autoCoachPolicy() });
+  const weakerWasBehind = result.log.some((e) => {
+    const weakerIsAttacker = e.attackerId === weaker.id;
+    const weakerState = weakerIsAttacker ? e.attackerState : e.defenderState;
+    return weakerState === "VULNERABLE" || weakerState === "DISADVANTAGE";
+  });
+  const won = result.winnerId === weaker.id;
+  console.log(`Test D trace (seed ${seed}): weaker fighter won = ${won}, was behind at some point = ${weakerWasBehind}, total turns = ${result.totalTurns}`);
+  console.log(won ? "  -> supports a believable comeback path; inspect the log manually for the full chain" : "  -> no comeback this seed; try other seeds before concluding Test D fails");
+}
+
+traceComeback(2000);
+traceComeback(2001);
+traceComeback(2002);
+
+console.log("\nTest A (Reading) and Test C (Physical identity) are not automated by this script:");
+console.log("  Test A — run the app manually, watch a fight with tells enabled, and check whether you predict the AI's intent before it resolves.");
+console.log("  Test C — already checkable via scripts/balance-sim.ts against resolvePhysicalProfile() outputs; run it with a massive vs a long-legged same-style pair and confirm the action-mix differs, not just the numbers.");
