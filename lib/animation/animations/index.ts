@@ -17,6 +17,7 @@ import {
 import { hitCritical, hitHeavy, hitLight, hitMedium, stagger, staggerHeavy } from "./hitReactions";
 import { death, getup, knockback, knockdown } from "./downed";
 import { defeat, recovery, victory } from "./outcomes";
+import { tellAggression, tellPatience, tellRisk } from "./tells";
 
 function def(duration: number, loop: boolean, state: AnimState, fn: AnimationDef["fn"]): AnimationDef {
   return { duration, loop, priority: PRIORITY[state], fn };
@@ -55,4 +56,7 @@ export const ANIMATIONS: Record<AnimState, AnimationDef> = {
   victory: def(4, true, "victory", victory),
   defeat: def(4, true, "defeat", defeat),
   taunt: def(1.2, false, "taunt", taunt),
+  tell_aggression: def(0.35, false, "tell_aggression", tellAggression),
+  tell_patience: def(0.4, false, "tell_patience", tellPatience),
+  tell_risk: def(0.45, false, "tell_risk", tellRisk),
 };

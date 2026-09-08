@@ -152,7 +152,10 @@ export type AnimState =
   | "victory"
   | "defeat"
   | "taunt"
-  | "backstep";
+  | "backstep"
+  | "tell_aggression"
+  | "tell_patience"
+  | "tell_risk";
 
 export const ATTACK_STATES: readonly AnimState[] = [
   "peck_attack",
