@@ -162,12 +162,6 @@ function ChickenDetailPageContent({ params }: { params: Promise<{ chickenId: str
     setChicken(await res.json());
   }
 
-  async function handleHeal() {
-    const res = await fetch(`/api/chickens/${chickenId}/heal`, { method: "POST" });
-    if (!res.ok) return;
-    setChicken(await res.json());
-  }
-
   async function handleAgeUp() {
     const res = await fetch(`/api/chickens/${chickenId}/age-up`, { method: "POST" });
     if (!res.ok) return;
@@ -360,15 +354,7 @@ function ChickenDetailPageContent({ params }: { params: Promise<{ chickenId: str
             <div className="border-t border-(--color-parchment-dark) pt-4">
               <ConditionMonitor chicken={chicken} />
               <div className="mt-3 flex flex-wrap gap-2">
-                {injuries.some((i) => !i.permanent && i.recoveryRemaining > 0) && (
-                  <button
-                    onClick={handleHeal}
-                    className="rounded bg-black/10 px-3 py-1.5 text-xs font-semibold hover:bg-black/20"
-                  >
-                    Quick Heal
-                  </button>
-                )}
-                {(injuries.length > 0 || (chicken.illnesses ?? []).length > 0) && (
+                {(injuries.length > 0 || (chicken.illnesses ?? []).length > 0 || (chicken.health ?? 100) < 100) && (
                   <Link
                     href="/clinic"
                     className="rounded bg-black/10 px-3 py-1.5 text-xs font-semibold hover:bg-black/20"

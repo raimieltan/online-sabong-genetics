@@ -3,9 +3,12 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getOrCreatePlayer } from "@/lib/player";
 import { MedicalError } from "@/lib/medical/errors";
-import { claimExpiredTreatments, medicalRest, startInjuryTreatment } from "@/lib/medical/service";
+import { claimExpiredTreatments, medicalRest, startHealthTreatment, startInjuryTreatment } from "@/lib/medical/service";
 
-type Body = { action: "treat"; injuryId: string } | { action: "medical_rest" };
+type Body =
+  | { action: "treat"; injuryId: string }
+  | { action: "medical_rest" }
+  | { action: "treat_health" };
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -22,6 +25,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (body.action === "medical_rest") {
       const chicken = await medicalRest(player.id, id);
       return NextResponse.json(chicken);
+    }
+
+    if (body.action === "treat_health") {
+      const treatment = await startHealthTreatment(player.id, id);
+      return NextResponse.json({ treatment });
     }
 
     return NextResponse.json({ error: "UNKNOWN_ACTION" }, { status: 400 });

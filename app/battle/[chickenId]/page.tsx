@@ -112,31 +112,6 @@ export default function BattlePage({
     setPhase("replaying");
   }
 
-  async function handleHeal() {
-    const res = await fetch(`/api/chickens/${chickenId}/heal`, { method: "POST" });
-    if (!res.ok) return;
-    const healed: Chicken = await res.json();
-    setChicken(healed);
-    setResult(null);
-    setLog([]);
-    setBattleReport(null);
-    setPhase("loading");
-
-    const opponentRes = await fetch(`/api/chickens/${chickenId}/opponent`, { method: "POST" });
-    if (opponentRes.ok) {
-      const { opponent: nextOpponent, encounter: nextEncounter } = (await opponentRes.json()) as {
-        opponent: Chicken;
-        encounter: PveEncounterDefinition;
-      };
-      setOpponent(nextOpponent);
-      setEncounter(nextEncounter);
-      setPhase("ready");
-    } else {
-      setPhase("error");
-      setError("This chicken cannot battle right now");
-    }
-  }
-
   function handleFightAgain() {
     if (updatedChicken) {
       setChicken(updatedChicken);
@@ -225,7 +200,6 @@ export default function BattlePage({
           creditsEarned={creditsEarned}
           battleReport={battleReport ?? undefined}
           onFightAgain={handleFightAgain}
-          onHeal={handleHeal}
         />
       )}
       </div>

@@ -5,7 +5,7 @@ import Link from "next/link";
 
 import { canTreatSeverity } from "@/lib/medical/config";
 import { describeMedicalStatus, medicalStatusTone } from "@/lib/medical/status";
-import { treatmentPlan } from "@/lib/medical/treatment";
+import { healthTreatmentPlan, treatmentPlan } from "@/lib/medical/treatment";
 import type { IllnessRecord, InjuryRecord, InjurySeverity, MedicalStatus } from "@/lib/types";
 
 type ClinicDTO = {
@@ -31,6 +31,7 @@ type RosterEntry = {
   injuries: InjuryRecord[];
   illnesses: IllnessRecord[];
   activeTreatment: { id: string; injuryId: string | null; startedAt: string; durationMinutes: number } | null;
+  activeHealthTreatment: { id: string; startedAt: string; durationMinutes: number } | null;
 };
 
 const PILL_TONE = {
@@ -78,6 +79,21 @@ export default function ClinicPage() {
     await refresh();
   }
 
+  async function treatHealth(chickenId: string) {
+    setError(null);
+    setBusy(`${chickenId}:health`);
+    const res = await fetch(`/api/chickens/${chickenId}/medical`, {
+      method: "POST",
+      body: JSON.stringify({ action: "treat_health" }),
+    });
+    setBusy(null);
+    if (!res.ok) {
+      setError((await res.json()).error ?? "Treatment failed");
+      return;
+    }
+    await refresh();
+  }
+
   async function medicalRest(chickenId: string) {
     setError(null);
     setBusy(`${chickenId}:rest`);
@@ -111,8 +127,8 @@ export default function ClinicPage() {
     );
   }
 
-  const needsCare = roster.filter((r) => r.status !== "healthy" && r.status !== "minor_issue");
-  const healthy = roster.filter((r) => r.status === "healthy" || r.status === "minor_issue");
+  const needsCare = roster.filter((r) => r.status !== "healthy" || r.health < 100);
+  const healthy = roster.filter((r) => r.status === "healthy" && r.health >= 100);
 
   return (
     <main className="mx-auto min-h-screen max-w-4xl p-6">
@@ -176,6 +192,32 @@ export default function ClinicPage() {
                 <p className="mt-2 rounded bg-sky-900/20 px-3 py-1.5 text-xs text-sky-200">
                   🔧 Under treatment · ~{treatmentRemaining(entry.activeTreatment)}m remaining
                 </p>
+              )}
+
+              {entry.health < 100 && (
+                <div className="mt-3 flex items-center justify-between rounded border border-(--color-parchment-dark) px-3 py-2">
+                  <div className="text-sm">
+                    <span className="font-semibold">Wounds</span>
+                    <span className="ml-2 text-xs uppercase opacity-60">Health {entry.health}/100</span>
+                  </div>
+                  {entry.activeHealthTreatment ? (
+                    <span className="text-xs font-semibold text-sky-600">
+                      Healing · ~{treatmentRemaining(entry.activeHealthTreatment)}m remaining
+                    </span>
+                  ) : (
+                    <button
+                      onClick={() => treatHealth(entry.id)}
+                      disabled={busy === `${entry.id}:health`}
+                      className="rounded bg-black/10 px-3 py-1.5 text-xs font-semibold hover:bg-black/20 disabled:opacity-50"
+                    >
+                      Treat ·{" "}
+                      {(() => {
+                        const plan = healthTreatmentPlan(100 - entry.health, clinic.level);
+                        return `${plan.cost}c / ${plan.durationMinutes}m`;
+                      })()}
+                    </button>
+                  )}
+                </div>
               )}
 
               {entry.injuries.length > 0 && (

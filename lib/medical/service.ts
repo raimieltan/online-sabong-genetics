@@ -1,5 +1,6 @@
 import type { Facility } from "@prisma/client";
 
+import { MAX_HEALTH } from "../combat/state";
 import { prisma } from "../db";
 import { applyRecovery } from "../recovery/engine";
 import type { Chicken, IllnessRecord, InjuryRecord } from "../types";
@@ -12,7 +13,7 @@ import {
 } from "./config";
 import { MedicalError } from "./errors";
 import { medicalStatus } from "./status";
-import { markInTreatment, resolveTreatment, treatmentPlan } from "./treatment";
+import { healthTreatmentPlan, markInTreatment, resolveTreatment, treatmentPlan } from "./treatment";
 
 const CLINIC = "ROOSTER_CLINIC" as const;
 
@@ -70,6 +71,7 @@ export async function claimExpiredTreatments(playerId: string): Promise<void> {
       let nextInjuries = injuries;
       let cleared = false;
       let illnesses = (chicken.illnesses as unknown as IllnessRecord[]) ?? [];
+      let health = chicken.health ?? MAX_HEALTH;
 
       if (treatment.type === "TREAT_INJURY" && treatment.injuryId) {
         const resolved = resolveTreatment(injuries, treatment.injuryId, treatment.clinicLevel);
@@ -78,6 +80,9 @@ export async function claimExpiredTreatments(playerId: string): Promise<void> {
       } else if (treatment.type === "TREAT_ILLNESS" && treatment.injuryId) {
         illnesses = illnesses.filter((i) => i.id !== treatment.injuryId);
         cleared = true;
+      } else if (treatment.type === "TREAT_HEALTH") {
+        health = MAX_HEALTH;
+        cleared = true;
       }
 
       await tx.chicken.update({
@@ -85,6 +90,7 @@ export async function claimExpiredTreatments(playerId: string): Promise<void> {
         data: {
           injuries: nextInjuries as object,
           illnesses: illnesses as object,
+          health,
           injured: nextInjuries.some((i) => !i.permanent && i.recoveryRemaining > 0),
           status:
             nextInjuries.some((i) => !i.permanent && i.recoveryRemaining > 0) || chicken.status === "injured"
@@ -148,6 +154,48 @@ export async function startInjuryTreatment(playerId: string, chickenId: string, 
   });
 }
 
+/** Starts a clinic treatment to restore lost HP — same cost/duration/credits flow as injury treatment, scaled to missing health. */
+export async function startHealthTreatment(playerId: string, chickenId: string) {
+  const clinic = await getOrCreateClinic(playerId);
+  await claimExpiredTreatments(playerId);
+
+  return prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM "Facility" WHERE id = ${clinic.id} FOR UPDATE`;
+
+    const chicken = await tx.chicken.findUnique({ where: { id: chickenId } });
+    if (!chicken) throw new MedicalError("CHICKEN_NOT_FOUND");
+    if (chicken.playerId !== playerId) throw new MedicalError("CHICKEN_NOT_OWNED");
+
+    const missingHealth = MAX_HEALTH - (chicken.health ?? MAX_HEALTH);
+    if (missingHealth <= 0) throw new MedicalError("NOTHING_TO_TREAT");
+
+    const existing = await tx.medicalTreatment.findFirst({
+      where: { chickenId, type: "TREAT_HEALTH", status: "ACTIVE" },
+    });
+    if (existing) throw new MedicalError("INJURY_ALREADY_IN_TREATMENT");
+
+    const plan = healthTreatmentPlan(missingHealth, clinic.level);
+
+    const player = await tx.player.findUnique({ where: { id: playerId } });
+    if (!player || player.credits < plan.cost) throw new MedicalError("INSUFFICIENT_CREDITS");
+
+    await tx.player.update({ where: { id: playerId }, data: { credits: player.credits - plan.cost } });
+
+    return tx.medicalTreatment.create({
+      data: {
+        playerId,
+        chickenId,
+        type: "TREAT_HEALTH",
+        status: "ACTIVE",
+        effectiveness: plan.effectiveness,
+        clinicLevel: clinic.level,
+        cost: plan.cost,
+        durationMinutes: plan.durationMinutes,
+      },
+    });
+  });
+}
+
 /** A supervised medical rest cycle at the clinic (spec §24 "medical rest") — no credit cost, uses the recovery engine. */
 export async function medicalRest(playerId: string, chickenId: string) {
   const clinic = await getOrCreateClinic(playerId);
@@ -201,7 +249,8 @@ export async function rosterMedicalOverview(playerId: string) {
 
   return chickens.map((c) => {
     const chicken = c as unknown as Chicken;
-    const activeTreatment = treatments.find((t) => t.chickenId === c.id) ?? null;
+    const activeTreatment = treatments.find((t) => t.chickenId === c.id && t.type !== "TREAT_HEALTH") ?? null;
+    const activeHealthTreatment = treatments.find((t) => t.chickenId === c.id && t.type === "TREAT_HEALTH") ?? null;
     return {
       id: c.id,
       name: c.name,
@@ -218,6 +267,13 @@ export async function rosterMedicalOverview(playerId: string) {
             injuryId: activeTreatment.injuryId,
             startedAt: activeTreatment.startedAt,
             durationMinutes: activeTreatment.durationMinutes,
+          }
+        : null,
+      activeHealthTreatment: activeHealthTreatment
+        ? {
+            id: activeHealthTreatment.id,
+            startedAt: activeHealthTreatment.startedAt,
+            durationMinutes: activeHealthTreatment.durationMinutes,
           }
         : null,
     };

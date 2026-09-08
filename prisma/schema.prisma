@@ -16,6 +16,7 @@ model Player {
   eggs             Egg[]
   facilities       Facility[]
   pveProgress      PveProgress[]
+  tournaments      Tournament[]
 }
 
 model Chicken {
@@ -157,6 +158,30 @@ model RoosterTraining {
   breakthroughs     Json     @default("[]")
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
+}
+
+/** A persisted single-elimination bracket run (spec §31) — resolved one round at a time so progress
+ * survives a page reload and the player can step away to heal between rounds. */
+model Tournament {
+  id            String    @id @default(uuid())
+  playerId      String
+  player        Player    @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  chickenId     String
+  size          Int
+  tier          String
+  status        String    @default("IN_PROGRESS")
+  currentRound  Int       @default(0)
+  totalRounds   Int
+  /** BracketEntrant[] — every slot in the bracket, including eliminated ones (see lib/tournament.ts). */
+  entrants      Json
+  /** RoundMatch[][] — every match resolved so far, indexed by round. */
+  history       Json      @default("[]")
+  placement     Int?
+  tokensAwarded Int        @default(0)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([playerId, chickenId, status])
 }
 
 model MedicalTreatment {

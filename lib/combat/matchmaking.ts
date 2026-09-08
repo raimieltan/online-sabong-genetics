@@ -13,12 +13,17 @@ function totalEffectiveStats(chicken: Chicken): number {
  * Generates an NPC opponent, not persisted, roughly matched to `playerChicken`'s
  * total effective stats. Tries several random candidates for one inside the
  * tolerance band; falls back to the closest candidate seen if none land in it.
+ *
+ * `statMultiplier` shifts the target band above or below the player's own
+ * stats (e.g. tournament tiers harder than "rookie") without changing the
+ * ±20% tolerance around that shifted target.
  */
 export function generateMatchedOpponent(
   playerChicken: Chicken,
-  generator: () => Chicken = () => generateRandomChicken({ sex: "rooster" })
+  generator: () => Chicken = () => generateRandomChicken({ sex: "rooster" }),
+  statMultiplier = 1
 ): Chicken {
-  const targetTotal = totalEffectiveStats(playerChicken);
+  const targetTotal = totalEffectiveStats(playerChicken) * statMultiplier;
   const minTotal = targetTotal * (1 - MATCH_TOLERANCE);
   const maxTotal = targetTotal * (1 + MATCH_TOLERANCE);
 

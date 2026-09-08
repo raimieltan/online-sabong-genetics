@@ -2,7 +2,6 @@
 
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 
 import type { Chicken, CombatResult } from "@/lib/types";
 import type { BossListEntry } from "@/lib/pve/types";
@@ -35,7 +34,6 @@ export default function BossFightPage({
   params: Promise<{ bossId: string; chickenId: string }>;
 }) {
   const { bossId, chickenId } = use(params);
-  const router = useRouter();
 
   const [phase, setPhase] = useState<Phase>("loading");
   const [error, setError] = useState<string | null>(null);
@@ -90,11 +88,6 @@ export default function BossFightPage({
     const body = (await res.json()) as FightResponse;
     setFight(body);
     setPhase("replaying");
-  }
-
-  async function handleHeal() {
-    await fetch(`/api/chickens/${chickenId}/heal`, { method: "POST" });
-    router.push(`/pve/${bossId}`);
   }
 
   if (phase === "loading") {
@@ -166,7 +159,6 @@ export default function BossFightPage({
             creditsEarned={fight.rewards.credits}
             battleReport={fight.battleReport}
             onFightAgain={() => window.location.reload()}
-            onHeal={handleHeal}
           />
         )}
       </div>
