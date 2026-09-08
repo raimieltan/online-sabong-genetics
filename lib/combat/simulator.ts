@@ -13,9 +13,11 @@ import { isOffensive, resolveExchange } from "./resolution";
 import { effectiveStat } from "./stats";
 import { makeCombatantState, type CombatantState } from "./state";
 import { resolvePhysicalProfile } from "../physicalProfile";
+import { COMMAND_ACTIVE_TURNS, COMMAND_POINTS_MAX, COMMAND_POINT_REGEN_TURNS, type PlayerCommand } from "./command";
 import type {
   Chicken,
   CombatAction,
+  CombatContextState,
   CombatExperienceCategory,
   CombatLogEntry,
   CombatResult,
@@ -58,6 +60,29 @@ function initiativeScore(chicken: Chicken, action: CombatAction, physicalMobilit
   return spd * (1 - ACTION_DEFINITIONS[action].commitment * 0.2) + rng() * 10;
 }
 
+/** What a coach (player or Auto-Coach) sees before deciding whether to spend a CommandPoint this turn. */
+export type CoachObservation = {
+  turn: number;
+  own: {
+    hp: number;
+    maxHp: number;
+    stamina: number;
+    maxStamina: number;
+    momentum: number;
+    mentalState: CombatantState["mentalState"];
+    commandPoints: number;
+  };
+  opponentContextState: CombatContextState;
+  opponentRecentActions: readonly CombatAction[];
+};
+
+export type CoachFn = (obs: CoachObservation) => PlayerCommand | null;
+
+export type SimulateBattleOptions = {
+  coachA?: CoachFn;
+  coachB?: CoachFn;
+};
+
 /**
  * Full V2 turn-based battle simulator (spec §13): both fighters read their
  * own state + a rolling opponent model, weigh all 8 actions through
@@ -68,7 +93,12 @@ function initiativeScore(chicken: Chicken, action: CombatAction, physicalMobilit
  * (extended with optional V2 fields), so the 3D replay client and existing
  * API routes need no changes.
  */
-export function simulateBattle(chickenA: Chicken, chickenB: Chicken, rng: Rng = Math.random): CombatResult {
+export function simulateBattle(
+  chickenA: Chicken,
+  chickenB: Chicken,
+  rng: Rng = Math.random,
+  options: SimulateBattleOptions = {}
+): CombatResult {
   const stateA = makeCombatantState(chickenA);
   const stateB = makeCombatantState(chickenB);
   const physicalA = resolvePhysicalProfile(chickenA);
@@ -170,6 +200,52 @@ export function simulateBattle(chickenA: Chicken, chickenB: Chicken, rng: Rng = 
     identityB.riskTolerance = Math.min(1, Math.max(0, identityB.riskTolerance + momentumRiskNudge(stateB.momentum)));
     const effectiveProfileA = withIdentity(stateA.behavior, identityA);
     const effectiveProfileB = withIdentity(stateB.behavior, identityB);
+
+    stateA.commandPoints = Math.min(COMMAND_POINTS_MAX, stateA.commandPoints + 1 / COMMAND_POINT_REGEN_TURNS);
+    stateB.commandPoints = Math.min(COMMAND_POINTS_MAX, stateB.commandPoints + 1 / COMMAND_POINT_REGEN_TURNS);
+
+    if (stateA.pendingCommandTurnsLeft > 0) stateA.pendingCommandTurnsLeft -= 1;
+    else stateA.pendingCommand = null;
+    if (stateB.pendingCommandTurnsLeft > 0) stateB.pendingCommandTurnsLeft -= 1;
+    else stateB.pendingCommand = null;
+
+    if (options.coachA && stateA.commandPoints >= 1) {
+      const cmd = options.coachA({
+        turn,
+        own: {
+          hp: stateA.hp, maxHp: stateA.maxHp, stamina: stateA.stamina, maxStamina: stateA.maxStamina,
+          momentum: stateA.momentum, mentalState: stateA.mentalState, commandPoints: stateA.commandPoints,
+        },
+        opponentContextState: contextB,
+        opponentRecentActions: stateA.opponentModel.recentActions,
+      });
+      if (cmd) {
+        stateA.pendingCommand = cmd;
+        stateA.pendingCommandTurnsLeft = COMMAND_ACTIVE_TURNS;
+        stateA.commandPoints -= 1;
+      }
+    }
+    if (options.coachB && stateB.commandPoints >= 1) {
+      const cmd = options.coachB({
+        turn,
+        own: {
+          hp: stateB.hp, maxHp: stateB.maxHp, stamina: stateB.stamina, maxStamina: stateB.maxStamina,
+          momentum: stateB.momentum, mentalState: stateB.mentalState, commandPoints: stateB.commandPoints,
+        },
+        opponentContextState: contextA,
+        opponentRecentActions: stateB.opponentModel.recentActions,
+      });
+      if (cmd) {
+        stateB.pendingCommand = cmd;
+        stateB.pendingCommandTurnsLeft = COMMAND_ACTIVE_TURNS;
+        stateB.commandPoints -= 1;
+      }
+    }
+
+    if (shouldForceEngagement(noDamageStreak)) {
+      if (!stateA.pendingCommand) { stateA.pendingCommand = "FORCE_ENGAGEMENT"; stateA.pendingCommandTurnsLeft = 1; }
+      if (!stateB.pendingCommand) { stateB.pendingCommand = "FORCE_ENGAGEMENT"; stateB.pendingCommandTurnsLeft = 1; }
+    }
 
     let actionA = chooseAction(effectiveProfileA, legalA, decisionCtxA);
     let actionB = chooseAction(effectiveProfileB, legalB, decisionCtxB);
