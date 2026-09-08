@@ -1,9 +1,20 @@
-import { generateRandomChicken } from "../chickenGenerator";
+import { generateRandomChicken, randomStatBlock } from "../chickenGenerator";
 import { GENETIC_STAT_KEYS, type Chicken } from "../types";
 import { effectiveStat } from "./stats";
 
 const MATCH_TOLERANCE = 0.2; // ±20% of the player chicken's total effective stats
 const MATCH_ATTEMPTS = 20;
+
+// NPC opponents must be generated as battle-ready, plausibly-trained birds —
+// not freshly-hatched chicks — or their effective stats are capped so far
+// below a trained player's that no amount of tier scaling can close the gap
+// (a chick's 0.35 growth factor + zero EV caps every stat around ~20, even
+// at max IV). "adult" gives a near-ceiling growth factor and a rolled EV
+// block simulates whatever training this NPC has "already done" so the
+// ±20%-tolerance match in `generateMatchedOpponent` can actually be met at
+// every tier, including champion.
+const NPC_GROWTH_STAGE = "adult";
+const NPC_MAX_EV = 100;
 
 function totalEffectiveStats(chicken: Chicken): number {
   return GENETIC_STAT_KEYS.reduce((sum, key) => sum + effectiveStat(chicken, key), 0);
@@ -20,7 +31,12 @@ function totalEffectiveStats(chicken: Chicken): number {
  */
 export function generateMatchedOpponent(
   playerChicken: Chicken,
-  generator: () => Chicken = () => generateRandomChicken({ sex: "rooster" }),
+  generator: () => Chicken = () =>
+    generateRandomChicken({
+      sex: "rooster",
+      growthStage: NPC_GROWTH_STAGE,
+      ev: randomStatBlock(0, NPC_MAX_EV),
+    }),
   statMultiplier = 1
 ): Chicken {
   const targetTotal = totalEffectiveStats(playerChicken) * statMultiplier;

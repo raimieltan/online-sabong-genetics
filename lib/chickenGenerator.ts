@@ -188,7 +188,7 @@ function zeroRecord(): CombatRecord {
   return { wins: 0, losses: 0, championships: 0, koTko: 0, decisions: 0 };
 }
 
-function randomStatBlock(min: number, max: number): StatBlock {
+export function randomStatBlock(min: number, max: number): StatBlock {
   const stats = {} as StatBlock;
   GENETIC_STAT_KEYS.forEach((key) => {
     stats[key] = min + Math.floor(Math.random() * (max - min + 1));
@@ -205,6 +205,8 @@ export type CreateChickenInput = {
   bloodlineId: string;
   breed?: string;
   iv: StatBlock;
+  /** Pre-trained effort values — only used to spawn already-"trained" NPCs (e.g. tournament/PvE opponents); real player chickens always hatch at zero. */
+  ev?: StatBlock;
   physical?: PhysicalBlock;
   colorScheme?: ChickenColorScheme;
   mutations?: MutationGenome;
@@ -214,9 +216,9 @@ export type CreateChickenInput = {
 
 /**
  * Builds a full Chicken record from its identity/genetics inputs, filling in
- * the fields every newly-created chicken starts with: zeroed EVs (training
- * has not happened yet), full health/energy, an empty record, no traits, and
- * "active" status.
+ * the fields every newly-created chicken starts with: zeroed EVs by default
+ * (training has not happened yet — unless `input.ev` simulates a pre-trained
+ * NPC), full health/energy, an empty record, no traits, and "active" status.
  */
 export function createChicken(input: CreateChickenInput): Chicken {
   const fightingStyle = pickRandomFightingStyle();
@@ -230,7 +232,7 @@ export function createChicken(input: CreateChickenInput): Chicken {
     bloodlineId: input.bloodlineId,
     breed: input.breed,
     iv: input.iv,
-    ev: zeroStatBlock(),
+    ev: input.ev ?? zeroStatBlock(),
     physical: input.physical ?? defaultPhysicalBlock(),
     mutations: input.mutations ?? {},
     traits,
@@ -256,6 +258,10 @@ export type GenerateRandomChickenOptions = {
   name?: string;
   sex?: ChickenSex;
   breedId?: BreedId;
+  /** Defaults to "chick" (a freshly-hatched bird). Opponent generators should pass a battle-ready stage — see `generateMatchedOpponent`. */
+  growthStage?: GrowthStage;
+  /** Defaults to untrained (all zero). Opponent generators can pass a rolled block to simulate a "trained" NPC. */
+  ev?: StatBlock;
 };
 
 /**
@@ -275,8 +281,10 @@ export function generateRandomChicken(options: GenerateRandomChickenOptions = {}
     bloodlineId: id,
     breed: breedId,
     iv: randomStatBlock(MIN_IV, MAX_IV),
+    ev: options.ev,
     physical: randomPhysicalBlock(breedId),
     colorScheme: pickRandomColorScheme(breedId),
+    growthStage: options.growthStage,
   });
 }
 
