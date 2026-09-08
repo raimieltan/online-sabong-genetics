@@ -504,6 +504,54 @@ export type TrainingState = {
   history: { category: TrainingCategory; programId?: string; at: number }[];
 };
 
+export type TrainingIntensity = "light" | "moderate" | "hard" | "extreme";
+
+export const TRAINING_INTENSITIES: readonly TrainingIntensity[] = [
+  "light",
+  "moderate",
+  "hard",
+  "extreme",
+];
+
+export type TrainingTraitId = "iron_body" | "fast_learner" | "overtrained";
+
+export type TrainingTrait = {
+  id: TrainingTraitId;
+  grantedAt: number;
+};
+
+export type XpPool = "physicalXP" | "combatXP" | "tacticalXP" | "disciplineXP" | "recoveryXP";
+
+export const XP_POOLS: readonly XpPool[] = [
+  "physicalXP",
+  "combatXP",
+  "tacticalXP",
+  "disciplineXP",
+  "recoveryXP",
+];
+
+export type BreakthroughLogEntry = {
+  stat: GeneticStatKey;
+  category: TrainingCategory;
+  at: number;
+  kind: "bonus_ev" | "trait";
+  traitId?: TrainingTraitId;
+};
+
+/** Per-chicken aggregate progression row (V2 spec, Training Phase 1) — mirrors the RoosterTraining Prisma model. */
+export type RoosterTrainingState = {
+  physicalXP: number;
+  combatXP: number;
+  tacticalXP: number;
+  disciplineXP: number;
+  recoveryXP: number;
+  effortSpent: StatBlock;
+  trainingPotential: StatBlock;
+  discovered: Partial<Record<GeneticStatKey, boolean>>;
+  traits: TrainingTrait[];
+  breakthroughs: BreakthroughLogEntry[];
+};
+
 /** Derived, never stored directly — emerges from growthStage + condition + experience + training (V2 spec §30). */
 export type CareerLifeStage = "developing" | "prime" | "veteran" | "decline";
 
