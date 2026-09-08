@@ -105,3 +105,21 @@ test("POST /api/chickens/:id/train returns 400 when energy is insufficient", asy
   const response = await POST(postRequest(id, "power"), { params: Promise.resolve({ id }) });
   assert.equal(response.status, 400);
 });
+
+test("POST /api/chickens/:id/train accepts an intensity and returns roosterTraining + stressGain", async () => {
+  const player = await getOrCreatePlayer();
+  const id = await seedChicken(player.id, {});
+
+  const response = await POST(
+    new Request(`http://localhost/api/chickens/${id}/train`, {
+      method: "POST",
+      body: JSON.stringify({ stat: "power", intensity: "hard" }),
+    }),
+    { params: Promise.resolve({ id }) }
+  );
+  assert.equal(response.status, 200);
+
+  const body = await response.json();
+  assert.ok(body.roosterTraining);
+  assert.ok(body.stressGain > 0);
+});
