@@ -12,6 +12,7 @@
     "seed:god": "node --import ./scripts/test-ts-loader.mjs scripts/seed-god-chickens.ts",
     "seed:monochrome": "node --import ./scripts/test-ts-loader.mjs scripts/seed-monochrome-pairs.ts",
     "seed:redblack": "node --import ./scripts/test-ts-loader.mjs scripts/seed-deep-red-black-roster.ts",
+    "seed:strategy": "node --import ./scripts/test-ts-loader.mjs scripts/seed-strategy-fighter-roster.ts",
     "backfill:colors": "node --import ./scripts/test-ts-loader.mjs scripts/backfill-color-jitter.ts",
     "postinstall": "prisma generate"
   },
