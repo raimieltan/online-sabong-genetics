@@ -1,8 +1,7 @@
-import { generateRandomChicken } from "../chickenGenerator";
 import type { BehavioralProfile, Chicken, CombatExperience, FightingStyle } from "../types";
 import { deriveBehaviorProfile } from "./behavior";
 import { emptyExperience } from "./experience";
-import { generateMatchedOpponent } from "./matchmaking";
+import { battleReadyNpcGenerator, generateMatchedOpponent } from "./matchmaking";
 
 export type PveEncounterId =
   | "aggressive_specialist"
@@ -144,7 +143,7 @@ export function generatePveOpponent(
   rng: () => number = Math.random
 ): { opponent: Chicken; encounter: PveEncounterDefinition } {
   const encounter = encounterId ? PVE_ENCOUNTERS[encounterId] : pickPveEncounter(rng);
-  const base = generateMatchedOpponent(playerChicken, () => generateRandomChicken({ sex: "rooster" }));
+  const base = generateMatchedOpponent(playerChicken, battleReadyNpcGenerator);
 
   const behavior = clampProfile({
     ...deriveBehaviorProfile(encounter.fightingStyle, base.traits),

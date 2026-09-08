@@ -7,7 +7,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import type { Chicken, GeneticStatKey, MutationRarity } from "@/lib/types";
 import { GENETIC_STAT_KEYS, PHYSICAL_TRAIT_KEYS, PHYSICAL_TRAIT_RANGE } from "@/lib/types";
 import { canAgeUp, canRetire, canTrain } from "@/lib/growth";
-import { canFight } from "@/lib/combat";
+import { canFight, effectiveStat } from "@/lib/combat";
 import { MAX_EV, defaultTrainingState } from "@/lib/training";
 import { getMutationDefinition } from "@/lib/mutations";
 import { RARITY_COLOR, RARITY_GEM, topRarity } from "@/lib/rarity";
@@ -258,8 +258,8 @@ function ChickenDetailPageContent({ params }: { params: Promise<{ chickenId: str
                 key={stat}
                 icon={STAT_ICON[stat]}
                 label={stat}
-                value={Math.round((chicken.iv[stat] + chicken.ev[stat]) * growthFactor(chicken.growthStage))}
-                max={200}
+                value={Math.round(effectiveStat(chicken, stat))}
+                max={110}
               />
             ))}
           </div>

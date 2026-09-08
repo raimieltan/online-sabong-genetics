@@ -2,6 +2,7 @@ import type { CSSProperties } from "react";
 
 import type { Chicken } from "@/lib/types";
 import { GENETIC_STAT_KEYS } from "@/lib/types";
+import { effectiveStat } from "@/lib/combat";
 import { RARITY_COLOR, RARITY_GLOW, topRarity } from "@/lib/rarity";
 import { ChickenThumbnail } from "@/components/chicken3d/ChickenThumbnail";
 
@@ -93,7 +94,7 @@ export function ParentCard({
                   <span className="flex items-center gap-1.5 capitalize text-[#6b5c3d]">
                     <span aria-hidden>{STAT_ICON[stat]}</span> {stat}
                   </span>
-                  <span className="font-display font-semibold">{chicken.iv[stat] + chicken.ev[stat]}</span>
+                  <span className="font-display font-semibold">{Math.round(effectiveStat(chicken, stat))}</span>
                 </div>
               ))}
             </div>

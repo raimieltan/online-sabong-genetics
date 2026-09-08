@@ -39,18 +39,30 @@ import {
   inheritStatBlock,
   type Rng,
 } from "../lib/genetics";
+import { VETERAN_TRAIT } from "../lib/combat/battleTraits";
 import { getOrCreatePlayer } from "../lib/player";
 import { inheritTraits, TRAIT_POOL } from "../lib/traits";
+import { EV_PER_TRAIN } from "../lib/training";
+import { MAX_TRAINING_EFFORT_PER_STAT, MAX_TRAINING_EFFORT_TOTAL } from "../lib/training/effort";
+import { rollTrainingPotential } from "../lib/training/potential";
+import { XP_PER_SESSION, XP_POOLS_BY_CATEGORY } from "../lib/training/xp";
 import {
   GENETIC_STAT_KEYS,
   PHYSICAL_TRAIT_KEYS,
+  type BehavioralProfile,
   type ChickenColorScheme,
+  type CombatExperience,
+  type CombatRecord,
   type FightingStyle,
+  type GeneticStatKey,
   type GrowthStage,
   type MutationGenome,
   type PhysicalBlock,
+  type RoosterTrainingState,
   type StatBlock,
   type Trait,
+  type TrainingCategory,
+  type TrainingState,
 } from "../lib/types";
 
 const SEED = 1337;
@@ -77,6 +89,94 @@ function zeroStatBlock(): StatBlock {
   const block = {} as StatBlock;
   GENETIC_STAT_KEYS.forEach((key) => (block[key] = 0));
   return block;
+}
+
+/** GeneticStatKey -> TrainingCategory, mirroring the private STAT_TO_CATEGORY map in lib/training.ts
+ * (not exported there, so duplicated here for XP bookkeeping). */
+const STAT_TO_CATEGORY: Record<GeneticStatKey, TrainingCategory> = {
+  power: "strength",
+  speed: "speed",
+  agility: "agility",
+  defense: "defense",
+  stamina: "stamina",
+  accuracy: "technique",
+};
+
+/** Roughly how much lifetime Training Effort each generation has banked, so the roster reads as an
+ * active stable rather than a pack of untouched hatchlings — gen0 founders are grizzled veterans,
+ * gen3 has barely started. Ranges are sampled per-chicken from the seeded rng. */
+const GEN_EFFORT_BUDGET: readonly [number, number][] = [
+  [380, 460], // gen0 founders — years of conditioning
+  [280, 360], // gen1
+  [160, 240], // gen2
+  [50, 110], // gen3 — just getting started
+];
+
+/** Derives discovered-potential flags and lifetime XP pools from a chosen effortSpent block —
+ * shared by the generation-based budget roll and the Daimyo stat restore below. */
+function xpAndDiscoveredFor(effortSpent: StatBlock): {
+  discovered: Partial<Record<GeneticStatKey, boolean>>;
+  xp: { physicalXP: number; combatXP: number; tacticalXP: number; disciplineXP: number; recoveryXP: number };
+} {
+  const discovered: Partial<Record<GeneticStatKey, boolean>> = {};
+  const xp = { physicalXP: 0, combatXP: 0, tacticalXP: 0, disciplineXP: 0, recoveryXP: 0 };
+  GENETIC_STAT_KEYS.forEach((key) => {
+    if (effortSpent[key] >= MAX_TRAINING_EFFORT_PER_STAT) discovered[key] = true;
+    const sessions = Math.ceil(effortSpent[key] / EV_PER_TRAIN);
+    for (const pool of XP_POOLS_BY_CATEGORY[STAT_TO_CATEGORY[key]]) {
+      xp[pool] += sessions * XP_PER_SESSION;
+    }
+  });
+  return { discovered, xp };
+}
+
+/**
+ * Deterministically builds a plausible RoosterTraining row for a chicken: rolls trainingPotential
+ * from its iv (real lib/training/potential.ts logic), then spends a generation-appropriate effort
+ * budget weighted toward the chicken's two highest IV stats — same "specialize where you're already
+ * strong" pattern a real trainer would follow — clamped to the same per-stat/lifetime caps the live
+ * training system enforces (lib/training/effort.ts). ev mirrors effortSpent exactly, matching how
+ * lib/training/session.ts keeps the two in lockstep during real sessions.
+ */
+function buildTrainingState(
+  iv: StatBlock,
+  generation: number,
+  rng: Rng
+): { ev: StatBlock; roosterTraining: RoosterTrainingState } {
+  const trainingPotential = rollTrainingPotential(iv, rng);
+
+  const [min, max] = GEN_EFFORT_BUDGET[generation];
+  const budget = Math.round(min + rng() * (max - min));
+
+  const focusStats = [...GENETIC_STAT_KEYS].sort((a, b) => iv[b] - iv[a]).slice(0, 2);
+  const weight = (key: GeneticStatKey) => (focusStats.includes(key) ? 3 : 1);
+  const totalWeight = GENETIC_STAT_KEYS.reduce((sum, key) => sum + weight(key), 0);
+
+  const effortSpent = zeroStatBlock();
+  let spent = 0;
+  GENETIC_STAT_KEYS.forEach((key) => {
+    const share = Math.round((budget * weight(key)) / totalWeight);
+    const cap = Math.min(MAX_TRAINING_EFFORT_PER_STAT, trainingPotential[key]);
+    const remainingTotal = MAX_TRAINING_EFFORT_TOTAL - spent;
+    const allocated = Math.max(0, Math.min(share, cap, remainingTotal));
+    effortSpent[key] = allocated;
+    spent += allocated;
+  });
+
+  const ev: StatBlock = { ...effortSpent };
+  const { discovered, xp } = xpAndDiscoveredFor(effortSpent);
+
+  return {
+    ev,
+    roosterTraining: {
+      ...xp,
+      effortSpent,
+      trainingPotential,
+      discovered,
+      traits: [],
+      breakthroughs: [],
+    },
+  };
 }
 
 function physicalBlock(overrides: Partial<PhysicalBlock>): PhysicalBlock {
@@ -254,9 +354,17 @@ async function main() {
   const player = await getOrCreatePlayer();
   const rng = mulberry32(SEED);
 
+  // RoosterTraining has no FK/cascade to Chicken (chickenId is just a unique string column),
+  // so its rows have to be cleared explicitly alongside the chickens they belong to.
+  const existingChickens = await prisma.chicken.findMany({ where: { playerId: player.id }, select: { id: true } });
+  const deletedTraining = await prisma.roosterTraining.deleteMany({
+    where: { chickenId: { in: existingChickens.map((c) => c.id) } },
+  });
   const deletedChickens = await prisma.chicken.deleteMany({ where: { playerId: player.id } });
   const deletedEggs = await prisma.egg.deleteMany({ where: { playerId: player.id } });
-  console.log(`Cleared ${deletedChickens.count} chickens and ${deletedEggs.count} eggs for player ${player.id}.`);
+  console.log(
+    `Cleared ${deletedChickens.count} chickens, ${deletedTraining.count} training rows, and ${deletedEggs.count} eggs for player ${player.id}.`
+  );
 
   const bloodlineIds: Record<string, string> = {
     Cinderfall: randomUUID(),
@@ -368,8 +476,13 @@ async function main() {
   }
 
   // --- Persist, then print a summary so mutation/trait spread is visible without a DB round-trip. ---
+  // Unlike other seed scripts, this roster is meant to represent an active stable, not fresh stock —
+  // every chicken gets a generation-appropriate RoosterTraining row (Training Phase 1) with ev spent
+  // to match, so the roster survives DB resets with training history already in place.
   for (const rec of all) {
     const { age, growthStage } = GEN_META[rec.generation];
+    const { ev, roosterTraining } = buildTrainingState(rec.iv, rec.generation, rng);
+
     await prisma.chicken.create({
       data: {
         id: rec.id,
@@ -381,7 +494,7 @@ async function main() {
         motherId: rec.motherId || null,
         bloodlineId: rec.bloodlineId,
         iv: rec.iv,
-        ev: zeroStatBlock(), // fresh stock, EVs earned through training — zero on creation like every other seed script
+        ev,
         physical: rec.physical,
         mutations: rec.mutations,
         traits: rec.traits,
@@ -394,6 +507,22 @@ async function main() {
         fightingStyle: nextStyle(),
         colorScheme: rec.colorScheme,
         injured: false,
+      },
+    });
+
+    await prisma.roosterTraining.create({
+      data: {
+        chickenId: rec.id,
+        physicalXP: roosterTraining.physicalXP,
+        combatXP: roosterTraining.combatXP,
+        tacticalXP: roosterTraining.tacticalXP,
+        disciplineXP: roosterTraining.disciplineXP,
+        recoveryXP: roosterTraining.recoveryXP,
+        effortSpent: roosterTraining.effortSpent as object,
+        trainingPotential: roosterTraining.trainingPotential as object,
+        discovered: roosterTraining.discovered as object,
+        traits: roosterTraining.traits as object,
+        breakthroughs: roosterTraining.breakthroughs as object,
       },
     });
   }

@@ -15,12 +15,22 @@ export const TIER_LABELS: Record<TournamentTier, string> = {
   champion: "Champion",
 };
 
-/** NPC total-effective-stat target as a multiplier of the player chicken's own total (fed to `generateMatchedOpponent`). */
+/**
+ * NPC total-effective-stat target as a multiplier of the player chicken's own
+ * total (fed to `generateMatchedOpponent`). Calibrated against simulated
+ * single-fight win rates (not just raw stat parity) because a bracket needs
+ * several *consecutive* wins: at 1.0x a fight is a near-even coin flip
+ * (~50% win rate), which only clears an 8-bracket ~13% of the time — brutal
+ * for a tier meant to be an accessible early rung. These values target
+ * roughly 73%/66%/50%/44% single-fight win rates for beginner/rookie/
+ * veteran/champion respectively, so the tiers actually ramp in felt
+ * difficulty across a full bracket.
+ */
 export const TIER_STAT_MULTIPLIER: Record<TournamentTier, number> = {
-  beginner: 0.85,
-  rookie: 1.0,
-  veteran: 1.2,
-  champion: 1.4,
+  beginner: 0.55,
+  rookie: 0.75,
+  veteran: 0.95,
+  champion: 1.15,
 };
 
 /** Reward multiplier stacked on top of the base placement/participation tokens for harder tiers. */

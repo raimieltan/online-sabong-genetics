@@ -4,7 +4,7 @@ import Link from "next/link";
 
 import type { Chicken } from "@/lib/types";
 import { canAgeUp, canRetire } from "@/lib/growth";
-import { canFight } from "@/lib/combat";
+import { canFight, effectiveStat } from "@/lib/combat";
 import { isChampion } from "@/lib/coopVillage";
 
 const SEX_ICON: Record<Chicken["sex"], string> = { rooster: "🐓", hen: "🐔" };
@@ -48,11 +48,11 @@ export function CoopSelectionPanel({
       <div className="mb-3 grid grid-cols-3 gap-2 text-center text-xs">
         <div className="rounded bg-black/25 px-2 py-1.5">
           <p className="text-(--color-text-muted)">⚔️ Power</p>
-          <p className="font-semibold text-(--foreground)">{chicken.iv.power + chicken.ev.power}</p>
+          <p className="font-semibold text-(--foreground)">{Math.round(effectiveStat(chicken, "power"))}</p>
         </div>
         <div className="rounded bg-black/25 px-2 py-1.5">
           <p className="text-(--color-text-muted)">💨 Speed</p>
-          <p className="font-semibold text-(--foreground)">{chicken.iv.speed + chicken.ev.speed}</p>
+          <p className="font-semibold text-(--foreground)">{Math.round(effectiveStat(chicken, "speed"))}</p>
         </div>
         <div className="rounded bg-black/25 px-2 py-1.5">
           <p className="text-(--color-text-muted)">❤️ Energy</p>

@@ -16,6 +16,20 @@ const MATCH_ATTEMPTS = 20;
 const NPC_GROWTH_STAGE = "adult";
 const NPC_MAX_EV = 100;
 
+/**
+ * Default NPC generator: a battle-ready adult with a rolled EV block (see the
+ * comment above). Exported so other opponent generators (e.g. PvE encounters)
+ * match `generateMatchedOpponent`'s default instead of falling back to
+ * freshly-hatched, zero-EV chicks that can never reach a matched target.
+ */
+export function battleReadyNpcGenerator(): Chicken {
+  return generateRandomChicken({
+    sex: "rooster",
+    growthStage: NPC_GROWTH_STAGE,
+    ev: randomStatBlock(0, NPC_MAX_EV),
+  });
+}
+
 function totalEffectiveStats(chicken: Chicken): number {
   return GENETIC_STAT_KEYS.reduce((sum, key) => sum + effectiveStat(chicken, key), 0);
 }
@@ -31,12 +45,7 @@ function totalEffectiveStats(chicken: Chicken): number {
  */
 export function generateMatchedOpponent(
   playerChicken: Chicken,
-  generator: () => Chicken = () =>
-    generateRandomChicken({
-      sex: "rooster",
-      growthStage: NPC_GROWTH_STAGE,
-      ev: randomStatBlock(0, NPC_MAX_EV),
-    }),
+  generator: () => Chicken = battleReadyNpcGenerator,
   statMultiplier = 1
 ): Chicken {
   const targetTotal = totalEffectiveStats(playerChicken) * statMultiplier;
