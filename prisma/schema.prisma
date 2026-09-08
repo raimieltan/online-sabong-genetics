@@ -140,6 +140,23 @@ model TrainingSession {
   createdAt        DateTime  @default(now())
 }
 
+model RoosterTraining {
+  id                String   @id @default(uuid())
+  chickenId         String   @unique
+  physicalXP        Int      @default(0)
+  combatXP          Int      @default(0)
+  tacticalXP        Int      @default(0)
+  disciplineXP      Int      @default(0)
+  recoveryXP        Int      @default(0)
+  effortSpent       Json     @default("{\"power\":0,\"speed\":0,\"agility\":0,\"defense\":0,\"stamina\":0,\"accuracy\":0}")
+  trainingPotential Json
+  discovered        Json     @default("{}")
+  traits            Json     @default("[]")
+  breakthroughs     Json     @default("[]")
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+}
+
 model MedicalTreatment {
   id            String    @id @default(uuid())
   playerId      String
