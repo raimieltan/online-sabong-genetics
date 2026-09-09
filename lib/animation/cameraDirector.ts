@@ -67,11 +67,11 @@ const NEUTRAL: CueFraming = { radiusMul: 1, heightAdd: 0, fovAdd: 0, focusBias: 
 const CUES: Record<CameraCueName, CueFraming> = {
   battle_start: { radiusMul: 1.04, heightAdd: 0.12, fovAdd: 0, focusBias: 0, pushIn: 0, pushDecay: 1.5 },
   approach: { radiusMul: 1, heightAdd: 0, fovAdd: 0, focusBias: 0.1, pushIn: 0, pushDecay: 1 },
-  attack: { radiusMul: 1, heightAdd: 0, fovAdd: 0, focusBias: 0.22, pushIn: 0, pushDecay: 0.5 },
+  attack: { radiusMul: .94, heightAdd: 0, fovAdd: -2, focusBias: 0.12, pushIn: .04, pushDecay: .5 },
   impact_light: {
     radiusMul: 1,
     heightAdd: 0,
-    fovAdd: 0,
+    fovAdd: -4,
     focusBias: 0.3,
     pushIn: 0,
     pushDecay: 0.4,
@@ -80,7 +80,7 @@ const CUES: Record<CameraCueName, CueFraming> = {
   impact_heavy: {
     radiusMul: 1,
     heightAdd: 0,
-    fovAdd: 0,
+    fovAdd: -6,
     focusBias: 0.4,
     pushIn: 0,
     pushDecay: 0.5,
@@ -89,7 +89,7 @@ const CUES: Record<CameraCueName, CueFraming> = {
   critical: {
     radiusMul: 1,
     heightAdd: 0,
-    fovAdd: 0,
+    fovAdd: -9,
     focusBias: 0.5,
     pushIn: 0,
     pushDecay: 0.65,
@@ -164,6 +164,11 @@ export class CameraDirector {
   private hasExplicitFocus = false;
 
   private elapsedMs = 0;
+  // The live midpoint and separation can change sharply during a dash. Keep
+  // their camera response spring-damped so the framing visibly follows without
+  // snapping or zoom-pumping.
+  private followMid: Vec3 = { x: 0, y: 0, z: 0 };
+  private curFitRadius = 0;
 
   constructor(opts: CameraDirectorOpts) {
     this.opts = {
@@ -222,7 +227,7 @@ export class CameraDirector {
    * @param nowMs     virtual clock (from HitStopController) — orbit + shake freeze during hit-stop
    * @param midpoint  fallback look target (fighters' midpoint) when no cue focus is set
    */
-  update(dt: number, nowMs: number, midpoint: Vec3): void {
+  update(dt: number, nowMs: number, midpoint: Vec3, separation = 0): void {
     this.elapsedMs = nowMs;
     if (this.framing.focusBias > 0 && this.hasExplicitFocus === false) {
       this.setFocus(midpoint);
@@ -247,11 +252,25 @@ export class CameraDirector {
     // --- base front-arc orbit ---------------------------------------------
     const yaw =
       Math.sin((this.elapsedMs / this.opts.orbitPeriodMs) * Math.PI * 2) * this.opts.orbitArc;
-    const radius = this.opts.radius * this.curRadiusMul * (1 - clamp(this.push, 0, 0.6));
+    // Fit the live pair, not the old fixed stage.  The coefficient is modest:
+    // the backdrop remains legible, but a 7m neutral reset receives a clear
+    // wide shot and a clash naturally tightens without snapping.
+    // A substantial separation response makes the camera movement legible in
+    // play: long-range reads become a real wide shot, then the lens returns
+    // during the closing dash instead of looking like a fixed spectator cam.
+    const fitRadius = this.opts.radius + clamp(separation, 0, 12) * .9;
+    if (this.curFitRadius === 0) this.curFitRadius = fitRadius;
+    this.curFitRadius = damp(this.curFitRadius, fitRadius, 4.4, dt);
+    const radius = this.curFitRadius * this.curRadiusMul * (1 - clamp(this.push, 0, 0.6));
     const height = this.opts.height + this.curHeightAdd;
 
     // --- look-at: blend stage centre → focus fighter ---------------------
-    const mid = this.opts.center;
+    // Midpoint is the primary target every frame. Cue focus is only a subtle
+    // cinematic bias and can never pull the other fighter out of frame.
+    this.followMid.x = damp(this.followMid.x, midpoint.x, 4.2, dt);
+    this.followMid.y = damp(this.followMid.y, midpoint.y, 4.2, dt);
+    this.followMid.z = damp(this.followMid.z, midpoint.z, 4.2, dt);
+    const mid = this.followMid;
     const bias = clamp(this.curFocusBias, 0, 1);
     this.lookAt.x = mid.x + (this.focus.x - mid.x) * bias;
     this.lookAt.y = mid.y + (this.focus.y - mid.y) * bias;
@@ -263,7 +282,7 @@ export class CameraDirector {
     this.position.y = height;
     this.position.z = this.lookAt.z + Math.cos(yaw) * radius;
 
-    this.fov = this.opts.fov + this.curFovAdd;
+    this.fov = this.opts.fov + clamp(separation, 0, 12) * .72 + this.curFovAdd;
 
     // --- shake -----------------------------------------------------------
     this.shakeElapsed += dt;
@@ -289,6 +308,10 @@ export class CameraDirector {
     this.shakeElapsed = this.shakeDuration = 0;
     this.shakeStrength = 0;
     this.shake.x = this.shake.y = this.shake.z = 0;
+    this.followMid.x = this.opts.center.x;
+    this.followMid.y = this.opts.center.y;
+    this.followMid.z = this.opts.center.z;
+    this.curFitRadius = 0;
     this.setCue("battle_start");
   }
 }

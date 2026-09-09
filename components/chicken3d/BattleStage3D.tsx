@@ -8,12 +8,13 @@ import { Environment } from "@react-three/drei";
 
 import type { Chicken, StaggerLevel } from "@/lib/types";
 import { CameraDirector, type CameraCueName } from "@/lib/animation/cameraDirector";
+import { bodyClearanceRadius, hurtboxOffsets } from "@/lib/combat-v2/collision";
+import type { FighterCombatSnapshot } from "@/lib/combat-v2/types";
 
-import { ArenaGround } from "./ArenaGround";
 import { ArenaPhysics } from "./ArenaPhysics";
 import { ChickenPhysicsRig, type ChickenPhysicsHandle } from "./ChickenPhysicsRig";
 import { ImpactVFX, type ImpactVFXHandle } from "./ImpactVFX";
-import { PX_TO_WORLD, type FighterAnim } from "./ChickenModel";
+import { ChickenModel, PX_TO_WORLD, type FighterAnim } from "./ChickenModel";
 import type { AnimIntent } from "@/lib/animation/types";
 
 // The GLB models are authored at ~0.7-1 world unit tall (see
@@ -60,10 +61,12 @@ export interface CameraCue {
 // fighters read as standing *inside* that arena rather than on a bulging
 // free-floating dome. The tight orbit arc (see cameraDirector defaults) keeps
 // that alignment while the camera still breathes.
-const IDLE_POS = new THREE.Vector3(0, 1.6, 11.5);
+const IDLE_POS = new THREE.Vector3(0, 2.5, 13.5);
 const IDLE_LOOKAT = new THREE.Vector3(0, -1.5, 0);
 const ORBIT_RADIUS = Math.hypot(IDLE_POS.x, IDLE_POS.z);
-const FOV = 32;
+// The wide arena backdrop needs enough FOV to keep both birds and the ring in
+// view at long range. The director eases this wider only as separation grows.
+const FOV = 38;
 
 /**
  * Camera driven by the V2 `CameraDirector` (spec §20–22): a slow front-arc
@@ -147,7 +150,8 @@ function DirectedCamera({
       }
     }
 
-    director.update(dt, nowMs, midpoint.current);
+    const separation = Math.hypot(ax - bx, az - bz);
+    director.update(dt, nowMs, midpoint.current, separation);
 
     camera.position.set(
       director.position.x + director.shake.x,
@@ -211,6 +215,75 @@ function heuristicCue(cue: CameraCue): CameraCueName {
   return "impact_light";
 }
 
+/** Renders V2's simulation hit spheres and body-clearance circle, not model/mesh bounds. */
+function CollisionDebugVolumes({
+  fighter,
+  anim,
+  anchorX,
+  facingOffset,
+  color,
+}: {
+  fighter: FighterCombatSnapshot;
+  anim: RefObject<FighterAnim | null>;
+  anchorX: number;
+  facingOffset: number;
+  color: string;
+}) {
+  const group = useRef<THREE.Group>(null);
+  const offsets = useMemo(() => hurtboxOffsets(fighter.physical), [fighter]);
+  const clearanceRadius = useMemo(() => bodyClearanceRadius(fighter.physical), [fighter]);
+
+  useFrame(() => {
+    const pose = anim.current;
+    if (!group.current || !pose) return;
+    group.current.position.set(
+      anchorX + pose.offsetX * ANIM_PX_TO_WORLD,
+      STAGE_Y_OFFSET - pose.offsetY * ANIM_PX_TO_WORLD,
+      pose.offsetZ * ANIM_PX_TO_WORLD
+    );
+    group.current.rotation.y = -pose.yaw + facingOffset;
+  });
+
+  return (
+    <group ref={group}>
+      {offsets.map(({ zone, center, radius }) => (
+        <mesh key={zone} position={[center.x, center.y, center.z]}>
+          <sphereGeometry args={[radius, 16, 12]} />
+          <meshBasicMaterial color={color} wireframe transparent opacity={0.8} depthTest={false} />
+        </mesh>
+      ))}
+      <mesh position={[0, 0.025, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <ringGeometry args={[Math.max(0, clearanceRadius - 0.018), clearanceRadius + 0.018, 48]} />
+        <meshBasicMaterial color={color} transparent opacity={0.9} depthTest={false} side={THREE.DoubleSide} />
+      </mesh>
+    </group>
+  );
+}
+
+/** A transparent grounding cue for the painted-floor presentation. It is not a
+ * floor mesh and does not affect physics; it simply prevents airborne-looking
+ * feet when the real arena is supplied by the backdrop image. */
+function FighterContactShadow({ anim, anchorX }: { anim: RefObject<FighterAnim | null>; anchorX: number }) {
+  const shadow = useRef<THREE.Mesh>(null);
+  useFrame(() => {
+    const pose = anim.current;
+    if (!shadow.current || !pose) return;
+    shadow.current.position.set(anchorX + pose.offsetX * ANIM_PX_TO_WORLD, STAGE_Y_OFFSET + .012, pose.offsetZ * ANIM_PX_TO_WORLD);
+    // Airborne clips lift offsetY; their shadow stays on the painted ground and
+    // softens as the bird rises.
+    const lift = Math.max(0, -pose.offsetY * ANIM_PX_TO_WORLD);
+    const s = 1 + Math.min(.75, lift * .55);
+    shadow.current.scale.set(s, s, s);
+    (shadow.current.material as THREE.MeshBasicMaterial).opacity = Math.max(.06, .24 - lift * .09);
+  });
+  return (
+    <mesh ref={shadow} rotation={[-Math.PI / 2, 0, 0]} renderOrder={-1}>
+      <circleGeometry args={[.42, 28]} />
+      <meshBasicMaterial color="#160d08" transparent opacity={.24} depthWrite={false} />
+    </mesh>
+  );
+}
+
 /**
  * Renders the two live-fighter 3D models for a battle replay. Positioned as a
  * transparent layer over the 2D canvas that still draws the ground, health
@@ -230,6 +303,9 @@ export function BattleStage3D({
   cameraCue,
   vfxRef,
   hitStopScaleRef,
+  simulationDriven = false,
+  showCollisionDebug = false,
+  collisionDebugFighters,
 }: {
   fighterA: Pick<Chicken, "colorScheme" | "sex" | "physical" | "mutations">;
   fighterB: Pick<Chicken, "colorScheme" | "sex" | "physical" | "mutations">;
@@ -247,6 +323,11 @@ export function BattleStage3D({
   vfxRef?: Ref<ImpactVFXHandle>;
   /** 0 during a hit-stop freeze so camera + VFX advancement freezes too. */
   hitStopScaleRef?: RefObject<number>;
+  /** V2 owns all world motion and collisions; do not add independent Rapier displacement. */
+  simulationDriven?: boolean;
+  /** Draw V2 simulation hurtboxes and clearance radii for movement diagnosis. */
+  showCollisionDebug?: boolean;
+  collisionDebugFighters?: [FighterCombatSnapshot, FighterCombatSnapshot];
 }) {
   const worldFighterX = FIGHTER_X * STAGE_SCALE;
   // Fixed opponent world positions for the head-tracking layer (fighters sit at fixed X).
@@ -275,8 +356,21 @@ export function BattleStage3D({
         oppoForB={oppoPosForB}
       />
       <Suspense fallback={null}>
-        {/* <ArenaGround y={STAGE_Y_OFFSET} radius={3.4} /> */}
-        <ArenaPhysics floorY={STAGE_Y_OFFSET}>
+        {/* The photographic/painted backdrop supplies the arena floor. */}
+        <FighterContactShadow anim={animA} anchorX={-worldFighterX} />
+        <FighterContactShadow anim={animB} anchorX={worldFighterX} />
+        {simulationDriven ? <>
+          <group position={[-worldFighterX, STAGE_Y_OFFSET, 0]} scale={STAGE_SCALE}>
+            <ChickenModel {...fighterA} combatAnim={animA} animIntent={intentA} opponentPos={oppoPosForA} facing="right" />
+          </group>
+          <group position={[worldFighterX, STAGE_Y_OFFSET, 0]} scale={STAGE_SCALE}>
+            <ChickenModel {...fighterB} combatAnim={animB} animIntent={intentB} opponentPos={oppoPosForB} facing="left" />
+          </group>
+          {showCollisionDebug && collisionDebugFighters && <>
+            <CollisionDebugVolumes fighter={collisionDebugFighters[0]} anim={animA} anchorX={-worldFighterX} facingOffset={0} color="#fb7185" />
+            <CollisionDebugVolumes fighter={collisionDebugFighters[1]} anim={animB} anchorX={worldFighterX} facingOffset={Math.PI} color="#60a5fa" />
+          </>}
+        </> : <ArenaPhysics floorY={STAGE_Y_OFFSET}>
           <ChickenPhysicsRig
             ref={physicsA}
             colorScheme={fighterA.colorScheme}
@@ -303,7 +397,7 @@ export function BattleStage3D({
             position={[worldFighterX, STAGE_Y_OFFSET, 0]}
             worldScale={STAGE_SCALE}
           />
-        </ArenaPhysics>
+        </ArenaPhysics>}
         <ImpactVFX ref={vfxRef} timeScaleRef={hitStopScaleRef} />
         <Environment preset="city" />
       </Suspense>

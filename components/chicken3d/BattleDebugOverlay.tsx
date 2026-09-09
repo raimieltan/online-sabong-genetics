@@ -30,6 +30,19 @@ export interface BattleDebugState {
   cameraCue: CameraCueName | "—";
   personaA: string;
   personaB: string;
+  preferredA: number;
+  preferredB: number;
+  bandA: string;
+  bandB: string;
+  intentA: string;
+  intentB: string;
+  pressureA: number;
+  pressureB: number;
+  arenaRadius: number;
+  posA: string;
+  posB: string;
+  cameraTarget: string;
+  cameraDesiredDistance: number;
 }
 
 export function makeDebugState(): BattleDebugState {
@@ -52,6 +65,9 @@ export function makeDebugState(): BattleDebugState {
     cameraCue: "—",
     personaA: "—",
     personaB: "—",
+    preferredA: 0, preferredB: 0, bandA: "—", bandB: "—", intentA: "—", intentB: "—",
+    pressureA: 0, pressureB: 0, arenaRadius: 0,
+    posA: "—", posB: "—", cameraTarget: "—", cameraDesiredDistance: 0,
   };
 }
 
@@ -77,7 +93,7 @@ export function BattleDebugOverlay({ stateRef }: { stateRef: RefObject<BattleDeb
   }, [stateRef]);
 
   return (
-    <div className="pointer-events-none absolute left-2 top-2 z-50 w-64 rounded-md border border-white/15 bg-black/75 p-2 font-mono text-[10px] leading-tight text-white/80 shadow-lg">
+    <div className="pointer-events-none absolute left-2 top-2 z-50 w-72 rounded-md border border-white/15 bg-black/75 p-2 font-mono text-[10px] leading-tight text-white/80 shadow-lg">
       <div className="mb-1 font-bold text-emerald-300">V2 PRESENTATION DEBUG</div>
       <div className={ROW}><span>turn</span><span>{snap.turn}</span></div>
       <div className={ROW}><span>attacker</span><span>{snap.attacker}</span></div>
@@ -92,6 +108,15 @@ export function BattleDebugOverlay({ stateRef }: { stateRef: RefObject<BattleDeb
       <div className={ROW}><span>ideal</span><span>{snap.idealDistance.toFixed(2)}</span></div>
       <div className={ROW}><span>atk range</span><span>{snap.attackRange.toFixed(2)}</span></div>
       <div className={ROW}><span>min dist</span><span>{snap.minDistance.toFixed(2)}</span></div>
+      <div className={ROW}><span>A pref / band</span><span>{snap.preferredA.toFixed(2)} / {snap.bandA}</span></div>
+      <div className={ROW}><span>B pref / band</span><span>{snap.preferredB.toFixed(2)} / {snap.bandB}</span></div>
+      <div className={ROW}><span>A intent / pressure</span><span>{snap.intentA} / {snap.pressureA.toFixed(2)}</span></div>
+      <div className={ROW}><span>B intent / pressure</span><span>{snap.intentB} / {snap.pressureB.toFixed(2)}</span></div>
+      <div className={ROW}><span>arena radius</span><span>{snap.arenaRadius.toFixed(1)}</span></div>
+      <div className={ROW}><span>A position</span><span>{snap.posA}</span></div>
+      <div className={ROW}><span>B position</span><span>{snap.posB}</span></div>
+      <div className={ROW}><span>camera target</span><span>{snap.cameraTarget}</span></div>
+      <div className={ROW}><span>camera distance</span><span>{snap.cameraDesiredDistance.toFixed(2)}</span></div>
       <div className="my-1 border-t border-white/10" />
       <div className={ROW}>
         <span>hit-stop</span>

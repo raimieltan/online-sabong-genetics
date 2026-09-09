@@ -13,7 +13,8 @@
 
 import * as THREE from "three";
 
-import { ANIMATIONS } from "./animations";
+import { ANIMATIONS } from "./animations/index";
+import { aerialAttack } from './animations/aerial';
 import { LayerRig } from "./layers";
 import { clamp, clamp01, smoothstep } from "./math";
 import { AnimationStateMachine } from "./stateMachine";
@@ -136,7 +137,7 @@ export class ProceduralAnimationController {
     copyPose(this.poseOut, this.poseBlendFrom);
     if (target === "death") this.alive = false;
     const power = HIT_POWER[target];
-    if (power != null) {
+    if (power != null && !intent.aerial) {
       const away = this.facing === "right" ? -1 : 1;
       this.layers.addHit(away, power);
     }
@@ -157,15 +158,24 @@ export class ProceduralAnimationController {
     velZ: number;
     velY: number;
     aimYaw: number;
+    simulationIntent?: AnimIntent;
   }): void {
     const dt = Math.min(frame.dt, 1 / 30);
     this.sm.update(dt);
+    const simulation = frame.simulationIntent;
+    if (simulation) {
+      this.sm.current = simulation.state;
+      this.sm.transitionT = 1;
+      this.sm.stateTime = (simulation.simulationProgress ?? 0) * ANIMATIONS[simulation.state].duration;
+      this.playbackSpeed = 1;
+      this.alive = !simulation.fatal;
+    }
 
     // --- internal auto-transitions ------------------------------------------
     const cur = this.sm.current;
     const anim = ANIMATIONS[cur];
     const done = !anim.loop && this.sm.stateTime * this.playbackSpeed >= anim.duration;
-    if (done) {
+    if (done && !simulation) {
       if (isAttack(cur)) this.sm.request("recovery", true);
       else if (cur === "recovery" || cur === "getup" || cur === "backstep" || cur === "knockback") {
         this.sm.request("ready", true);
@@ -177,10 +187,10 @@ export class ProceduralAnimationController {
     }
 
     // --- walk / run velocity overlay --------------------------------------
-    if (isRestState(this.sm.current)) {
+    if (!simulation && isRestState(this.sm.current)) {
       if (frame.speed > RUN_MIN) this.sm.request("run", true);
       else if (frame.speed > WALK_ENTER) this.sm.request("walk", true);
-    } else if ((this.sm.current === "walk" || this.sm.current === "run") && frame.speed <= WALK_EXIT) {
+    } else if (!simulation && (this.sm.current === "walk" || this.sm.current === "run") && frame.speed <= WALK_EXIT) {
       this.sm.request("ready", true);
     }
 
@@ -212,7 +222,8 @@ export class ProceduralAnimationController {
 
     // --- pose: rest → base anim → blend → layers -------------------------
     resetPose(this.poseBase);
-    def.fn(ctx.t, ctx, this.poseBase);
+    if (simulation?.aerial && !simulation.fatal) aerialAttack(simulation.aerial, this.poseBase);
+    else def.fn(ctx.t, ctx, this.poseBase);
 
     if (this.sm.transitionT < 1) {
       lerpPose(this.poseBlendFrom, this.poseBase, smoothstep(this.sm.transitionT), this.poseOut);

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import { prisma } from "@/lib/db";
 import { canFight } from "@/lib/combat";
-import { BattleSession, MAX_TURNS } from "@/lib/combat/simulator";
+import { LiveCombatV2Session, MAX_TURNS } from "@/lib/combat-v2/liveSession";
 import { createBattleSession } from "@/lib/combat/liveBattleSessions";
 import { getOrCreatePlayer } from "@/lib/player";
 import type { Chicken } from "@/lib/types";
@@ -33,7 +33,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: "Chicken cannot battle right now" }, { status: 400 });
   }
 
-  const session = new BattleSession(chickenA, opponent);
+  const session = new LiveCombatV2Session(chickenA, opponent);
   const sessionId = createBattleSession(session);
 
   return NextResponse.json({

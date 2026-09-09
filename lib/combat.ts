@@ -2,7 +2,8 @@ import { battleAftermath } from "./combat/aftermath";
 import { evaluateBattleTraits } from "./combat/battleTraits";
 import { deriveBehaviorProfile, driftBehaviorProfile } from "./combat/behavior";
 import { rollHitZone } from "./combat/resolution";
-import { simulateBattle, MAX_TURNS as SIM_MAX_TURNS } from "./combat/simulator";
+import { MAX_TURNS as SIM_MAX_TURNS } from "./combat/simulator";
+import { LiveCombatV2Session } from "./combat-v2/liveSession";
 import { MAX_HEALTH as STATE_MAX_HEALTH } from "./combat/state";
 import { effectiveStat, maxHealth } from "./combat/stats";
 import { canBattle as canBattleStage } from "./growth";
@@ -55,7 +56,16 @@ export function finalHealthPercent(result: CombatResult, chicken: Chicken): numb
  * so every existing caller keeps working.
  */
 export function simulateFight(chickenA: Chicken, chickenB: Chicken, rng: Rng = Math.random): CombatResult {
-  return simulateBattle(chickenA, chickenB, rng);
+  // This compatibility entry point powers tournament rounds, live odds and
+  // every remaining one-shot caller. Route them all through V2 so there is
+  // one authoritative combat ruleset in production.
+  const session = new LiveCombatV2Session(
+    chickenA,
+    chickenB,
+    Math.floor(rng() * 0x1_0000_0000) >>> 0,
+  );
+  while (!session.fightOver) session.step();
+  return session.finalize();
 }
 
 /** Persistable field updates for one side of a resolved fight — shared by `/api/chickens/[id]/fight` and `/api/live/resolve` so both apply the same rules to an owned chicken. */
@@ -142,4 +152,3 @@ export function applyFightOutcome(chicken: Chicken, result: CombatResult): Fight
     newTraits: earnedTraits,
   };
 }
-

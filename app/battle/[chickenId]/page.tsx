@@ -72,7 +72,6 @@ export default function BattlePage({
   params: Promise<{ chickenId: string }>;
 }) {
   const { chickenId } = use(params);
-
   const [phase, setPhase] = useState<Phase>("loading");
   const [error, setError] = useState<string | null>(null);
   const [chicken, setChicken] = useState<Chicken | null>(null);

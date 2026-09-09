@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { applyFightOutcome } from "@/lib/combat";
 import { autoCoachPolicy } from "@/lib/combat/autoCoach";
-import { MAX_TURNS } from "@/lib/combat/simulator";
+import { MAX_TURNS } from "@/lib/combat-v2/liveSession";
 import { buildBattleReport } from "@/lib/combat/battleReport";
 import { endBattleSession, getBattleSession } from "@/lib/combat/liveBattleSessions";
 import type { PlayerCommand } from "@/lib/combat/command";

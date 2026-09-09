@@ -1,4 +1,4 @@
-import type { BattleSession } from "../combat/simulator";
+import type { LiveCombatV2Session } from "../combat-v2/liveSession";
 import type { Chicken } from "../types";
 import type { PveBossId } from "./types";
 
@@ -11,7 +11,7 @@ import type { PveBossId } from "./types";
  * as spar: a restart drops any fight in flight.
  */
 type BossFightEntry = {
-  session: BattleSession;
+  session: LiveCombatV2Session;
   playerId: string;
   chickenId: string;
   chicken: Chicken;

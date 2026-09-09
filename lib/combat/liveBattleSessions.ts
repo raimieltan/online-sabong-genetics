@@ -1,4 +1,4 @@
-import { BattleSession } from "./simulator";
+import { LiveCombatV2Session } from "../combat-v2/liveSession";
 
 /**
  * In-memory registry of live main-battle sessions — same shape as
@@ -8,17 +8,17 @@ import { BattleSession } from "./simulator";
  * drops any battle in flight (acceptable for now — no PvP/stakes riding on
  * server continuity yet).
  */
-const sessions = new Map<string, BattleSession>();
+const sessions = new Map<string, LiveCombatV2Session>();
 
 let nextId = 1;
 
-export function createBattleSession(session: BattleSession): string {
+export function createBattleSession(session: LiveCombatV2Session): string {
   const id = `battle-${nextId++}-${Date.now().toString(36)}`;
   sessions.set(id, session);
   return id;
 }
 
-export function getBattleSession(id: string): BattleSession | undefined {
+export function getBattleSession(id: string): LiveCombatV2Session | undefined {
   return sessions.get(id);
 }
 

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 
 import type { PlayerCommand } from "@/lib/combat/command";
 import { autoCoachPolicy } from "@/lib/combat/autoCoach";
-import { MAX_TURNS } from "@/lib/combat/simulator";
+import { MAX_TURNS } from "@/lib/combat-v2/liveSession";
 import { getBossFightSession } from "@/lib/pve/bossFightSessions";
 import { PveError } from "@/lib/pve/errors";
 import { getOrCreatePlayer } from "@/lib/player";

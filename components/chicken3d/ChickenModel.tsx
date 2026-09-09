@@ -469,7 +469,7 @@ export function ChickenModel({
         aimYaw = Math.atan2(Math.sin(aimYaw), Math.cos(aimYaw)); // wrap to [-π,π]
       }
 
-      controller.update({ dt: safeDt, now: state.clock.elapsedTime * 1000, speed, velX, velZ, velY, aimYaw });
+      controller.update({ dt: safeDt, now: state.clock.elapsedTime * 1000, speed, velX, velZ, velY, aimYaw, simulationIntent: intent?.simulationProgress !== undefined ? intent : undefined });
 
       modelScene.traverse((node) => {
         if (node instanceof THREE.Mesh && node.material instanceof THREE.MeshStandardMaterial) {

@@ -4,7 +4,7 @@ import { applyFightOutcome, canFight } from "../combat";
 import { buildBattleReport, type BattleReport } from "../combat/battleReport";
 import { deriveBehaviorProfile } from "../combat/behavior";
 import { emptyExperience } from "../combat/experience";
-import { BattleSession, MAX_TURNS } from "../combat/simulator";
+import { LiveCombatV2Session, MAX_TURNS } from "../combat-v2/liveSession";
 import { createChicken } from "../chickenGenerator";
 import { prisma } from "../db";
 import type { BehavioralProfile, Chicken, CombatExperience } from "../types";
@@ -101,7 +101,7 @@ export async function listBosses(playerId: string): Promise<BossListEntry[]> {
   }));
 }
 
-type FightSim = ReturnType<BattleSession["finalize"]>;
+type FightSim = ReturnType<LiveCombatV2Session["finalize"]>;
 
 export type StartBossFightResult = {
   sessionId: string;
@@ -109,8 +109,8 @@ export type StartBossFightResult = {
   bossFighter: Chicken;
   boss: ReturnType<typeof bossPreview>;
   maxTurns: number;
-  snapshotA: ReturnType<BattleSession["snapshotA"]>;
-  snapshotB: ReturnType<BattleSession["snapshotB"]>;
+  snapshotA: ReturnType<LiveCombatV2Session["snapshotA"]>;
+  snapshotB: ReturnType<LiveCombatV2Session["snapshotB"]>;
 };
 
 export type BossFightResult = {
@@ -158,7 +158,7 @@ export async function startBossFight(
   if (!canFight(chicken)) throw new PveError("CHICKEN_NOT_ELIGIBLE");
 
   const bossFighter = buildBossFighter(boss);
-  const session = new BattleSession(chicken, bossFighter);
+  const session = new LiveCombatV2Session(chicken, bossFighter);
   const sessionId = createBossFightSession({ session, playerId, chickenId, chicken, bossId: boss.id, bossFighter });
 
   return {

@@ -227,6 +227,9 @@ export interface AnimationDef {
 
 /** Intent handed from BattleCanvas to the model each turn / at impact. */
 export interface AnimIntent {
+  aerial?: import('../combat-v2/types').AerialRuntime & { tick: number; phaseProgress: number; actionId?: string; strikeProgress?: number };
+  /** V2 presentation: authoritative normalized pose time; bypass clip-driven transitions. */
+  simulationProgress?: number;
   state: AnimState;
   /** ms timestamp when this intent began. */
   startedAt: number;

@@ -702,7 +702,10 @@ export default function BattleCanvas({
     // mirrors it out for the deferred fireImpact closure (knockback direction,
     // VFX placement) and the debug overlay.
     const roam = (() => {
-      const seed = roamPose(Date.now(), DEFAULT_ROAM, 0);
+      const seed = roamPose(Date.now(), DEFAULT_ROAM, {
+        styleA: chickenA.fightingStyle,
+        styleB: chickenB.fightingStyle,
+      });
       return {
         baseAX: seed.a.x, baseAZ: seed.a.z,
         baseBX: seed.b.x, baseBZ: seed.b.z,
@@ -716,6 +719,9 @@ export default function BattleCanvas({
       ux: 1, uz: 0,
     };
     let prevFrameNow = Date.now();
+    // Contact starts a short, explicit break-away beat. This is presentation
+    // state only: it never alters authoritative combat positions or damage.
+    let lastClashAt = -Infinity;
 
     // Mass is a bounded ~0.85–1.15 multiplier (see lib/physicalProfile) — heavier
     // birds take proportionally longer to complete a strike, lighter birds snap
@@ -871,6 +877,7 @@ export default function BattleCanvas({
         // Effects (HP, sound, particles, flash) are deferred to IMPACT_AT below,
         // fired once the fighter's wings/talons actually reach the target.
         const fireImpact = (impactNow: number) => {
+          lastClashAt = impactNow;
           onImpactRef.current?.(entry);
           defenderVisual.hp = Math.max(0, entry.defenderHp);
           defenderVisual.fatigued = defenderVisual.hp < defenderVisual.maxHp * 0.3;
@@ -1199,8 +1206,13 @@ export default function BattleCanvas({
       // doesn't drag a lunging bird back out of its own strike range.
       const frameDt = Math.min(Math.max((now - prevFrameNow) / 1000, 0), 1 / 15);
       prevFrameNow = now;
-      const engageBias = activeAttack ? 1 : 0;
-      const targetPose = roamPose(now, DEFAULT_ROAM, engageBias);
+      const resetBias = clamp(1 - (now - lastClashAt) / 1900, 0, 1);
+      const targetPose = roamPose(now, DEFAULT_ROAM, {
+        styleA: chickenA.fightingStyle,
+        styleB: chickenB.fightingStyle,
+        activeAttacker: activeAttack?.attacker,
+        resetBias,
+      });
       const ROAM_LAMBDA = 2.4;
       roam.baseAX = damp(roam.baseAX, targetPose.a.x, ROAM_LAMBDA, frameDt);
       roam.baseAZ = damp(roam.baseAZ, targetPose.a.z, ROAM_LAMBDA, frameDt);
@@ -1291,7 +1303,10 @@ export default function BattleCanvas({
           const defenderBaseX = attackerIsA ? roam.baseBX : roam.baseAX;
           const defenderBaseZ = attackerIsA ? roam.baseBZ : roam.baseAZ;
           const attackerStyle = attackerIsA ? styleA : styleB;
-          const distanceWorld = gapDist * 0.42 * attackerStyle.lungeMult;
+          // Commitment crosses almost the whole live gap.  Unlike the old 42%
+          // lunge this stays visibly direct from medium/long range, while the
+          // clearance clamp below still prevents crossing through the defender.
+          const distanceWorld = Math.max(0, gapDist - BODY_CLEARANCE_WORLD) * attackerStyle.lungeMult;
 
           // Phase timeline, as a fraction of (mass-scaled) attack duration — shared
           // across move kinds so the choreography's contact fraction keeps lining
@@ -1370,6 +1385,19 @@ export default function BattleCanvas({
       }
 
       debugRef.current.distance = gapDist;
+      debugRef.current.preferredA = targetPose.preferredA;
+      debugRef.current.preferredB = targetPose.preferredB;
+      debugRef.current.bandA = targetPose.distanceBandA;
+      debugRef.current.bandB = targetPose.distanceBandB;
+      debugRef.current.intentA = targetPose.intentA;
+      debugRef.current.intentB = targetPose.intentB;
+      debugRef.current.pressureA = targetPose.pressureA;
+      debugRef.current.pressureB = targetPose.pressureB;
+      debugRef.current.arenaRadius = DEFAULT_ROAM.arenaRadius;
+      debugRef.current.posA = `${roam.baseAX.toFixed(1)}, ${roam.baseAZ.toFixed(1)}`;
+      debugRef.current.posB = `${roam.baseBX.toFixed(1)}, ${roam.baseBZ.toFixed(1)}`;
+      debugRef.current.cameraTarget = `${((roam.baseAX + roam.baseBX) / 2).toFixed(1)}, ${((roam.baseAZ + roam.baseBZ) / 2).toFixed(1)}`;
+      debugRef.current.cameraDesiredDistance = 13.5 + gapDist * .9;
 
       animR1.flash = Math.max(0, animR1.flash - 0.08);
       animR2.flash = Math.max(0, animR2.flash - 0.08);
