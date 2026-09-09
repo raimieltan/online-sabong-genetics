@@ -18,7 +18,7 @@ export interface BattleDebugState {
   move: string;
   attackerAnim: string;
   defenderAnim: string;
-  phase: AttackPhase | "—";
+  phase: AttackPhase | "TELL" | "—";
   distance: number;
   idealDistance: number;
   attackRange: number;

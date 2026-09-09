@@ -333,6 +333,13 @@ export type CombatActionDefinition = {
   damagePotential: number;
   staggerPotential: number;
   positionalEffect: number;
+  /**
+   * Base wall-clock duration (ms) of the action at a neutral (1.0/1.0)
+   * mass/mobility physical profile and zero fatigue — see
+   * combat/timeline.ts::exchangeTiming for how a fighter's actual physical
+   * profile and fatigue scale this into the exchange's real duration.
+   */
+  baseDurationMs: number;
 };
 
 /** Abstract server-side distance band (V2 spec §7) — the 3D client translates this into physical blocking, it is never simulated as literal coordinates. */
@@ -598,6 +605,13 @@ export const STAGGER_LEVELS: readonly StaggerLevel[] = [
   "knockdown",
 ];
 
+/**
+ * The 3 coarse intent tiers a player can read off a fighter one beat before
+ * it commits (spec Phase A.5) — see combat/tells.ts::selectTell for how one
+ * gets chosen each turn.
+ */
+export type TellKind = "aggression" | "patience" | "risk";
+
 export type CombatLogEntry = {
   turn: number;
   attackerId: string;
@@ -624,6 +638,31 @@ export type CombatLogEntry = {
   position?: number;
   distance?: CombatDistance;
   fatigue?: { attacker: number; defender: number };
+  /**
+   * Phase A.5 tells — each fighter's own intent tier for the action it
+   * committed to *this turn* (not "the attacker's tell", since the
+   * attacker/defender roles are assigned per-exchange while both fighters
+   * decide independently). Only set on the turn's first log entry, not on
+   * a same-turn return exchange, so a tell animation never double-fires.
+   */
+  attackerTell?: TellKind | null;
+  defenderTell?: TellKind | null;
+  /**
+   * Whether the attacker/defender had a live PlayerCommand pending *and* the
+   * action they actually took this exchange is one that command biases
+   * toward (combat/command.ts::commandTargetsAction) — lets the UI say "your
+   * PRESS worked" instead of the command's only visible trace being a small
+   * HUD tag the player has to notice and correlate themselves.
+   */
+  attackerCommandFollowed?: boolean;
+  defenderCommandFollowed?: boolean;
+  /**
+   * Wall-clock duration (ms) this exchange takes to play out, from
+   * combat/timeline.ts::exchangeTiming — a heavy attack from a massive
+   * rooster takes longer than a light attack from a nimble one. Presentation
+   * layers should pace playback off this instead of a fixed per-turn tick.
+   */
+  durationMs?: number;
 };
 
 export type CombatResult = {

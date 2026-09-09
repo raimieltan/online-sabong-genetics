@@ -5,7 +5,8 @@ export type PveErrorCode =
   | "CHICKEN_NOT_OWNED"
   | "CHICKEN_NOT_ELIGIBLE"
   | "DEV_MODE_DISABLED"
-  | "UNKNOWN_ACTION";
+  | "UNKNOWN_ACTION"
+  | "SESSION_NOT_FOUND";
 
 const STATUS_BY_CODE: Record<PveErrorCode, number> = {
   BOSS_NOT_FOUND: 404,
@@ -15,6 +16,7 @@ const STATUS_BY_CODE: Record<PveErrorCode, number> = {
   CHICKEN_NOT_ELIGIBLE: 400,
   DEV_MODE_DISABLED: 403,
   UNKNOWN_ACTION: 400,
+  SESSION_NOT_FOUND: 404,
 };
 
 export class PveError extends Error {

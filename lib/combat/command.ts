@@ -10,8 +10,14 @@ import type { CombatIdentity } from "./identity";
 export type PlayerCommand = "PRESS" | "WAIT" | "RECOVER" | "FORCE_ENGAGEMENT";
 
 export const COMMAND_POINTS_MAX = 3;
-/** Turns of simulator time to regenerate 1 CP — the presentation layer converts this to a felt seconds-countdown from its own turn cadence, not read directly here. */
-export const COMMAND_POINT_REGEN_TURNS = 5;
+/**
+ * Turns of simulator time to regenerate 1 CP — the presentation layer converts this to a felt seconds-countdown from its own turn cadence, not read directly here.
+ * Was 5; dropped to 3 (2026-09-09) — real fights were resolving in as few as 7-16 turns
+ * (see scripts/validation-gate-sim.ts's Test D traces), so at the old rate a player could
+ * bank barely one CP before the fight ended, making the whole command layer nearly
+ * unfeelable in normal play regardless of how strongly a command biases scoring.
+ */
+export const COMMAND_POINT_REGEN_TURNS = 3;
 /** A pending command stays live for this many turns (or until it's consumed once), so small latency on issuing it isn't punishing (spec: "accepted for the next relevant decision/exchange"). */
 export const COMMAND_ACTIVE_TURNS = 3;
 
@@ -45,9 +51,14 @@ export function complianceFactor(command: PlayerCommand, identity: CombatIdentit
   return 0.35 + clamp01(alignment) * 0.6;
 }
 
+/** Whether `action` is one `command` biases toward — the same lookup `commandActionModifier` uses, exposed separately so callers (e.g. the log/UI layer) can tell "did the fighter actually do what was asked" without duplicating the table. */
+export function commandTargetsAction(command: PlayerCommand, action: CombatAction): boolean {
+  return COMMAND_TARGET_ACTIONS[command].includes(action);
+}
+
 /** Multiplier applied to a targeted action's base score term; 1 (no-op) for every non-targeted action or when no command is pending. */
 export function commandActionModifier(command: PlayerCommand | null, identity: CombatIdentity, action: CombatAction): number {
   if (!command) return 1;
-  if (!COMMAND_TARGET_ACTIONS[command].includes(action)) return 1;
+  if (!commandTargetsAction(command, action)) return 1;
   return 1 + complianceFactor(command, identity);
 }

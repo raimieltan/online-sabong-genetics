@@ -56,7 +56,12 @@ export const ANIMATIONS: Record<AnimState, AnimationDef> = {
   victory: def(4, true, "victory", victory),
   defeat: def(4, true, "defeat", defeat),
   taunt: def(1.2, false, "taunt", taunt),
-  tell_aggression: def(0.35, false, "tell_aggression", tellAggression),
-  tell_patience: def(0.4, false, "tell_patience", tellPatience),
-  tell_risk: def(0.45, false, "tell_risk", tellRisk),
+  // Spec Phase A.5 calls for a 300-500ms readable pose, but that's too fast
+  // for a player to actually register mid-fight (playtesting: needs a solid
+  // 1-2s beat to be genuinely readable) — stretched out here rather than in
+  // the pose fns themselves, so `t` in tellAggression/Patience/Risk is still
+  // 0..1 and just plays back over a longer window.
+  tell_aggression: def(1.2, false, "tell_aggression", tellAggression),
+  tell_patience: def(1.4, false, "tell_patience", tellPatience),
+  tell_risk: def(1.6, false, "tell_risk", tellRisk),
 };

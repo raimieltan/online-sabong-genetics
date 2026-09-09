@@ -16,6 +16,7 @@ export const ACTION_DEFINITIONS: Record<CombatAction, CombatActionDefinition> = 
     damagePotential: 0.72,
     staggerPotential: 0.7,
     positionalEffect: 0.3,
+    baseDurationMs: 700,
   },
   HEAVY_ATTACK: {
     id: "HEAVY_ATTACK",
@@ -25,6 +26,7 @@ export const ACTION_DEFINITIONS: Record<CombatAction, CombatActionDefinition> = 
     damagePotential: 1.6,
     staggerPotential: 1.5,
     positionalEffect: 0.5,
+    baseDurationMs: 1500,
   },
   PRESSURE: {
     id: "PRESSURE",
@@ -34,6 +36,7 @@ export const ACTION_DEFINITIONS: Record<CombatAction, CombatActionDefinition> = 
     damagePotential: 0.7,
     staggerPotential: 0.5,
     positionalEffect: 1.1,
+    baseDurationMs: 950,
   },
   EVADE: {
     id: "EVADE",
@@ -43,6 +46,7 @@ export const ACTION_DEFINITIONS: Record<CombatAction, CombatActionDefinition> = 
     damagePotential: 0,
     staggerPotential: 0,
     positionalEffect: 0.6,
+    baseDurationMs: 550,
   },
   COUNTER: {
     id: "COUNTER",
@@ -52,6 +56,7 @@ export const ACTION_DEFINITIONS: Record<CombatAction, CombatActionDefinition> = 
     damagePotential: 1.25,
     staggerPotential: 1.0,
     positionalEffect: 0.5,
+    baseDurationMs: 850,
   },
   GUARD: {
     id: "GUARD",
@@ -61,6 +66,7 @@ export const ACTION_DEFINITIONS: Record<CombatAction, CombatActionDefinition> = 
     damagePotential: 0,
     staggerPotential: 0,
     positionalEffect: -0.2,
+    baseDurationMs: 500,
   },
   RECOVER: {
     id: "RECOVER",
@@ -70,6 +76,7 @@ export const ACTION_DEFINITIONS: Record<CombatAction, CombatActionDefinition> = 
     damagePotential: 0,
     staggerPotential: 0,
     positionalEffect: -0.5,
+    baseDurationMs: 1100,
   },
   REPOSITION: {
     id: "REPOSITION",
@@ -79,6 +86,7 @@ export const ACTION_DEFINITIONS: Record<CombatAction, CombatActionDefinition> = 
     damagePotential: 0,
     staggerPotential: 0,
     positionalEffect: 1.6,
+    baseDurationMs: 800,
   },
 };
 

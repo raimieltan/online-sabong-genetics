@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
 import * as THREE from "three";
-import type { Chicken, CombatLogEntry, FightingStyle, HitZone } from "@/lib/types";
+import type { Chicken, CombatLogEntry, FightingStyle, HitZone, TellKind } from "@/lib/types";
 import { effectiveStat, maxHealth } from "@/lib/combat";
 import { resolvePhysicalProfile } from "@/lib/physicalProfile";
 import { AudioEngine } from "@/lib/audioEngine";
@@ -26,6 +26,7 @@ import {
 } from "@/components/chicken3d/BattleDebugOverlay";
 import type { FighterAnim } from "@/components/chicken3d/ChickenModel";
 import type { AnimIntent, AnimState } from "@/lib/animation/types";
+import { ANIMATIONS } from "@/lib/animation/animations";
 import type { StaggerLevel } from "@/lib/types";
 import { HitStopController } from "@/lib/animation/hitStop";
 import {
@@ -45,11 +46,43 @@ import { momentumHitStopBonus } from "@/lib/animation/momentumHitStop";
 interface BattleCanvasProps {
   chickenA: Chicken;
   chickenB: Chicken;
-  log: CombatLogEntry[];
+  /** Pre-baked replay (Battle/Live pages): the whole fight, known upfront and never mutated after mount. Ignored when `live` + `logRef` are used instead. */
+  log?: CombatLogEntry[];
   audioEnabled: boolean;
   onReplayEnd: () => void;
   /** Fired the instant each log entry's impact actually lands (in sync with VFX/audio) — used by the /live feed's comic commentary overlay. Optional; existing callers are unaffected. */
   onImpact?: (entry: CombatLogEntry) => void;
+  /**
+   * True for a live-coached fight (Spar) — `logRef` is read instead of
+   * `log`, and draining every currently-known entry does NOT end the replay
+   * (there may simply be no new exchange yet); the fight only ends once the
+   * caller also sets `fightOver`. Defaults to false (pre-existing pre-baked
+   * replay behavior via `log`, unchanged).
+   */
+  live?: boolean;
+  /**
+   * Required when `live` is true: a ref to an array the caller keeps
+   * pushing into in place (`arr.push(...)`, never replacing `.current`) as
+   * new exchanges resolve server-side. Passed as a ref rather than a plain
+   * array prop specifically so the caller never has to dereference
+   * `.current` during its own render to build this prop — it's read here
+   * only inside the effect below, same as every other ref this component
+   * takes (`cameraCue`, `physicsA`, etc.).
+   */
+  logRef?: RefObject<CombatLogEntry[]>;
+  /** Only meaningful with `live` — set once the server reports the fight is actually over, so the end-of-fight beat fires after the last queued entry finishes playing rather than immediately. */
+  fightOver?: boolean;
+  /**
+   * Only meaningful with `live`: fired each time the visual playback drains
+   * every currently-known log entry (i.e. it has nothing left queued to
+   * animate) — including mid-fight, not just at the very end. A caller that
+   * self-paces its own polling loop (Spar, main battle) should use this,
+   * rather than a fixed timer, to gate when it's safe to fetch the next
+   * turn: requesting more entries before the previous ones have actually
+   * been drawn lets the server's authoritative HP/state race ahead of what
+   * the fighter sprites are still animating out.
+   */
+  onCaughtUp?: () => void;
 }
 
 interface Particle {
@@ -473,6 +506,30 @@ function attackStateForMove(moveKind: MoveKind): AnimState {
   }
 }
 
+/** Phase A.5 — TellKind → the procedural tell STATE that reads it a beat before the action resolves. */
+const TELL_ANIM_STATE: Record<TellKind, AnimState> = {
+  aggression: "tell_aggression",
+  patience: "tell_patience",
+  risk: "tell_risk",
+};
+
+/**
+ * Player-facing readout for a tell (spec Test A: "does a player start saying
+ * 'he's getting predictable, BAIT' out loud"). The pose itself is subtle by
+ * design — this floating callout is the legible confirmation that a tell is
+ * actually firing, separate from `?debugBattle`'s dev-only phase readout.
+ */
+const TELL_LABEL: Record<TellKind, string> = {
+  aggression: "ABOUT TO ENGAGE",
+  patience: "LOOKING FOR AN OPENING",
+  risk: "OVERCOMMITTING!",
+};
+const TELL_COLOR: Record<TellKind, string> = {
+  aggression: "#f97316",
+  patience: "#38bdf8",
+  risk: "#a855f7",
+};
+
 /** Server stagger tier (+ critical flag) → the defender's hit-reaction STATE. */
 function hitStateForStagger(stagger: StaggerLevel, isCritical: boolean): AnimState {
   if (isCritical) return "hit_critical";
@@ -508,10 +565,14 @@ function attackPoseFor(moveKind: MoveKind, progress: number): AttackPose {
 export default function BattleCanvas({
   chickenA,
   chickenB,
-  log,
+  log: replayLog,
   audioEnabled,
   onReplayEnd,
   onImpact,
+  live = false,
+  logRef: liveLogRef,
+  fightOver = false,
+  onCaughtUp,
 }: BattleCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const audioRef = useRef<AudioEngine | null>(null);
@@ -524,9 +585,13 @@ export default function BattleCanvas({
   // to tear down and restart the whole replay from turn 0 on every impact.
   const onReplayEndRef = useRef(onReplayEnd);
   const onImpactRef = useRef(onImpact);
+  const fightOverRef = useRef(fightOver);
+  const onCaughtUpRef = useRef(onCaughtUp);
   useEffect(() => {
     onReplayEndRef.current = onReplayEnd;
     onImpactRef.current = onImpact;
+    fightOverRef.current = fightOver;
+    onCaughtUpRef.current = onCaughtUp;
   });
 
   // HUD state (React-rendered, updates once per turn — not per frame).
@@ -573,6 +638,12 @@ export default function BattleCanvas({
   );
 
   useEffect(() => {
+    // Resolved once per effect run (mount, or chickenA/chickenB/live change)
+    // — a ref dereference belongs here, never at the component's top-level
+    // render. Live mode reads the caller's growing array by reference, so
+    // appends after this point are visible without re-running this effect.
+    const log = live && liveLogRef ? liveLogRef.current : (replayLog ?? []);
+
     const audio = new AudioEngine(audioEnabled);
     audioRef.current = audio;
     audio.playMusic();
@@ -690,6 +761,13 @@ export default function BattleCanvas({
       cameraCueRef.current = { ...partial, seq: cueSeq };
     };
 
+    // Phase A.5 — when a turn's attacker has a tell, the windup itself is
+    // deferred until the tell has read out, so a player gets a genuine beat
+    // to react before the action commits (spec: "read-and-anticipate, not a
+    // reaction-timing QTE"). Ticked against the same virtual hit-stop clock
+    // as everything else so a freeze mid-tell doesn't desync it.
+    let pendingBeginAttack: { at: number; run: () => void } | null = null;
+
     let activeAttack: {
       attacker: "r1" | "r2";
       startTime: number;
@@ -733,10 +811,10 @@ export default function BattleCanvas({
       }
     };
 
-    const spawnText = (x: number, y: number, text: string, color: string, fontSize = 20) => {
+    const spawnText = (x: number, y: number, text: string, color: string, fontSize = 20, maxLife = 45) => {
       floatingTexts.push({
         x: x + (Math.random() - 0.5) * 20, y, text, color, fontSize,
-        alpha: 1, life: 0, maxLife: 45,
+        alpha: 1, life: 0, maxLife,
       });
     };
 
@@ -747,6 +825,13 @@ export default function BattleCanvas({
       // Camera/VFX in the 3D layer read this to freeze in lockstep with the 2D timeline.
       hitStopScaleRef.current = hitStop.frozen ? 0 : 1;
       debugRef.current.hitStopMs = hitStop.remaining * 1000;
+
+      if (pendingBeginAttack && now >= pendingBeginAttack.at) {
+        const run = pendingBeginAttack.run;
+        pendingBeginAttack = null;
+        run();
+      }
+
       const currentAudio = audioRef.current;
       if (!currentAudio) return;
 
@@ -791,6 +876,15 @@ export default function BattleCanvas({
           defenderVisual.fatigued = defenderVisual.hp < defenderVisual.maxHp * 0.3;
           const setDefenderHud = isAAttacking ? setHudB : setHudA;
           setDefenderHud({ hp: defenderVisual.hp, maxHp: defenderVisual.maxHp, fatigued: defenderVisual.fatigued });
+
+          // Side A is always the player's own fighter (both /battle and /spar
+          // pass their fighter as chickenA) — call out the turns where a
+          // pending command actually shaped its action, not just the small
+          // "Following: X" HUD tag that's easy to never notice.
+          const playerFollowedCommand = isAAttacking ? entry.attackerCommandFollowed : entry.defenderCommandFollowed;
+          if (playerFollowedCommand) {
+            spawnText(r1BaseX, roosterBaseY - 110, "🎯 command followed!", "#facc15", 18, 55);
+          }
 
           if (entry.isMiss) {
             currentAudio.playMiss();
@@ -956,7 +1050,20 @@ export default function BattleCanvas({
             currentAudio.playFatigue();
           }
 
-          if (logIndex >= log.length && !replayEnded) {
+          // Live mode: tell the caller the moment there's nothing left queued
+          // to animate, whether or not the fight is over yet — this is what
+          // lets a self-pacing poll loop (Spar, main battle) hold off
+          // fetching the next turn until this one has actually finished
+          // playing, instead of racing ahead of the visuals on a fixed timer.
+          if (live && logIndex >= log.length) {
+            onCaughtUpRef.current?.();
+          }
+
+          // Draining every currently-known entry just means "no new exchange
+          // has resolved yet" in live mode — only end once the caller also
+          // confirms the fight is over (fightOverRef), so this can idle here
+          // indefinitely across many appended entries.
+          if (logIndex >= log.length && !replayEnded && (!live || fightOverRef.current)) {
             replayEnded = true;
             currentAudio.playVictory();
             setTimeout(() => onReplayEndRef.current(), 1000);
@@ -976,49 +1083,111 @@ export default function BattleCanvas({
         const durationMs = scriptedDuration * 1000 * attackerMass * attackerStyle.windupMult;
         const impactAtFrac = impactTime(choreo) / scriptedDuration;
 
-        activeAttack = {
-          attacker: isAAttacking ? "r1" : "r2",
-          startTime: now,
-          duration: durationMs,
-          impactAtFrac,
-          isMiss: entry.isMiss,
-          stagger: entry.stagger,
-          isCritical: entry.isCritical,
-          moveKind,
-          hitZone: entry.hitZone,
-          impactFired: false,
-          fireImpact,
-          momentumSwing,
-        };
-        emitCue({
-          attacker: activeAttack.attacker,
-          startTime: activeAttack.startTime,
-          isCrit: entry.isCrit || entry.isCritical,
-          isMiss: entry.isMiss,
-          stagger: entry.stagger,
-          cueName: "attack",
-          focus: activeAttack.attacker,
-        });
-        debugRef.current.move = moveKind;
-        if (isAAttacking) debugRef.current.attackerAnim = attackState;
-        else debugRef.current.defenderAnim = attackState;
-        debugRef.current.phase = "ANTICIPATION";
-
-        // Attacker plays its attack windup now — hit or miss (a MISS just never
-        // triggers a defender reaction; the animation still swings).
         const attackerIntent = isAAttacking ? intentR1Ref : intentR2Ref;
-        attackerIntent.current = {
-          state: attackState,
-          startedAt: now,
-          speed: 1 / (attackerMass * attackerStyle.windupMult),
-          moveKind: activeAttack.moveKind,
-          facing: isAAttacking ? "right" : "left",
+
+        // The windup takes an explicit `startAt` (rather than closing over
+        // `now`) so a tell below can genuinely push it back in time instead
+        // of just overlaying on top of it — the read-then-commit beat is the
+        // whole point of the mechanic (spec Phase A.5).
+        const beginWindup = (startAt: number) => {
+          activeAttack = {
+            attacker: isAAttacking ? "r1" : "r2",
+            startTime: startAt,
+            duration: durationMs,
+            impactAtFrac,
+            isMiss: entry.isMiss,
+            stagger: entry.stagger,
+            isCritical: entry.isCritical,
+            moveKind,
+            hitZone: entry.hitZone,
+            impactFired: false,
+            fireImpact,
+            momentumSwing,
+          };
+          emitCue({
+            attacker: activeAttack.attacker,
+            startTime: activeAttack.startTime,
+            isCrit: entry.isCrit || entry.isCritical,
+            isMiss: entry.isMiss,
+            stagger: entry.stagger,
+            cueName: "attack",
+            focus: activeAttack.attacker,
+          });
+          debugRef.current.move = moveKind;
+          if (isAAttacking) debugRef.current.attackerAnim = attackState;
+          else debugRef.current.defenderAnim = attackState;
+          debugRef.current.phase = "ANTICIPATION";
+
+          // Attacker plays its attack windup — hit or miss (a MISS just never
+          // triggers a defender reaction; the animation still swings).
+          attackerIntent.current = {
+            state: attackState,
+            startedAt: startAt,
+            speed: 1 / (attackerMass * attackerStyle.windupMult),
+            moveKind,
+            facing: isAAttacking ? "right" : "left",
+          };
         };
+
+        // Phase A.5 tells: the attacker's own tell (aggression/patience/risk)
+        // plays first and genuinely delays the windup below — never the
+        // exact move, just the coarse intent, so a player has a real beat to
+        // read and react before anything commits. The defender's tell (their
+        // own independently-chosen action for this same turn) is a
+        // concurrent read only — it doesn't gate pacing since the defender
+        // isn't the one about to swing.
+        const tellState = entry.attackerTell ? TELL_ANIM_STATE[entry.attackerTell] : null;
+        const tellDelayMs = tellState ? ANIMATIONS[tellState].duration * 1000 : 0;
+
+        if (tellState) {
+          attackerIntent.current = {
+            state: tellState,
+            startedAt: now,
+            speed: 1,
+            facing: isAAttacking ? "right" : "left",
+          };
+          debugRef.current.phase = "TELL";
+          pendingBeginAttack = { at: now + tellDelayMs, run: () => beginWindup(hitStop.now()) };
+          // Held for the tell's full readout, not the ~0.75s default (a "-12
+          // dmg" number can fade fast; a tell needs to still be on screen
+          // when the pose it's labeling is still playing).
+          spawnText(
+            isAAttacking ? r1BaseX : r2BaseX,
+            roosterBaseY - 100,
+            TELL_LABEL[entry.attackerTell!],
+            TELL_COLOR[entry.attackerTell!],
+            16,
+            (tellDelayMs / 1000) * 60
+          );
+        } else {
+          beginWindup(now);
+        }
+
+        if (entry.defenderTell) {
+          const defenderTellIntent = isAAttacking ? intentR2Ref : intentR1Ref;
+          defenderTellIntent.current = {
+            state: TELL_ANIM_STATE[entry.defenderTell],
+            startedAt: now,
+            speed: 1,
+            facing: isAAttacking ? "left" : "right",
+          };
+          const defenderTellDurationMs = ANIMATIONS[TELL_ANIM_STATE[entry.defenderTell]].duration * 1000;
+          spawnText(
+            isAAttacking ? r2BaseX : r1BaseX,
+            roosterBaseY - 100,
+            TELL_LABEL[entry.defenderTell],
+            TELL_COLOR[entry.defenderTell],
+            16,
+            (defenderTellDurationMs / 1000) * 60
+          );
+        }
 
         // Next turn begins only once this attack's full choreography (including
         // its own recovery) has played out, plus a personality-scaled neutral
         // beat (spec §16) — eliminates back-to-back "machine-gun" exchanges.
-        turnInterval = durationMs + (choreo.minNeutralBeat + BASE_PACING_S) * 1000 * attackerPersona.neutralBeatMul;
+        // A tell extends this, since the windup itself was pushed back by
+        // tellDelayMs.
+        turnInterval = tellDelayMs + durationMs + (choreo.minNeutralBeat + BASE_PACING_S) * 1000 * attackerPersona.neutralBeatMul;
 
         lastTurnTime = now;
       }
@@ -1193,7 +1362,11 @@ export default function BattleCanvas({
           });
         }
       } else {
-        debugRef.current.phase = "APPROACH";
+        // A pending tell also holds `activeAttack` null (the whole point —
+        // the windup is genuinely delayed, not just overlaid), so without
+        // this check the debug phase gets stomped back to APPROACH the very
+        // next frame and "TELL" never has a chance to actually be visible.
+        debugRef.current.phase = pendingBeginAttack ? "TELL" : "APPROACH";
       }
 
       debugRef.current.distance = gapDist;
@@ -1247,7 +1420,19 @@ export default function BattleCanvas({
         ctx.restore();
       }
 
-      if (logIndex < log.length || activeAttack || particles.length > 0 || floatingTexts.length > 0) {
+      // Live mode must keep ticking even when it's caught up to every entry
+      // seen so far — that's not "done", it's "waiting for the next step
+      // response" (see the matching comment at the log-drain check above).
+      // Stopping here would freeze the roam/idle poses at whatever they were
+      // on the very first frame, since logRef starts empty before the first
+      // fetch resolves.
+      if (
+        logIndex < log.length ||
+        activeAttack ||
+        particles.length > 0 ||
+        floatingTexts.length > 0 ||
+        (live && !fightOverRef.current)
+      ) {
         animationRef.current = requestAnimationFrame(animate);
       }
     };
@@ -1264,7 +1449,14 @@ export default function BattleCanvas({
       hitStopScaleRef.current = 1;
       vfxHandle?.clear();
     };
-  }, [chickenA, chickenB, log, audioEnabled]);
+    // `replayLog`/`liveLogRef` intentionally excluded: a live caller pushes
+    // new entries into `liveLogRef.current` in place rather than ever
+    // swapping the array or ref identity, so the effect must not restart
+    // (and re-trigger audio/camera/roam init) just because more entries
+    // arrived. Pre-baked replay callers never change `replayLog` after
+    // mount anyway, so this is a no-op for them.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chickenA, chickenB, audioEnabled, live]);
 
   useEffect(() => {
     if (audioRef.current) {

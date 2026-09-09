@@ -1,4 +1,5 @@
 import type { CombatLogEntry, CombatResult, StaggerLevel } from "@/lib/types";
+import type { PlayerCommand } from "@/lib/combat/command";
 
 /**
  * Comic-book color commentary for the /live feed — a sabong announcer
@@ -109,6 +110,25 @@ export function commentaryForImpact(entry: CombatLogEntry): CommentaryLine {
   }
 
   return { burst: pick(HIT_BURSTS), caption: Math.random() < 0.2 ? pick(HIT_CAPTIONS) : null };
+}
+
+const COMMAND_FOLLOWED_LABEL: Record<Exclude<PlayerCommand, "FORCE_ENGAGEMENT">, string> = {
+  PRESS: "PRESS",
+  WAIT: "WAIT",
+  RECOVER: "RECOVER",
+};
+
+/**
+ * Explicit "your command actually did something" tag, appended to a normal
+ * impact caption when `CombatLogEntry.attackerCommandFollowed` /
+ * `defenderCommandFollowed` is true for the player's own fighter — the thing
+ * this player was missing entirely before (spec/UX follow-up 2026-09-09):
+ * a small HUD label was the only trace a command ever left, easy to miss and
+ * impossible to tie back to a specific turn's outcome.
+ */
+export function commandFollowedTag(command: PlayerCommand | null): string | null {
+  if (!command || command === "FORCE_ENGAGEMENT") return null;
+  return `🎯 following your ${COMMAND_FOLLOWED_LABEL[command]} call!`;
 }
 
 /** Called once the bout resolves — the closing announcer line. */

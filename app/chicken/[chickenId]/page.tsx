@@ -340,6 +340,15 @@ function ChickenDetailPageContent({ params }: { params: Promise<{ chickenId: str
                   ⚔️ Fight
                 </Link>
               )}
+              {canFight(chicken) && (
+                <Link
+                  href={`/spar/${chicken.id}`}
+                  title="Coach this rooster turn-by-turn — doesn't affect its health or record"
+                  className="flex flex-1 items-center justify-center gap-1.5 rounded bg-black/10 px-3 py-2 text-sm font-semibold hover:bg-black/20"
+                >
+                  🎮 Spar
+                </Link>
+              )}
               <Link
                 href={`/tournament/${chicken.id}`}
                 className="flex flex-1 items-center justify-center gap-1.5 rounded bg-black/10 px-3 py-2 text-sm font-semibold hover:bg-black/20"

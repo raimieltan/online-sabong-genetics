@@ -24,9 +24,9 @@
     "semantic_hash": "9b77af189a21a7a64e4bd7a426f64176"
   },
   "package.json": {
-    "mtime": 1788843418.1311622,
-    "seen": 1788843485.4531388,
-    "ast_hash": "70eb05bf442210d50fccccb8437921ad",
+    "mtime": 1788911349.1564353,
+    "seen": 1788912969.098718,
+    "ast_hash": "5f30bb04868b8bac5f7191fefd7d5114",
     "semantic_hash": ""
   },
   "postcss.config.mjs": {
@@ -245,12 +245,6 @@
     "ast_hash": "888c68cce9f727a89e6b185ee47ef01e",
     "semantic_hash": "888c68cce9f727a89e6b185ee47ef01e"
   },
-  "app/api/pve/bosses/[bossId]/fight/route.ts": {
-    "mtime": 1788766505.138467,
-    "seen": 1788828404.9159439,
-    "ast_hash": "2e06e06985f524dbbdf850e1bd51c825",
-    "semantic_hash": "2e06e06985f524dbbdf850e1bd51c825"
-  },
   "app/api/pve/bosses/route.ts": {
     "mtime": 1788766500.3173685,
     "seen": 1788828404.915945,
@@ -270,9 +264,9 @@
     "semantic_hash": "3bb92de98e3b51dbb612bc0a5eba9ada"
   },
   "app/battle/[chickenId]/page.tsx": {
-    "mtime": 1788842925.1286297,
-    "seen": 1788843485.440537,
-    "ast_hash": "610efb61fb74c3bc4756204acc05972c",
+    "mtime": 1788918854.8584247,
+    "seen": 1788919007.1501608,
+    "ast_hash": "788aebd749dddd111f6aef9c132aca4e",
     "semantic_hash": ""
   },
   "app/breed/OffspringPreview.tsx": {
@@ -300,9 +294,9 @@
     "semantic_hash": "af260781408d32b2e01788350f7810af"
   },
   "app/chicken/[chickenId]/page.tsx": {
-    "mtime": 1788874638.380544,
-    "seen": 1788910928.837533,
-    "ast_hash": "54f058103ecc1aa7b2fdbebffb3dc2ef",
+    "mtime": 1788916747.2872894,
+    "seen": 1788917969.5788958,
+    "ast_hash": "02a72a460183b3c97e172c69ed9a6b02",
     "semantic_hash": ""
   },
   "app/clinic/page.tsx": {
@@ -384,9 +378,9 @@
     "semantic_hash": "e08ad378b367f03b2e332bd3894f834f"
   },
   "app/pve/[bossId]/fight/[chickenId]/page.tsx": {
-    "mtime": 1788841230.6799204,
-    "seen": 1788842086.4023502,
-    "ast_hash": "da28f6974b731ceaa5e154a006d109bb",
+    "mtime": 1788916747.2878475,
+    "seen": 1788917969.5803819,
+    "ast_hash": "7a65d58081f0bb349628ab4c91a19972",
     "semantic_hash": ""
   },
   "app/pve/[bossId]/page.tsx": {
@@ -414,9 +408,9 @@
     "semantic_hash": ""
   },
   "components/BattleCanvas.tsx": {
-    "mtime": 1788910562.4875493,
-    "seen": 1788910928.8380768,
-    "ast_hash": "8ccbacc8d56e98c6d094823c149535ff",
+    "mtime": 1788918754.6495807,
+    "seen": 1788919007.151928,
+    "ast_hash": "5453250ea1f1ea9cfc64e82ea2b40ed1",
     "semantic_hash": ""
   },
   "components/CombatResultsScreen.tsx": {
@@ -468,10 +462,10 @@
     "semantic_hash": "d0505d8af66d003f28f14c92d280e49b"
   },
   "components/chicken3d/BattleDebugOverlay.tsx": {
-    "mtime": 1788656277.2594025,
-    "seen": 1788828404.915972,
-    "ast_hash": "c5999a0ae595ad693e2c765544fd0eb3",
-    "semantic_hash": "c5999a0ae595ad693e2c765544fd0eb3"
+    "mtime": 1788916747.2890124,
+    "seen": 1788917969.581292,
+    "ast_hash": "b9c798bd9eb799af7d541a0601f03331",
+    "semantic_hash": ""
   },
   "components/chicken3d/BattleStage3D.tsx": {
     "mtime": 1788748214.2041936,
@@ -810,9 +804,9 @@
     "semantic_hash": "a650fa346c7db0096274a8137d1ff097"
   },
   "lib/animation/animations/index.ts": {
-    "mtime": 1788909787.4802673,
-    "seen": 1788910928.84035,
-    "ast_hash": "33c8e370e36c3b880f95dca5ab6b87f8",
+    "mtime": 1788916747.3200736,
+    "seen": 1788917969.5896478,
+    "ast_hash": "6721be5aa1c116abb4d662114b0ca716",
     "semantic_hash": ""
   },
   "lib/animation/animations/locomotion.ts": {
@@ -966,10 +960,10 @@
     "semantic_hash": ""
   },
   "lib/combat/actions.ts": {
-    "mtime": 1788783841.2827134,
-    "seen": 1788828404.916099,
-    "ast_hash": "d234651e6e5e074f91528dd8693e34e1",
-    "semantic_hash": "d234651e6e5e074f91528dd8693e34e1"
+    "mtime": 1788916747.321206,
+    "seen": 1788917969.592525,
+    "ast_hash": "c9400502e30ad060f7a0871a35db6422",
+    "semantic_hash": ""
   },
   "lib/combat/analysis.ts": {
     "mtime": 1788715538.291989,
@@ -1038,9 +1032,9 @@
     "semantic_hash": ""
   },
   "lib/combat/simulator.ts": {
-    "mtime": 1788910701.8739784,
-    "seen": 1788910928.841226,
-    "ast_hash": "ab2585a5f6b8b6357a4624669ee38b09",
+    "mtime": 1788916747.3254426,
+    "seen": 1788917969.5947368,
+    "ast_hash": "f0178284a6c625439718ca31e7bdf737",
     "semantic_hash": ""
   },
   "lib/combat/state.ts": {
@@ -1218,15 +1212,15 @@
     "semantic_hash": ""
   },
   "lib/pve/errors.ts": {
-    "mtime": 1788766357.5183692,
-    "seen": 1788828404.916131,
-    "ast_hash": "47df332a442191e476dc59c60523d866",
-    "semantic_hash": "47df332a442191e476dc59c60523d866"
+    "mtime": 1788916747.3298328,
+    "seen": 1788917969.6067672,
+    "ast_hash": "c080f9ccfa6e101a0ee398719b67eaa9",
+    "semantic_hash": ""
   },
   "lib/pve/service.ts": {
-    "mtime": 1788843990.301371,
-    "seen": 1788910928.842077,
-    "ast_hash": "4818f17dda2c2cbe3b1cc5b7127145cd",
+    "mtime": 1788916747.3320076,
+    "seen": 1788917969.606771,
+    "ast_hash": "21c419bcab88a6269265bc4d1fe50fc7",
     "semantic_hash": ""
   },
   "lib/pve/types.ts": {
@@ -1290,9 +1284,9 @@
     "semantic_hash": "4e00709c02fef018ba44a20e99198ec3"
   },
   "lib/types.ts": {
-    "mtime": 1788831932.0040607,
-    "seen": 1788840441.730737,
-    "ast_hash": "0c6c28faad420fa02a6dda3b853dbe86",
+    "mtime": 1788916747.3325083,
+    "seen": 1788917969.608341,
+    "ast_hash": "895aeceff7999d537d2a564f5511da8e",
     "semantic_hash": ""
   },
   "lib/valuation.ts": {
@@ -1860,9 +1854,9 @@
     "semantic_hash": ""
   },
   "lib/combat/tells.ts": {
-    "mtime": 1788909675.2570283,
-    "seen": 1788910928.841258,
-    "ast_hash": "5f2e0fca6fb07375f23f333a0846c3a5",
+    "mtime": 1788916747.326176,
+    "seen": 1788917969.595037,
+    "ast_hash": "81116fbd73e7443a2015f0cbe2efc440",
     "semantic_hash": ""
   },
   "scripts/validation-gate-sim.ts": {
@@ -1881,6 +1875,78 @@
     "mtime": 1788891652.3964486,
     "seen": 1788910928.843593,
     "ast_hash": "3c77571c74c468b4f99083edbd5d2647",
+    "semantic_hash": ""
+  },
+  "app/api/spar/[sessionId]/step/route.ts": {
+    "mtime": 1788916698.6098237,
+    "seen": 1788917969.577882,
+    "ast_hash": "a62df7b4a6d7ffb98d174daecf5b5faf",
+    "semantic_hash": ""
+  },
+  "app/api/spar/start/route.ts": {
+    "mtime": 1788912424.4314375,
+    "seen": 1788912969.087222,
+    "ast_hash": "fe7915435fe7099ab8671734068f47f9",
+    "semantic_hash": ""
+  },
+  "app/spar/[chickenId]/page.tsx": {
+    "mtime": 1788917418.0767713,
+    "seen": 1788917969.5805042,
+    "ast_hash": "d76472de5a57392f3bf498cc78765b58",
+    "semantic_hash": ""
+  },
+  "lib/combat/sparSessions.ts": {
+    "mtime": 1788912411.05656,
+    "seen": 1788912969.096419,
+    "ast_hash": "e3dbe22a0a4c4978db58876763c84d10",
+    "semantic_hash": ""
+  },
+  "scripts/seed-strategy-fighter-roster.ts": {
+    "mtime": 1788911441.259935,
+    "seen": 1788912969.099018,
+    "ast_hash": "a0449b1e35192a40ea74f9b8603629b2",
+    "semantic_hash": ""
+  },
+  "app/api/pve/bosses/[bossId]/fight/[sessionId]/step/route.ts": {
+    "mtime": 1788915495.2584405,
+    "seen": 1788915913.9340422,
+    "ast_hash": "7376e375862dc43d0bd728cee79fd5e8",
+    "semantic_hash": ""
+  },
+  "app/api/pve/bosses/[bossId]/fight/start/route.ts": {
+    "mtime": 1788915449.6764019,
+    "seen": 1788915913.9340448,
+    "ast_hash": "e360803de4810ac4838edb010db90e3d",
+    "semantic_hash": ""
+  },
+  "lib/pve/bossFightSessions.ts": {
+    "mtime": 1788915391.1788166,
+    "seen": 1788915913.945038,
+    "ast_hash": "2ada2ba92ce61e1865380041826c5859",
+    "semantic_hash": ""
+  },
+  "app/api/chickens/[id]/fight/[sessionId]/step/route.ts": {
+    "mtime": 1788917763.7505538,
+    "seen": 1788917969.575225,
+    "ast_hash": "27859eb0720b88b81eee7c176cb3221a",
+    "semantic_hash": ""
+  },
+  "app/api/chickens/[id]/fight/start/route.ts": {
+    "mtime": 1788917751.2188966,
+    "seen": 1788917969.575333,
+    "ast_hash": "fe5d63340df0c345b82996c2331baef7",
+    "semantic_hash": ""
+  },
+  "lib/combat/liveBattleSessions.ts": {
+    "mtime": 1788917743.3010595,
+    "seen": 1788917969.594325,
+    "ast_hash": "da0798492a521d28876c5d07ad614fe7",
+    "semantic_hash": ""
+  },
+  "lib/combat/timeline.ts": {
+    "mtime": 1788916645.439973,
+    "seen": 1788917969.595065,
+    "ast_hash": "fb56a861c22ea9b360c4503a74ddf5c1",
     "semantic_hash": ""
   }
 }

@@ -1,13 +1,15 @@
 import type { PveProgress } from "@prisma/client";
 
-import { applyFightOutcome, canFight, simulateFight } from "../combat";
+import { applyFightOutcome, canFight } from "../combat";
 import { buildBattleReport, type BattleReport } from "../combat/battleReport";
 import { deriveBehaviorProfile } from "../combat/behavior";
 import { emptyExperience } from "../combat/experience";
+import { BattleSession, MAX_TURNS } from "../combat/simulator";
 import { createChicken } from "../chickenGenerator";
 import { prisma } from "../db";
 import type { BehavioralProfile, Chicken, CombatExperience } from "../types";
 import { PVE_BOSSES, PVE_BOSS_LIST, bossPreview, getBoss, previousBossId } from "./bosses";
+import { createBossFightSession, endBossFightSession, getBossFightSession } from "./bossFightSessions";
 import { PveError } from "./errors";
 import {
   PVE_BOSS_ORDER,
@@ -99,7 +101,17 @@ export async function listBosses(playerId: string): Promise<BossListEntry[]> {
   }));
 }
 
-type FightSim = ReturnType<typeof simulateFight>;
+type FightSim = ReturnType<BattleSession["finalize"]>;
+
+export type StartBossFightResult = {
+  sessionId: string;
+  chicken: Chicken;
+  bossFighter: Chicken;
+  boss: ReturnType<typeof bossPreview>;
+  maxTurns: number;
+  snapshotA: ReturnType<BattleSession["snapshotA"]>;
+  snapshotB: ReturnType<BattleSession["snapshotB"]>;
+};
 
 export type BossFightResult = {
   won: boolean;
@@ -120,17 +132,18 @@ export type BossFightResult = {
 };
 
 /**
- * Runs one boss fight end to end and persists the outcome in a single
- * transaction (§29-30). One POST == one fight == one reward: first-clear
- * status is decided by reading firstClearedAt inside the transaction, so
- * repeated requests each run a fresh fight and only ever pay the repeat
- * reward once the boss is already cleared.
+ * Validates the matchup and opens a live, steppable boss fight (spec's
+ * player-commands work extended to PvE): builds both fighters and a
+ * `BattleSession`, stashes it in `bossFightSessions` for the step route to
+ * advance one turn at a time, and returns the initial snapshots a UI needs
+ * to render before the first command is even issued. Nothing is persisted
+ * yet — that only happens once the fight actually ends, in `finishBossFight`.
  */
-export async function resolveBossFight(
+export async function startBossFight(
   playerId: string,
   bossIdRaw: string,
   chickenId: string,
-): Promise<BossFightResult> {
+): Promise<StartBossFightResult> {
   const boss = getBoss(bossIdRaw);
   if (!boss) throw new PveError("BOSS_NOT_FOUND");
 
@@ -145,7 +158,41 @@ export async function resolveBossFight(
   if (!canFight(chicken)) throw new PveError("CHICKEN_NOT_ELIGIBLE");
 
   const bossFighter = buildBossFighter(boss);
-  const result = simulateFight(chicken, bossFighter);
+  const session = new BattleSession(chicken, bossFighter);
+  const sessionId = createBossFightSession({ session, playerId, chickenId, chicken, bossId: boss.id, bossFighter });
+
+  return {
+    sessionId,
+    chicken,
+    bossFighter,
+    boss: bossPreview(boss),
+    maxTurns: MAX_TURNS,
+    snapshotA: session.snapshotA(),
+    snapshotB: session.snapshotB(),
+  };
+}
+
+/**
+ * Settles a boss fight whose `BattleSession` has already run to completion
+ * (the step route only calls this once `session.step()` reports
+ * `fightOver`) and persists the outcome in a single transaction (§29-30).
+ * One finish == one fight == one reward: first-clear status is decided by
+ * reading firstClearedAt inside the transaction, so repeated fights each pay
+ * the repeat reward once the boss is already cleared. The session is dropped
+ * either way — a fight can only ever be finished once.
+ */
+export async function finishBossFight(playerId: string, sessionId: string): Promise<BossFightResult> {
+  const entry = getBossFightSession(sessionId);
+  if (!entry) throw new PveError("SESSION_NOT_FOUND");
+  if (entry.playerId !== playerId) throw new PveError("SESSION_NOT_FOUND");
+  endBossFightSession(sessionId);
+
+  const { session, chicken, chickenId, bossFighter } = entry;
+  const boss = getBoss(entry.bossId);
+  if (!boss) throw new PveError("BOSS_NOT_FOUND");
+
+  const rows = await progressRows(playerId);
+  const result = session.finalize();
   const won = result.winnerId === chicken.id;
 
   // Scale the combat experience the fight already produced by boss difficulty
