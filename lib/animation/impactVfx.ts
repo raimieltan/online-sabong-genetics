@@ -12,6 +12,7 @@ export type ImpactVfxKind =
   | "light_impact"
   | "heavy_impact"
   | "critical_impact"
+  | "feathers"
   | "dust"
   | "landing_dust"
   | "knockback_dust";
@@ -74,8 +75,9 @@ export const IMPACT_VFX: Record<ImpactVfxKind, ImpactVfxDef> = {
   },
   critical_impact: {
     count: 26,
-    color: 0xff5a4a,
-    color2: 0xffd05a,
+    // Physical dust and pale plumage rather than a gamey red energy burst.
+    color: 0xcdbb95,
+    color2: 0x76513b,
     speedMin: 3,
     speedMax: 8.5,
     sizeMin: 0.05,
@@ -86,6 +88,22 @@ export const IMPACT_VFX: Record<ImpactVfxKind, ImpactVfxDef> = {
     flashRadius: 0.9,
     flashColor: 0xffb0a0,
     flashLife: 0.28,
+  },
+  feathers: {
+    // Intentionally restrained: heavy wing/body contact, never every hit.
+    count: 5,
+    color: 0xe0d1b0,
+    color2: 0x6c4935,
+    speedMin: 1.2,
+    speedMax: 3.8,
+    sizeMin: 0.04,
+    sizeMax: 0.085,
+    life: 0.72,
+    gravity: 2.8,
+    cone: 0.55,
+    flashRadius: 0,
+    flashColor: 0x000000,
+    flashLife: 0,
   },
   dust: {
     count: 10,

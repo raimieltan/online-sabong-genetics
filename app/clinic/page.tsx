@@ -7,6 +7,7 @@ import { canTreatSeverity } from "@/lib/medical/config";
 import { describeMedicalStatus, medicalStatusTone } from "@/lib/medical/status";
 import { healthTreatmentPlan, treatmentPlan } from "@/lib/medical/treatment";
 import type { IllnessRecord, InjuryRecord, InjurySeverity, MedicalStatus } from "@/lib/types";
+import { PageHeader } from "@/components/PageHeader";
 
 type ClinicDTO = {
   id: string;
@@ -132,15 +133,11 @@ export default function ClinicPage() {
 
   return (
     <main className="mx-auto min-h-screen max-w-4xl p-6">
-      <div className="mb-6 flex items-center justify-between">
-        <Link href="/coop" className="rounded bg-black/30 px-3 py-1.5 text-sm font-semibold hover:bg-black/50">
-          ← Back to Coop
-        </Link>
-        <span className="signboard px-6 py-2 font-display text-lg font-semibold text-(--color-gold-bright)">
-          Rooster Clinic
-        </span>
-        <span className="w-[92px]" />
-      </div>
+      <PageHeader
+        eyebrow="Medical Ward"
+        title="🏥 Rooster Clinic"
+        description={<Link href="/coop" className="hover:underline">← Back to Coop</Link>}
+      />
 
       {error && <p className="mb-4 rounded bg-red-900/30 px-3 py-2 text-sm text-red-200">{error}</p>}
 

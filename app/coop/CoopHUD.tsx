@@ -1,5 +1,7 @@
 "use client";
 
+import { PageHeader } from "@/components/PageHeader";
+
 export type CoopMode = "village" | "manage";
 
 /** Top bar: identity, egg/chicken counts, Generate action, and the Village/Manage toggle (spec §19-20). */
@@ -17,17 +19,11 @@ export function CoopHUD({
   onGenerate: () => void;
 }) {
   return (
-    <div className="panel-wood flex flex-wrap items-center justify-between gap-4 rounded-lg p-4">
-      <div>
-        <h1 className="flex items-center gap-2 font-display text-2xl font-semibold text-(--color-gold-bright)">
-          🐔 Coop
-        </h1>
-        <p className="mt-1 text-sm text-(--color-text-muted)">
-          🥚 {eggCount} incubating · 🐔 {chickenCount} chickens
-        </p>
-      </div>
-
-      <div className="flex items-center gap-3">
+    <PageHeader
+      eyebrow="Fighter Stable"
+      title="🐔 Coop"
+      description={`🥚 ${eggCount} incubating · 🐔 ${chickenCount} chickens`}
+      right={<div className="flex items-center gap-3">
         <div className="flex overflow-hidden rounded-md border border-(--color-gold)/30">
           <button
             onClick={() => onModeChange("village")}
@@ -53,7 +49,7 @@ export function CoopHUD({
         >
           + Generate Chicken
         </button>
-      </div>
-    </div>
+      </div>}
+    />
   );
 }

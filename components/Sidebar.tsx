@@ -44,10 +44,10 @@ export function Sidebar() {
             <Link
               key={link.href}
               href={link.href}
-              className={`flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium transition ${
+              className={`flex items-center gap-2.5 rounded-md border-l-2 px-3 py-2 text-sm font-medium transition ${
                 active
-                  ? "bg-(--color-gold)/15 text-(--color-gold-bright) shadow-[inset_0_0_0_1px_rgba(212,162,78,0.35)]"
-                  : "text-(--color-text-muted) hover:bg-white/5 hover:text-(--foreground)"
+                  ? "border-(--color-gold-bright) bg-(--color-gold)/15 text-(--color-gold-bright) shadow-[inset_0_0_0_1px_rgba(212,162,78,0.35),0_0_12px_-2px_rgba(240,198,116,0.35)]"
+                  : "border-transparent text-(--color-text-muted) hover:bg-white/5 hover:text-(--foreground)"
               }`}
             >
               <span className="text-base leading-none">{link.icon}</span>

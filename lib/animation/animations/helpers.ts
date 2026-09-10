@@ -34,6 +34,34 @@ export function wingSpread(out: PoseMap, amt: number): void {
 }
 
 /**
+ * Turn shoulder motion into a flexible three-bone wing chain.  Clips are
+ * authored against the original shoulder joints, so applying this once after
+ * all base poses and additive layers keeps old clips compatible while making
+ * the newly weighted mid joints participate in every flap, brace, and strike.
+ *
+ * The middle section follows the shoulder with a slight delay; the tip curves
+ * back a little more, which avoids the rigid-cardboard look of a fully locked
+ * wing. Values are local deltas, on top of the GLB's authored rest pose.
+ */
+export function articulateWingChain(out: PoseMap): void {
+  for (const side of ["L", "R"] as const) {
+    const shoulder = out[`Wing${side}`];
+    const mid = out[`Wing${side}_Mid`];
+    const tip = out[`Wing${side}_Tip`];
+
+    mid.rx += shoulder.rx * 0.46;
+    mid.ry += shoulder.ry * 0.34;
+    mid.rz += shoulder.rz * 0.52;
+
+    // A small counter-curl at the wrist preserves a feathered silhouette at
+    // the widest part of a flap, instead of extending as one straight slab.
+    tip.rx += shoulder.rx * 0.24 - mid.rx * 0.16;
+    tip.ry += shoulder.ry * 0.18 - mid.ry * 0.12;
+    tip.rz += shoulder.rz * 0.26 - mid.rz * 0.20;
+  }
+}
+
+/**
  * Blend a resting COMBAT stance into the pose at weight `w` (0..1): chest
  * puffed, body slightly lowered and coiled, wings held a touch off the body,
  * neck forward with the head levelled at the opponent. Attack / hit / stance

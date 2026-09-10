@@ -3,7 +3,6 @@
 import { Suspense, useRef } from "react";
 import * as THREE from "three";
 import { Canvas } from "@react-three/fiber";
-import { Environment } from "@react-three/drei";
 
 import type { Chicken } from "@/lib/types";
 import { getVillageSlot, habitatStyle } from "@/lib/coopVillage";
@@ -79,7 +78,6 @@ export function CoopWorld({
           );
         })}
 
-        <Environment preset="sunset" />
       </Suspense>
     </Canvas>
   );

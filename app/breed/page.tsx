@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 
 import { canBreed } from "@/lib/growth";
 import type { Chicken, Egg } from "@/lib/types";
+import { PageHeader } from "@/components/PageHeader";
 import { ParentCard } from "./ParentCard";
 import { OffspringPreview } from "./OffspringPreview";
 
@@ -65,22 +66,14 @@ function BreedPageContent() {
 
   return (
     <main className="min-h-screen bg-(--color-ink) p-6">
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
-        <Link href="/coop" className="text-sm text-(--color-gold-bright) hover:underline">
-          ← Back to Coop
-        </Link>
-        <p className="text-sm text-(--color-text-muted)">
+      <PageHeader
+        eyebrow="Bloodline Pairing"
+        title="🥚 Breeding"
+        description={<Link href="/coop" className="hover:underline">← Back to Coop</Link>}
+        right={<p className="text-sm text-(--color-text-muted)">
           🐓 {roosters.length} eligible roosters · 🐔 {hens.length} eligible hens
-        </p>
-      </div>
-
-      <div className="mb-8 flex justify-center">
-        <div className="signboard">
-          <h1 className="font-display text-2xl font-semibold tracking-wide text-(--color-gold-bright)">
-            Breeding
-          </h1>
-        </div>
-      </div>
+        </p>}
+      />
 
       <div className="mx-auto mb-10 max-w-5xl">
         <div className="grid grid-cols-1 items-start gap-6 sm:grid-cols-[1fr_auto_1fr]">

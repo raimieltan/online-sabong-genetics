@@ -1,5 +1,6 @@
 import type { StatBlock } from "../types";
 import { PVE_BOSS_ORDER, type PveBossDefinition, type PveBossId } from "./types";
+import { campaignPresentation } from "./campaign";
 
 /**
  * Fixed PvE boss ladder (Phase 1). Bosses are data-driven and never scale to
@@ -865,5 +866,6 @@ export function bossPreview(boss: PveBossDefinition) {
     preview: boss.preview,
     recommendation: boss.recommendation,
     rewards: boss.rewards,
+    presentation: boss.presentation ?? campaignPresentation(boss),
   };
 }

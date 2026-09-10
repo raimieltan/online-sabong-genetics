@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useRef, useState } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { Bounds, Environment } from "@react-three/drei";
+import { Bounds } from "@react-three/drei";
 
 import { ChickenModel } from "./ChickenModel";
 import { nextQueued, resolveThumbnail, subscribeQueue, type ThumbnailJob } from "./thumbnailCache";
@@ -95,7 +95,6 @@ export function ThumbnailGenerator() {
               animate={false}
             />
           </Bounds>
-          <Environment preset="city" />
         </Suspense>
         <CaptureFrame onReady={handleReady} />
       </Canvas>

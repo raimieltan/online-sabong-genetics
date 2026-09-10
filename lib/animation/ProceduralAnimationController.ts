@@ -15,6 +15,7 @@ import * as THREE from "three";
 
 import { ANIMATIONS } from "./animations/index";
 import { aerialAttack } from './animations/aerial';
+import { articulateWingChain } from "./animations/helpers";
 import { LayerRig } from "./layers";
 import { clamp, clamp01, smoothstep } from "./math";
 import { AnimationStateMachine } from "./stateMachine";
@@ -232,6 +233,7 @@ export class ProceduralAnimationController {
     }
 
     this.layers.apply(this.poseOut, ctx, state);
+    articulateWingChain(this.poseOut);
 
     this.writeBones();
   }

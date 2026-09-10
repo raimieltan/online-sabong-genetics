@@ -11,6 +11,7 @@ import { trainingLocks } from "@/lib/medical/rehab";
 import { battleEligibility } from "@/lib/medical/eligibility";
 import { describeMedicalStatus, medicalStatus } from "@/lib/medical/status";
 import { experienceInsights } from "@/lib/training/insights";
+import { PageHeader } from "@/components/PageHeader";
 
 type FacilityViewDTO = { id: string; level: number; capacity: number; efficiency: number; unlockedPrograms: ProgramId[] };
 type SessionDTO = {
@@ -120,15 +121,11 @@ function TrainingPageContent() {
 
   return (
     <main className="mx-auto min-h-screen max-w-4xl p-6">
-      <div className="mb-6 flex items-center justify-between">
-        <Link href="/coop" className="rounded bg-black/30 px-3 py-1.5 text-sm font-semibold hover:bg-black/50">
-          ← Back to Coop
-        </Link>
-        <span className="signboard px-6 py-2 font-display text-lg font-semibold text-(--color-gold-bright)">
-          Training Gym
-        </span>
-        <span className="w-[92px]" />
-      </div>
+      <PageHeader
+        eyebrow="Fighter Camp"
+        title="🏋️ Training Gym"
+        description={<Link href="/coop" className="hover:underline">← Back to Coop</Link>}
+      />
 
       {error && <p className="mb-4 rounded bg-red-900/30 px-3 py-2 text-sm text-red-200">{error}</p>}
 

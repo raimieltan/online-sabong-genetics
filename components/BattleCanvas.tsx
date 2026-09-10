@@ -6,7 +6,6 @@ import type { Chicken, CombatLogEntry, FightingStyle, HitZone, TellKind } from "
 import { effectiveStat, maxHealth } from "@/lib/combat";
 import { resolvePhysicalProfile } from "@/lib/physicalProfile";
 import { AudioEngine } from "@/lib/audioEngine";
-import { ArenaBackdrop } from "@/components/chicken3d/ArenaBackdrop";
 import {
   BattleStage3D,
   WORLD_HALF_GAP,
@@ -1494,7 +1493,6 @@ export default function BattleCanvas({
 
   return (
     <div className="relative mx-auto aspect-[16/9] w-full max-w-[142.2vh] overflow-hidden">
-      <ArenaBackdrop />
       <div className="absolute inset-0">
         <BattleStage3D
           fighterA={chickenA}

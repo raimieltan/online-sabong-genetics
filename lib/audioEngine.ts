@@ -17,6 +17,8 @@ export class AudioEngine {
 
   private musicPlaying = false;
   private musicRequested = false;
+  /** Presentation-only mix value supplied by BattleDirector (0..1). */
+  private battleIntensity = 0;
   private musicTimer: ReturnType<typeof setTimeout> | null = null;
   private musicMasterGain: GainNode | null = null;
 
@@ -42,6 +44,29 @@ export class AudioEngine {
 
   getEnabled(): boolean {
     return this.enabled;
+  }
+
+  /**
+   * Raises the existing arena bed during a clash without creating another
+   * audio graph or loading an asset. Combat callers pass presentation intent;
+   * this has no simulation effect.
+   */
+  setBattleIntensity(intensity: number, duck = false): void {
+    this.battleIntensity = Math.max(0, Math.min(1, intensity));
+    const ctx = this.context;
+    const master = this.musicMasterGain;
+    if (!ctx || !master) return;
+    try {
+      const now = ctx.currentTime;
+      const target = this.enabled
+        ? AudioEngine.MUSIC_GAIN * (0.82 + this.battleIntensity * 0.5) * (duck ? 0.72 : 1)
+        : 0;
+      master.gain.cancelScheduledValues(now);
+      master.gain.setValueAtTime(master.gain.value, now);
+      master.gain.linearRampToValueAtTime(target, now + (duck ? 0.06 : 0.2));
+    } catch {
+      // no-op
+    }
   }
 
   playHit(): void {
@@ -144,7 +169,7 @@ export class AudioEngine {
     try {
       const master = ctx.createGain();
       master.gain.setValueAtTime(0.0001, ctx.currentTime);
-      master.gain.exponentialRampToValueAtTime(AudioEngine.MUSIC_GAIN, ctx.currentTime + 1.5);
+      master.gain.exponentialRampToValueAtTime(AudioEngine.MUSIC_GAIN * (0.82 + this.battleIntensity * 0.5), ctx.currentTime + 1.5);
       master.connect(ctx.destination);
       this.musicMasterGain = master;
       this.musicPlaying = true;
@@ -202,7 +227,7 @@ export class AudioEngine {
       const now = ctx.currentTime;
       master.gain.cancelScheduledValues(now);
       master.gain.setValueAtTime(master.gain.value, now);
-      master.gain.linearRampToValueAtTime(this.enabled ? AudioEngine.MUSIC_GAIN : 0, now + 0.25);
+      master.gain.linearRampToValueAtTime(this.enabled ? AudioEngine.MUSIC_GAIN * (0.82 + this.battleIntensity * 0.5) : 0, now + 0.25);
     } catch {
       // no-op
     }

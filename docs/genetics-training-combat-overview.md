@@ -35,7 +35,7 @@ neckThick, headSize, combSize, wattleSize, beakLength, wingSpan, wingSize, legLe
 footSize, tailLength, tailSpread, tailArc`.
 
 Each has its own clamp range (`PHYSICAL_TRAIT_RANGE`, e.g. `bodyGirth: 0.7–1.6`,
-`legLength: 0.55–1.9`). These map 1:1 onto the 21-bone rig (`rooster_rigged.glb`) for rendering,
+`legLength: 0.55–1.9`). These map 1:1 onto the 23-joint rig (`rooster_rigged.glb`) for rendering,
 but combat **never reads these raw 18 values directly** — they're always compressed through
 `lib/physicalProfile.ts` first (see §2).
 

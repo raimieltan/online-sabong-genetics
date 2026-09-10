@@ -18,6 +18,7 @@ import { emptyExperience } from "@/lib/combat/experience";
 import { summarizeCareer } from "@/lib/career/retirement";
 import { growthFactor } from "@/lib/growth";
 import { setPlayerCredits } from "@/lib/playerStore";
+import { PageHeader } from "@/components/PageHeader";
 import type { BehavioralProfile, CombatExperience, CombatExperienceCategory } from "@/lib/types";
 
 import { StatBar } from "./StatBar";
@@ -218,18 +219,11 @@ function ChickenDetailPageContent({ params }: { params: Promise<{ chickenId: str
 
   return (
     <main className="mx-auto min-h-screen max-w-5xl p-6">
-      <div className="mb-6 flex items-center justify-between">
-        <Link
-          href="/coop"
-          className="rounded bg-black/30 px-3 py-1.5 text-sm font-semibold text-(--foreground) hover:bg-black/50"
-        >
-          ← Back to Coop
-        </Link>
-        <span className="signboard px-6 py-2 font-display text-lg font-semibold text-(--color-gold-bright)">
-          Chicken Details
-        </span>
-        <span className="w-[92px]" />
-      </div>
+      <PageHeader
+        eyebrow="Fighter Dossier"
+        title="Chicken Details"
+        description={<Link href="/coop" className="hover:underline">← Back to Coop</Link>}
+      />
 
       {/* Hero panel: viewer + identity + stats + tab rail */}
       <div className="panel-wood grid grid-cols-1 gap-6 rounded-lg p-5 md:grid-cols-[1.1fr_1.4fr_auto]">

@@ -9,6 +9,7 @@ import { createChicken } from "../chickenGenerator";
 import { prisma } from "../db";
 import type { BehavioralProfile, Chicken, CombatExperience } from "../types";
 import { PVE_BOSSES, PVE_BOSS_LIST, bossPreview, getBoss, previousBossId } from "./bosses";
+import { PVE_CIRCUITS } from "./campaign";
 import { createBossFightSession, endBossFightSession, getBossFightSession } from "./bossFightSessions";
 import { PveError } from "./errors";
 import {
@@ -17,6 +18,7 @@ import {
   type BossProgressView,
   type PveBossDefinition,
   type PveBossId,
+  type CampaignProgressView,
 } from "./types";
 
 function clamp01(v: number): number {
@@ -99,6 +101,21 @@ export async function listBosses(playerId: string): Promise<BossListEntry[]> {
     boss: bossPreview(boss),
     progress: toProgressView(boss.id, isUnlocked(boss.id, rows), rows.get(boss.id)),
   }));
+}
+
+/** Campaign state is derived from authoritative PvE clear records. This keeps the
+ * presentation layer extensible without a second, competing progression store. */
+export async function campaignProgress(playerId: string): Promise<CampaignProgressView> {
+  const [rows, state] = await Promise.all([progressRows(playerId), prisma.pveCampaignState.findUnique({ where: { playerId } })]);
+  const completed = PVE_BOSS_ORDER.filter((id) => (rows.get(id)?.clearCount ?? 0) > 0);
+  const unlockedCircuitIds = PVE_CIRCUITS.filter((c) => c.order === 1 || c.bossIds.some((id) => isUnlocked(id, rows))).map((c) => c.id);
+  return {
+    completedCount: completed.length,
+    totalCount: PVE_BOSS_ORDER.length,
+    reputation: state?.reputation ?? completed.reduce((sum, id) => sum + Math.round(PVE_BOSSES[id].rewards.firstClearCredits / 10), 0),
+    rank: Math.max(1, 100 - completed.length * 5),
+    unlockedCircuitIds,
+  };
 }
 
 type FightSim = ReturnType<LiveCombatV2Session["finalize"]>;
@@ -208,7 +225,8 @@ export async function finishBossFight(playerId: string, sessionId: string): Prom
   const battleReport = buildBattleReport(chicken, result, chicken.id, outcome);
   // `newTraits` is a derived summary field for the battle report, not a Chicken
   // column — strip it before persisting (mirrors the other two fight routes).
-  const { newTraits: _newTraits, ...persistedOutcome } = outcome;
+  const { newTraits, ...persistedOutcome } = outcome;
+  void newTraits;
   const existing = rows.get(boss.id);
   const firstClear = won && (existing?.clearCount ?? 0) === 0;
   const credits = won
@@ -217,6 +235,7 @@ export async function finishBossFight(playerId: string, sessionId: string): Prom
       : boss.rewards.repeatCredits
     : 0;
 
+  const reputationEarned = won && firstClear ? Math.round(boss.rewards.firstClearCredits / 10) : 0;
   const [updatedChicken, updatedPlayer, progressRow] = await prisma.$transaction(async (tx) => {
     const uc = await tx.chicken.update({ where: { id: chickenId }, data: persistedOutcome });
 
@@ -246,6 +265,27 @@ export async function finishBossFight(playerId: string, sessionId: string): Prom
         },
       });
     }
+    await tx.pveCampaignState.upsert({
+      where: { playerId },
+      create: { playerId, reputation: reputationEarned },
+      update: reputationEarned ? { reputation: { increment: reputationEarned } } : {},
+    });
+    await tx.pveOpponentHistory.upsert({
+      where: { playerId_bossId: { playerId, bossId: boss.id } },
+      create: {
+        playerId, bossId: boss.id,
+        wins: won ? 1 : 0, losses: won ? 0 : 1,
+        kosFor: won && result.outcomeReason === "ko" ? 1 : 0,
+        kosAgainst: !won && result.outcomeReason === "ko" ? 1 : 0,
+      },
+      update: {
+        wins: won ? { increment: 1 } : undefined,
+        losses: won ? undefined : { increment: 1 },
+        kosFor: won && result.outcomeReason === "ko" ? { increment: 1 } : undefined,
+        kosAgainst: !won && result.outcomeReason === "ko" ? { increment: 1 } : undefined,
+        lastFightAt: new Date(),
+      },
+    });
     return [uc, up, pr] as const;
   });
 

@@ -146,14 +146,14 @@
   <div id="loading">
     <div id="drop">
       <b>Drop rooster_rigged.glb here</b>
-      <small>or click to browse<br/>21 bones · 5 mutation slots · 7 materials</small>
+      <small>or click to browse<br/>23 joints · 5 mutation slots · 7 materials</small>
     </div>
     <input type="file" id="file" accept=".glb" style="display:none" />
   </div>
 
   <div class="hud">
     <h1>Rooster Genetics Rig</h1>
-    <p>Skinned GLB · 21-bone skeleton · drag to orbit, scroll to zoom.<br/>Every slider drives a bone scale; the trait resolver (genome → expressed traits → visual traits) would set these at runtime.</p>
+    <p>Skinned GLB · 23-joint skeleton · drag to orbit, scroll to zoom.<br/>Every slider drives a bone scale; the trait resolver (genome → expressed traits → visual traits) would set these at runtime.</p>
   </div>
 
   <div id="stats"></div>
@@ -226,7 +226,7 @@
         <button class="seg-btn" id="btnCopy">Copy JSON</button>
       </div>
       <div class="note">
-        Bones: <code>Root → Hips → Spine → Chest → Neck → Head → Comb/Beak/Wattle</code>, <code>WingL/R(+_Tip)</code>, <code>Tail → Tail_Tip</code>, <code>ThighL/R → ShankL/R → FootL/R</code>. Mutation slot nodes (<code>Mut_SecondHead</code>, <code>Mut_ExtraWing_L/R</code>, <code>Mut_Spur_L/R</code>) are parented to their bone and hidden at scale 0 until expressed. Feather patterns run as a live shader on cylindrical UVs — no baked textures.
+        Joints: <code>Root → Hips → Spine → Chest → Neck → Head → Comb/Beak/Wattle</code>, <code>WingL/R → WingL/R_Mid → WingL/R_Tip</code>, <code>Tail → Tail_Tip</code>, <code>ThighL/R → ShankL/R → FootL/R</code>. Mutation slot nodes (<code>Mut_SecondHead</code>, <code>Mut_ExtraWing_L/R</code>, <code>Mut_Spur_L/R</code>) are parented to their bone and hidden at scale 0 until expressed. Feather patterns run as a live shader on cylindrical UVs — no baked textures.
       </div>
     </div>
   </div>
@@ -740,8 +740,12 @@ function animateFight(dt) {
   const flap = Math.sin(fightT), fast = Math.sin(fightT * 1.7);
   rot("WingL","z", 0.9 + flap * 0.35); rot("WingL","x", fast * 0.25);
   rot("WingR","z", -0.9 - flap * 0.35); rot("WingR","x", -fast * 0.25);
-  rot("WingL_Tip","z", 0.4 + flap * 0.3);
-  rot("WingR_Tip","z", -0.4 - flap * 0.3);
+  // The new weighted middle joints trail the shoulder, then the wrist curls
+  // lightly back through the tip. This preserves the feather fan in a flap.
+  rot("WingL_Mid","z", 0.47 + flap * 0.18); rot("WingL_Mid","x", fast * 0.12);
+  rot("WingR_Mid","z", -0.47 - flap * 0.18); rot("WingR_Mid","x", -fast * 0.12);
+  rot("WingL_Tip","z", 0.12 + flap * 0.06);
+  rot("WingR_Tip","z", -0.12 - flap * 0.06);
   rot("Spine","x", 0.22 + Math.sin(fightT * 2) * 0.03);
   rot("Chest","x", 0.14);
   rot("Neck","x", 0.28 + Math.sin(fightT * 2.5) * 0.22);
@@ -757,7 +761,7 @@ function animateFight(dt) {
 
 function resetActionPose() {
   ["ThighL","ThighR","ShankL","ShankR","Neck","Head","Tail","Spine","Chest",
-   "WingL","WingR","WingL_Tip","WingR_Tip"].forEach((n) => {
+   "WingL","WingR","WingL_Mid","WingR_Mid","WingL_Tip","WingR_Tip"].forEach((n) => {
     if (bones[n]) bones[n].rotation.set(0, 0, 0);
   });
   if (bones["Hips"]) bones["Hips"].position.y = restLocal["Hips"].y;

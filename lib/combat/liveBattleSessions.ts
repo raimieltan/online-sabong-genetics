@@ -9,6 +9,7 @@ import { LiveCombatV2Session } from "../combat-v2/liveSession";
  * server continuity yet).
  */
 const sessions = new Map<string, LiveCombatV2Session>();
+const tournamentSessionMeta = new Map<string, { tournamentId: string; playerId: string }>();
 
 let nextId = 1;
 
@@ -24,4 +25,17 @@ export function getBattleSession(id: string): LiveCombatV2Session | undefined {
 
 export function endBattleSession(id: string): void {
   sessions.delete(id);
+  tournamentSessionMeta.delete(id);
+}
+
+export function createTournamentBattleSession(session: LiveCombatV2Session, tournamentId: string, playerId: string): string {
+  const id = createBattleSession(session);
+  tournamentSessionMeta.set(id, { tournamentId, playerId });
+  return id;
+}
+
+export function getTournamentBattleSession(id: string) {
+  const session = getBattleSession(id);
+  const meta = tournamentSessionMeta.get(id);
+  return session && meta ? { session, ...meta } : undefined;
 }

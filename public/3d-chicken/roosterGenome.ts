@@ -1,6 +1,6 @@
 /**
  * Rooster Arena — genome runtime.
- * Pairs with rooster_rigged.glb (21 bones, 5 mutation nodes, 7 materials).
+ * Pairs with rooster_rigged.glb (23 joints, 5 mutation nodes, 7 materials).
  *
  *   const gltf = await new GLTFLoader().loadAsync('/models/rooster_rigged.glb')
  *   const rig  = bindRig(gltf.scene)
@@ -150,6 +150,7 @@ function worldScales(t: Record<TraitKey, number>): Record<string, [number, numbe
   };
   for (const s of ['L', 'R']) {
     S[`Wing${s}`]     = [t.wingSpan, t.wingSize, t.wingSize];
+    S[`Wing${s}_Mid`] = [t.wingSpan, t.wingSize, t.wingSize];
     S[`Wing${s}_Tip`] = [t.wingSpan, t.wingSize, t.wingSize];
     S[`Thigh${s}`]    = [t.legThick, t.legLength, t.legThick];
     S[`Shank${s}`]    = [t.legThick, t.legLength, t.legThick];

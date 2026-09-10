@@ -107,7 +107,7 @@ export const GENETIC_STAT_KEYS: readonly GeneticStatKey[] = [
 export type StatBlock = Record<GeneticStatKey, number>;
 
 /**
- * The 18 body-proportion genes rooster_rigged.glb's 21-bone skeleton can
+ * The 18 body-proportion genes rooster_rigged.glb's 23-joint skeleton can
  * render (per-bone world scale, see roosterGenome.ts's TRAIT_RANGE). A single
  * genetic block — proportions aren't trained, so there's no IV/EV split like
  * the combat stats.

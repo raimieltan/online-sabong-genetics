@@ -7,6 +7,7 @@ import { BattleReportPanel } from "@/components/BattleReportPanel";
 import { BettingPanel } from "@/components/live/BettingPanel";
 import { ComicCommentary, type CommentaryBurst } from "@/components/live/ComicCommentary";
 import { LiveMatchupPreview } from "@/components/live/LiveMatchupPreview";
+import { PageHeader } from "@/components/PageHeader";
 import {
   commentaryForBoutStart,
   commentaryForImpact,
@@ -232,18 +233,16 @@ export default function LivePage() {
   return (
     <main className="min-h-screen bg-(--color-ink)">
       <div className="mx-auto p-6 pb-0">
-        <div className="panel-wood mb-4 flex items-center justify-between w-full rounded-lg p-4">
-          <span className="flex items-center gap-2 text-sm font-semibold uppercase tracking-[0.2em] text-red-500">
+        <PageHeader
+          eyebrow={<span className="flex items-center gap-2 text-red-500">
             <span className="relative flex h-2.5 w-2.5">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
               <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-600" />
             </span>
             Live
-          </span>
-          <h1 className="flex items-center gap-2 font-display text-lg font-semibold text-(--foreground) sm:text-xl">
-            🐓 {matchup.chickenA.name} <span className="text-(--color-text-muted)">vs</span> {matchup.chickenB.name}
-          </h1>
-          <div className="flex items-center gap-3">
+          </span>}
+          title={<>🐓 {matchup.chickenA.name} <span className="text-(--color-text-muted)">vs</span> {matchup.chickenB.name}</>}
+          right={<div className="flex items-center gap-3">
             <span className="hidden rounded-full border border-(--color-gold)/30 bg-black/30 px-3 py-1 text-xs uppercase tracking-wide text-(--color-text-muted) sm:inline">
               {MODE_LABEL[matchup.mode]}
             </span>
@@ -256,8 +255,8 @@ export default function LivePage() {
             >
               {audioEnabled ? "🔊" : "🔇"}
             </button>
-          </div>
-        </div>
+          </div>}
+        />
       </div>
 
       {round ? (

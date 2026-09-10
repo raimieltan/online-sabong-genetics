@@ -131,3 +131,17 @@ test("tokensAwardedFor pays a consolation reward for an early elimination", () =
   const tokens = tokensAwardedFor(16, "veteran", null, 2);
   assert.ok(tokens > 0);
 });
+
+test("simulated entrants retain their combat condition in the saved bracket", () => {
+  const player = generateRandomChicken({ name: "Player" });
+  const state = createTournament(player, 8, "rookie", () => generateRandomChicken());
+  const result = resolveRound(state, player, (a, b) => ({
+    ...fakeResult(a.id, b.id),
+    conditionDelta: { [a.id]: -7, [b.id]: -11 },
+  }));
+
+  assert.equal(result.state.history[0].length, 4);
+  for (const entrant of result.state.entrants) {
+    assert.ok((entrant.chicken.condition ?? 100) < 100, "all round-one entrants keep their aftermath");
+  }
+});

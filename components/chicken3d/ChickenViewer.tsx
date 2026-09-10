@@ -2,7 +2,7 @@
 
 import { Suspense, useEffect, useRef, useState } from "react";
 import { Canvas } from "@react-three/fiber";
-import { Bounds, Environment, OrbitControls } from "@react-three/drei";
+import { Bounds, OrbitControls } from "@react-three/drei";
 
 import type { Chicken } from "@/lib/types";
 
@@ -118,7 +118,6 @@ export function ChickenViewer({
                 animate={animate}
               />
             </Bounds>
-            <Environment preset="city" />
           </Suspense>
           {interactive && <OrbitControls makeDefault enablePan={false} minDistance={1} maxDistance={8} />}
         </Canvas>

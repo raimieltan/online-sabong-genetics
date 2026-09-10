@@ -4,7 +4,6 @@ import { Suspense, useMemo, useRef } from "react";
 import type { Ref, RefObject } from "react";
 import * as THREE from "three";
 import { Canvas, useFrame } from "@react-three/fiber";
-import { Environment } from "@react-three/drei";
 
 import type { Chicken, StaggerLevel } from "@/lib/types";
 import { CameraDirector, type CameraCueName } from "@/lib/animation/cameraDirector";
@@ -15,6 +14,7 @@ import { ArenaPhysics } from "./ArenaPhysics";
 import { ChickenPhysicsRig, type ChickenPhysicsHandle } from "./ChickenPhysicsRig";
 import { ImpactVFX, type ImpactVFXHandle } from "./ImpactVFX";
 import { ChickenModel, PX_TO_WORLD, type FighterAnim } from "./ChickenModel";
+import { ArenaEnvironment } from "./ArenaGround";
 import type { AnimIntent } from "@/lib/animation/types";
 
 // The GLB models are authored at ~0.7-1 world unit tall (see
@@ -79,11 +79,13 @@ function DirectedCamera({
   hitStopScaleRef,
   animA,
   animB,
+  reducedMotion = false,
 }: {
   cueRef?: RefObject<CameraCue | null>;
   hitStopScaleRef?: RefObject<number>;
   animA?: RefObject<FighterAnim | null>;
   animB?: RefObject<FighterAnim | null>;
+  reducedMotion?: boolean;
 }) {
   const director = useMemo(
     () =>
@@ -154,9 +156,9 @@ function DirectedCamera({
     director.update(dt, nowMs, midpoint.current, separation);
 
     camera.position.set(
-      director.position.x + director.shake.x,
-      director.position.y + director.shake.y,
-      director.position.z + director.shake.z
+      director.position.x + (reducedMotion ? 0 : director.shake.x),
+      director.position.y + (reducedMotion ? 0 : director.shake.y),
+      director.position.z + (reducedMotion ? 0 : director.shake.z)
     );
     camera.lookAt(director.lookAt.x, director.lookAt.y, director.lookAt.z);
     const cam = camera as THREE.PerspectiveCamera;
@@ -215,6 +217,18 @@ function heuristicCue(cue: CameraCue): CameraCueName {
   return "impact_light";
 }
 
+/** The rural image is scenery behind the arena, while every surface the
+ * fighters interact with remains a perspective-correct Three.js object. */
+function RuralSkybox() {
+  const texture = useMemo(() => {
+    const ruralTexture = new THREE.TextureLoader().load("/background/rural-skybox.png");
+    ruralTexture.colorSpace = THREE.SRGBColorSpace;
+    return ruralTexture;
+  }, []);
+
+  return <primitive attach="background" object={texture} />;
+}
+
 /** Renders V2's simulation hit spheres and body-clearance circle, not model/mesh bounds. */
 function CollisionDebugVolumes({
   fighter,
@@ -260,16 +274,14 @@ function CollisionDebugVolumes({
   );
 }
 
-/** A transparent grounding cue for the painted-floor presentation. It is not a
- * floor mesh and does not affect physics; it simply prevents airborne-looking
- * feet when the real arena is supplied by the backdrop image. */
+/** Contact shadow projected onto the 3D arena floor. */
 function FighterContactShadow({ anim, anchorX }: { anim: RefObject<FighterAnim | null>; anchorX: number }) {
   const shadow = useRef<THREE.Mesh>(null);
   useFrame(() => {
     const pose = anim.current;
     if (!shadow.current || !pose) return;
     shadow.current.position.set(anchorX + pose.offsetX * ANIM_PX_TO_WORLD, STAGE_Y_OFFSET + .012, pose.offsetZ * ANIM_PX_TO_WORLD);
-    // Airborne clips lift offsetY; their shadow stays on the painted ground and
+    // Airborne clips lift offsetY; their shadow stays on the arena floor and
     // softens as the bird rises.
     const lift = Math.max(0, -pose.offsetY * ANIM_PX_TO_WORLD);
     const s = 1 + Math.min(.75, lift * .55);
@@ -330,6 +342,14 @@ export function BattleStage3D({
   collisionDebugFighters?: [FighterCombatSnapshot, FighterCombatSnapshot];
 }) {
   const worldFighterX = FIGHTER_X * STAGE_SCALE;
+  // One-time capability selection avoids a runtime FPS monitor and React work
+  // in the render loop. Gameplay and combat visibility remain identical.
+  const graphics = useMemo(() => {
+    if (typeof navigator === "undefined") return { dpr: [1, 1.25] as [number, number], shadow: 512, reducedMotion: false };
+    const lowMemory = "deviceMemory" in navigator && (navigator as Navigator & { deviceMemory?: number }).deviceMemory !== undefined && (navigator as Navigator & { deviceMemory?: number }).deviceMemory! <= 4;
+    const reducedMotion = typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    return { dpr: lowMemory ? [1, 1] as [number, number] : [1, 1.5] as [number, number], shadow: lowMemory ? 512 : 1024, reducedMotion };
+  }, []);
   // Fixed opponent world positions for the head-tracking layer (fighters sit at fixed X).
   const oppoPosForA = useRef(new THREE.Vector3(worldFighterX, STAGE_Y_OFFSET, 0));
   const oppoPosForB = useRef(new THREE.Vector3(-worldFighterX, STAGE_Y_OFFSET, 0));
@@ -337,17 +357,47 @@ export function BattleStage3D({
   return (
     <Canvas
       camera={{ position: [IDLE_POS.x, IDLE_POS.y, IDLE_POS.z], fov: FOV }}
-      dpr={[1, 1.5]}
-      gl={{ antialias: true, alpha: true }}
+      dpr={graphics.dpr}
+      gl={{ antialias: true, alpha: false }}
+      shadows
+      onCreated={({ gl, scene }) => {
+        // ACES gives the warm sun / cool sky setup a filmic shoulder without
+        // an extra post-processing pass. Keep shadows bounded for web GPUs.
+        gl.toneMapping = THREE.ACESFilmicToneMapping;
+        gl.toneMappingExposure = 1.04;
+        gl.shadowMap.enabled = true;
+        gl.shadowMap.type = THREE.PCFSoftShadowMap;
+        scene.fog = new THREE.FogExp2("#8d9ba0", 0.018);
+      }}
     >
-      <ambientLight intensity={0.7} />
-      <directionalLight position={[3, 5, 2]} intensity={1.4} />
-      <directionalLight position={[-3, 2, -2]} intensity={0.4} />
+      <RuralSkybox />
+      <ArenaEnvironment floorY={STAGE_Y_OFFSET} />
+      {/* Warm sun from the open left side of the rural setting, balanced by a
+          soft blue sky fill so feather detail remains visible in shadow. */}
+      <ambientLight intensity={0.28} />
+      <directionalLight
+        position={[-7, 10, 5]}
+        intensity={2.35}
+        color="#ffe0ad"
+        castShadow
+        shadow-mapSize-width={graphics.shadow}
+        shadow-mapSize-height={graphics.shadow}
+        shadow-camera-near={1}
+        shadow-camera-far={28}
+        shadow-camera-left={-11}
+        shadow-camera-right={11}
+        shadow-camera-top={11}
+        shadow-camera-bottom={-11}
+        shadow-bias={-0.00018}
+        shadow-normalBias={0.035}
+      />
+      <directionalLight position={[5, 4, -6]} intensity={0.45} color="#b7d8ff" />
       <DirectedCamera
         cueRef={cameraCue}
         hitStopScaleRef={hitStopScaleRef}
         animA={animA}
         animB={animB}
+        reducedMotion={graphics.reducedMotion}
       />
       <FighterTracker
         animA={animA}
@@ -356,7 +406,6 @@ export function BattleStage3D({
         oppoForB={oppoPosForB}
       />
       <Suspense fallback={null}>
-        {/* The photographic/painted backdrop supplies the arena floor. */}
         <FighterContactShadow anim={animA} anchorX={-worldFighterX} />
         <FighterContactShadow anim={animB} anchorX={worldFighterX} />
         {simulationDriven ? <>
@@ -399,7 +448,6 @@ export function BattleStage3D({
           />
         </ArenaPhysics>}
         <ImpactVFX ref={vfxRef} timeScaleRef={hitStopScaleRef} />
-        <Environment preset="city" />
       </Suspense>
     </Canvas>
   );

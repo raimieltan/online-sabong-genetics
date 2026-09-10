@@ -16,6 +16,8 @@ model Player {
   eggs             Egg[]
   facilities       Facility[]
   pveProgress      PveProgress[]
+  pveCampaignState PveCampaignState?
+  pveOpponentHistory PveOpponentHistory[]
   tournaments      Tournament[]
 }
 
@@ -124,6 +126,31 @@ model PveProgress {
   @@unique([playerId, bossId])
 }
 
+/** Persistent career-layer data kept separate from individual boss clear rows. */
+model PveCampaignState {
+  id         String   @id @default(uuid())
+  playerId   String   @unique
+  player     Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  reputation Int      @default(0)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+}
+
+model PveOpponentHistory {
+  id        String   @id @default(uuid())
+  playerId  String
+  player    Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  bossId    String
+  wins      Int      @default(0)
+  losses    Int      @default(0)
+  kosFor    Int      @default(0)
+  kosAgainst Int     @default(0)
+  lastFightAt DateTime @default(now())
+
+  @@unique([playerId, bossId])
+  @@index([playerId, lastFightAt])
+}
+
 model TrainingSession {
   id               String    @id @default(uuid())
   playerId         String
@@ -167,6 +194,8 @@ model Tournament {
   playerId      String
   player        Player    @relation(fields: [playerId], references: [id], onDelete: Cascade)
   chickenId     String
+  /** Circuit event selected at registration. Keeps a run tied to its rules on resume. */
+  definitionId  String    @default("barangay-open")
   size          Int
   tier          String
   status        String    @default("IN_PROGRESS")

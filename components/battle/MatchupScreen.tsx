@@ -4,7 +4,7 @@ import type { Chicken, CombatRecord, GeneticStatKey } from "@/lib/types";
 import { GENETIC_STAT_KEYS } from "@/lib/types";
 import { effectiveStat, type PveEncounterDefinition } from "@/lib/combat";
 import { RARITY_GEM, topRarity } from "@/lib/rarity";
-import { ChickenThumbnail } from "@/components/chicken3d/ChickenThumbnail";
+import { ChickenViewer } from "@/components/chicken3d/ChickenViewer";
 
 const STAT_LABEL: Record<GeneticStatKey, string> = {
   power: "Power",
@@ -131,12 +131,6 @@ export function FighterPlate({
       className="corner-card flex flex-col items-center gap-1 overflow-hidden rounded-lg p-4 pt-5 text-center"
       style={{ "--corner": corner } as CSSProperties}
     >
-      <div
-        className="model-stage -mt-1 mb-1 h-32 w-full"
-        style={{ "--stage-glow": `color-mix(in srgb, ${corner} 45%, transparent)` } as CSSProperties}
-      >
-        <ChickenThumbnail chicken={fighter} className="h-full w-full" />
-      </div>
       <p className="flex items-center gap-1.5 font-display text-lg font-semibold text-(--foreground)">
         {align === "right" && <span className="text-sm">{RARITY_GEM[rarity]}</span>}
         {fighter.name}
@@ -155,54 +149,79 @@ export function FighterPlate({
   );
 }
 
+function FighterHud({ fighter, corner, record, align }: { fighter: Chicken; corner: string; record: CombatRecord; align: "left" | "right" }) {
+  const rarity = topRarity(fighter.traits);
+  // Both HUDs keep the numeric value at the outside edge, followed by the
+  // flexible bar track and a fixed-width label column. The right HUD only
+  // differs in text alignment; reordering its grid children would put the
+  // value in the middle and squeeze the bar into the narrow value column.
+  const statRowColumns = align === "right"
+    ? "grid-cols-[2rem_minmax(0,1fr)_5.5rem]"
+    : "grid-cols-[5.5rem_minmax(0,1fr)_2rem]";
+  return (
+    <section className={`matchup-fighter-hud matchup-fighter-hud-${align}`} style={{ "--corner": corner } as CSSProperties}>
+      <p className="font-display text-2xl font-semibold tracking-wide text-(--foreground) sm:text-4xl">
+        {align === "right" && <span className="mr-2 text-base">{RARITY_GEM[rarity]}</span>}{fighter.name}{align === "left" && <span className="ml-2 text-base">{RARITY_GEM[rarity]}</span>}
+      </p>
+      <p className="mt-1 text-xs font-semibold uppercase tracking-[0.16em] text-(--color-text-muted)">{fighter.fightingStyle} bloodline · Gen {fighter.generation}</p>
+      <div className={`mt-3 flex flex-wrap gap-1.5 ${align === "right" ? "justify-end" : ""}`}>
+        <span className="matchup-badge">{rankTitle(record.wins)}</span>
+        <span className="matchup-badge">{fighter.fightingStyle}</span>
+        <span className="matchup-badge">{record.wins}W · {record.losses}L</span>
+      </div>
+      <div className="mt-4 space-y-1.5">
+        {GENETIC_STAT_KEYS.map((stat) => {
+          const value = Math.round(effectiveStat(fighter, stat));
+          return <div className={`grid ${statRowColumns} items-center gap-2 text-[10px] uppercase tracking-wide`} key={stat}>
+            <span className={`whitespace-nowrap ${align === "right" ? "text-right" : ""}`}>{STAT_LABEL[stat]}</span>
+            <span className="block h-1.5 w-full min-w-0 overflow-hidden rounded-full bg-black/45"><span className={`block h-full rounded-full ${align === "right" ? "ml-auto" : ""}`} style={{ width: `${Math.min(100, value / STAT_SCALE_MAX * 100)}%`, background: corner }} /></span>
+            <span>{value}</span>
+          </div>;
+        })}
+      </div>
+    </section>
+  );
+}
+
 export function MatchupScreen({
   chicken,
   opponent,
   encounter,
   fighting,
   onFight,
+  eyebrow,
+  title,
+  subtitle,
+  matchInfo,
 }: {
   chicken: Chicken;
   opponent: Chicken;
   encounter?: PveEncounterDefinition | null;
   fighting: boolean;
   onFight: () => void;
+  eyebrow?: string;
+  title?: string;
+  subtitle?: string;
+  matchInfo?: string;
 }) {
   const opponentRecord = mockOpponentRecord(opponent);
 
-  return (
-    <div className="vs-arena h-screen flex flex-col items-center gap-6 rounded-lg p-6">
-      <div className="relative grid w-full h-full grid-cols-[1fr_auto_1fr] items-center gap-3 sm:gap-6">
-        <FighterPlate fighter={chicken} corner="var(--color-azure)" record={chicken.record} align="left" />
-
-        <div className="relative flex items-center justify-center px-1">
-          <div className="vs-burst" />
-          <span className="vs-mark font-display text-4xl sm:text-5xl">VS</span>
-        </div>
-
-        <FighterPlate fighter={opponent} corner="var(--color-blood)" record={opponentRecord} align="right" />
-      </div>
-
-      {encounter && (
-        <div className="w-full max-w-lg rounded-lg border border-(--color-blood)/30 bg-black/25 p-3 text-center">
-          <p className="text-xs font-bold uppercase tracking-[0.18em] text-(--color-blood)">{encounter.name}</p>
-          <p className="mt-1 text-xs text-(--color-text-muted)">{encounter.description}</p>
-        </div>
-      )}
-
-      <div className="w-full max-w-lg space-y-2.5 rounded-lg border border-(--color-gold)/15 bg-black/20 p-4">
-        {GENETIC_STAT_KEYS.map((key) => (
-          <StatCompareRow key={key} statKey={key} a={chicken} b={opponent} />
-        ))}
-      </div>
-
-      <button
-        onClick={onFight}
-        disabled={fighting}
-        className="rounded-md bg-gradient-to-b from-(--color-gold-bright) to-(--color-gold) px-10 py-3 font-display text-lg font-semibold text-(--color-ink) shadow-lg shadow-black/40 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
-      >
-        {fighting ? "Fighting..." : "⚔️ Fight"}
-      </button>
+  return <div className="matchup-scene">
+    <div className="matchup-header text-center">
+      <p className="text-[10px] font-bold uppercase tracking-[0.28em] text-(--color-gold-bright)">{eyebrow ?? "PVE Challenge"}</p>
+      <h1 className="font-display text-2xl font-semibold tracking-[0.08em] text-(--foreground) sm:text-4xl">{title ?? encounter?.name ?? "The Veteran"}</h1>
+      <p className="mt-1 text-[10px] uppercase tracking-[0.16em] text-(--color-text-muted)">{subtitle ?? encounter?.description ?? "Let the bloodlines speak."}</p>
     </div>
-  );
+    <div className="matchup-corner matchup-corner-left" /> <div className="matchup-corner matchup-corner-right" />
+    <FighterHud fighter={chicken} corner="var(--color-azure)" record={chicken.record} align="left" />
+    <FighterHud fighter={opponent} corner="var(--color-blood)" record={opponentRecord} align="right" />
+    <div className="matchup-model matchup-model-left"><ChickenViewer chicken={chicken} interactive={false} cameraDistance={3.1} className="h-full w-full" /></div>
+    <div className="matchup-model matchup-model-right"><ChickenViewer chicken={opponent} interactive={false} cameraDistance={3.1} className="h-full w-full" /></div>
+    <div className="matchup-center">
+      <div className="relative"><div className="vs-burst" /><span className="vs-mark font-display text-6xl sm:text-8xl">VS</span></div>
+      <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-(--color-gold-bright)">{matchInfo ?? "Exhibition match"}</p>
+      <div className="matchup-comparison mt-3">{GENETIC_STAT_KEYS.map((key) => <StatCompareRow key={key} statKey={key} a={chicken} b={opponent} />)}</div>
+      <button onClick={onFight} disabled={fighting} className="matchup-fight-button mt-4">{fighting ? "Entering arena..." : "Enter arena"}<span>Let the bloodlines speak.</span></button>
+    </div>
+  </div>;
 }

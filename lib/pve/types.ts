@@ -66,6 +66,35 @@ export type BossRewardConfig = {
   experienceMultiplier: number;
 };
 
+/** Presentation-only campaign metadata. It deliberately never feeds combat. */
+export type PveNodeType = "standard" | "gatekeeper" | "rival" | "challenge" | "qualifier" | "championship" | "special";
+
+export type PveOpponentPresentation = {
+  title: string;
+  tagline: string;
+  quote?: string;
+  reputation: string;
+  scoutReport: string;
+  knownFor: string[];
+  tendencies: Array<{ label: string; value: "low" | "moderate" | "high" | "very high" }>;
+  record: { wins: number; losses: number; kos: number };
+  venue: { name: string; location: string; environmentId: string };
+  circuitId: string;
+  nodeType: PveNodeType;
+};
+
+export type PveCircuit = {
+  id: string;
+  order: number;
+  name: string;
+  chapter: string;
+  subtitle: string;
+  description: string;
+  environmentId: string;
+  bossIds: PveBossId[];
+  championshipBossId: PveBossId;
+};
+
 export type PveBossDefinition = {
   id: PveBossId;
   order: number;
@@ -86,6 +115,7 @@ export type PveBossDefinition = {
   preview: BossPreviewBars;
   recommendation: string;
   rewards: BossRewardConfig;
+  presentation?: PveOpponentPresentation;
 };
 
 export type BossProgressView = {
@@ -97,7 +127,17 @@ export type BossProgressView = {
   firstClearChickenId: string | null;
 };
 
+export type PublicPveBoss = Omit<PveBossDefinition, "iv" | "ev" | "behaviorOverrides" | "experienceBaseline" | "condition" | "presentation"> & { presentation: PveOpponentPresentation };
+
 export type BossListEntry = {
-  boss: Omit<PveBossDefinition, "iv" | "ev" | "behaviorOverrides" | "experienceBaseline" | "condition">;
+  boss: PublicPveBoss;
   progress: BossProgressView;
+};
+
+export type CampaignProgressView = {
+  completedCount: number;
+  totalCount: number;
+  reputation: number;
+  rank: number;
+  unlockedCircuitIds: string[];
 };

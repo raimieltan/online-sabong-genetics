@@ -1,4 +1,4 @@
-import { generateMatchedOpponent, simulateFight } from "./combat";
+import { applyFightOutcome, generateMatchedOpponent, simulateFight } from "./combat";
 import type { Chicken, CombatResult } from "./types";
 
 /** Single-elimination bracket sizes offered to the player (spec §31). */
@@ -14,6 +14,53 @@ export const TIER_LABELS: Record<TournamentTier, string> = {
   veteran: "Veteran",
   champion: "Champion",
 };
+
+/**
+ * The circuit is deliberately defined in game code rather than being a free
+ * form size/difficulty picker.  A run still stores the latter two values for
+ * backwards-compatible persistence, while this catalogue supplies the event
+ * language, rules, and entry requirements used by the UI and API.
+ */
+export type TournamentDefinition = {
+  id: string;
+  name: string;
+  circuit: "Local" | "Regional" | "Major" | "National" | "Elite";
+  bracketSize: TournamentSize;
+  tier: TournamentTier;
+  entryFee: number;
+  championPrize: number;
+  qualification?: string;
+  rules: readonly string[];
+};
+
+export const TOURNAMENT_DEFINITIONS: readonly TournamentDefinition[] = [
+  {
+    id: "barangay-open", name: "Barangay Open", circuit: "Local", bracketSize: 8, tier: "beginner", entryFee: 0, championPrize: 1000,
+    rules: ["Single elimination", "Condition carries between rounds", "One registered fighter"],
+  },
+  {
+    id: "iloilo-open", name: "Iloilo Open", circuit: "Local", bracketSize: 8, tier: "rookie", entryFee: 0, championPrize: 3000,
+    rules: ["Single elimination", "Injuries persist", "One registered fighter"],
+  },
+  {
+    id: "panay-invitational", name: "Panay Invitational", circuit: "Regional", bracketSize: 16, tier: "veteran", entryFee: 0, championPrize: 10000,
+    rules: ["Single elimination", "Condition carries between rounds", "Injuries persist"],
+  },
+  {
+    id: "philippine-championship", name: "Philippine Championship", circuit: "National", bracketSize: 32, tier: "champion", entryFee: 0, championPrize: 64000,
+    qualification: "Win a Regional Championship to qualify.",
+    rules: ["Single elimination", "Condition carries between rounds", "Injuries persist"],
+  },
+] as const;
+
+export function tournamentDefinitionFor(size: TournamentSize, tier: TournamentTier): TournamentDefinition {
+  return TOURNAMENT_DEFINITIONS.find((event) => event.bracketSize === size && event.tier === tier)
+    ?? TOURNAMENT_DEFINITIONS[0];
+}
+
+export function getTournamentDefinition(id: string): TournamentDefinition | undefined {
+  return TOURNAMENT_DEFINITIONS.find((event) => event.id === id);
+}
 
 /**
  * NPC total-effective-stat target as a multiplier of the player chicken's own
@@ -32,6 +79,25 @@ export const TIER_STAT_MULTIPLIER: Record<TournamentTier, number> = {
   veteran: 0.95,
   champion: 1.15,
 };
+
+/** Variation around an event's advertised tier. A field therefore contains
+ * credible underdogs, the main pack, and a few dangerous favourites instead
+ * of cloned opponents at one flat target. */
+function tournamentFieldMultipliers(count: number): number[] {
+  const bands: number[] = Array.from({ length: count }, (_, index) => {
+    const percentile = (index + 0.5) / count;
+    if (percentile < 0.15) return 0.78;
+    if (percentile < 0.58) return 0.94;
+    if (percentile < 0.86) return 1.08;
+    return 1.22;
+  });
+  // Keep the composition but randomise the draw position.
+  for (let index = bands.length - 1; index > 0; index--) {
+    const swap = Math.floor(Math.random() * (index + 1));
+    [bands[index], bands[swap]] = [bands[swap], bands[index]];
+  }
+  return bands;
+}
 
 /** Reward multiplier stacked on top of the base placement/participation tokens for harder tiers. */
 export const TIER_TOKEN_MULTIPLIER: Record<TournamentTier, number> = {
@@ -124,6 +190,30 @@ export type TournamentState = {
   tokensAwarded: number;
 };
 
+/** Apply the same aftermath used by normal combat to a bracket snapshot.
+ * NPCs are intentionally snapshots (they are not coop-owned database rows),
+ * so this is what makes their health, condition, injuries, record and
+ * behaviour persist from one tournament round to the next. */
+function advanceEntrantChicken(chicken: Chicken, result: CombatResult): Chicken {
+  const outcome = applyFightOutcome(chicken, result);
+  return {
+    ...chicken,
+    record: outcome.record,
+    health: outcome.health,
+    injured: outcome.injured,
+    status: outcome.status,
+    behavior: outcome.behavior,
+    experience: outcome.experience,
+    condition: outcome.condition,
+    injuries: outcome.injuries,
+    confidence: outcome.confidence,
+    morale: outcome.morale,
+    stress: outcome.stress,
+    battleHardening: outcome.battleHardening,
+    traits: outcome.traits,
+  };
+}
+
 /** Builds a fresh bracket: `playerChicken` plus `size - 1` NPCs generated at `tier`'s stat band, in a random slot order. */
 export function createTournament(
   playerChicken: Chicken,
@@ -132,8 +222,8 @@ export function createTournament(
   generator?: () => Chicken
 ): TournamentState {
   const statMultiplier = TIER_STAT_MULTIPLIER[tier];
-  const opponents = Array.from({ length: size - 1 }, () =>
-    generateMatchedOpponent(playerChicken, generator, statMultiplier)
+  const opponents = tournamentFieldMultipliers(size - 1).map((fieldMultiplier) =>
+    generateMatchedOpponent(playerChicken, generator, statMultiplier * fieldMultiplier)
   );
 
   const playerSlot = Math.floor(Math.random() * size);
@@ -212,6 +302,13 @@ export function resolveRound(
     const winnerSlot = result.winnerId === chickenA.id ? a.slot : b.slot;
     const loserSlot = winnerSlot === a.slot ? b.slot : a.slot;
 
+    const entrantA = entrants.find((e) => e.slot === a.slot)!;
+    const entrantB = entrants.find((e) => e.slot === b.slot)!;
+    // Persist post-fight state for every entrant, including simulated NPC
+    // matches. The player snapshot is updated too for an accurate bracket;
+    // the authoritative owned Chicken row is persisted by the service.
+    entrantA.chicken = advanceEntrantChicken(chickenA, result);
+    entrantB.chicken = advanceEntrantChicken(chickenB, result);
     const loserEntrant = entrants.find((e) => e.slot === loserSlot)!;
     loserEntrant.eliminatedRound = round;
 

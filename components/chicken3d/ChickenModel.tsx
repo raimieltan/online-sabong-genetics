@@ -145,6 +145,29 @@ function setPattern(material: THREE.MeshStandardMaterial | undefined, typeName: 
 }
 
 /**
+ * The authored GLB shares a compact set of materials.  Keep that economical
+ * setup, but make each surface answer light like the thing it represents.
+ * This is deliberately material response, not a replacement texture stack:
+ * genetic colour/patterns remain the source of identity.
+ */
+function tuneBattleMaterial(name: string, material: THREE.MeshStandardMaterial) {
+  material.metalness = 0;
+  material.envMapIntensity = 0.55;
+
+  if (name === "M_Feathers" || name === "M_Hackle" || name === "M_Wing" || name === "M_Tail") {
+    material.roughness = 0.7;
+    material.envMapIntensity = 0.38;
+  } else if (name === "M_Comb") {
+    // Softer, slightly waxy tissue response; inexpensive alternative to SSS.
+    material.roughness = 0.52;
+    material.envMapIntensity = 0.22;
+  } else if (name === "M_Beak" || name === "M_Legs") {
+    material.roughness = 0.4;
+    material.envMapIntensity = 0.7;
+  }
+}
+
+/**
  * Genome traits -> per-bone WORLD scale. Ported from roosterGenome.ts's
  * worldScales/applyGenome: local scale = worldScale / parentWorldScale, so
  * each part is independent — fattening the body does not inflate the head,
@@ -162,9 +185,11 @@ const BONE_PARENT: Record<string, string | null> = {
   Wattle: "Head",
   Beak: "Head",
   WingL: "Chest",
-  WingL_Tip: "WingL",
+  WingL_Mid: "WingL",
+  WingL_Tip: "WingL_Mid",
   WingR: "Chest",
-  WingR_Tip: "WingR",
+  WingR_Mid: "WingR",
+  WingR_Tip: "WingR_Mid",
   Tail: "Hips",
   Tail_Tip: "Tail",
   ThighL: "Hips",
@@ -195,6 +220,7 @@ function worldScales(t: PhysicalBlock): Record<string, [number, number, number]>
   };
   for (const s of ["L", "R"]) {
     S[`Wing${s}`] = [t.wingSpan, t.wingSize, t.wingSize];
+    S[`Wing${s}_Mid`] = [t.wingSpan, t.wingSize, t.wingSize];
     S[`Wing${s}_Tip`] = [t.wingSpan, t.wingSize, t.wingSize];
     S[`Thigh${s}`] = [t.legThick, t.legLength, t.legThick];
     S[`Shank${s}`] = [t.legThick, t.legLength, t.legThick];
@@ -361,8 +387,13 @@ export function ChickenModel({
       const material = source.clone();
       node.material = material;
       if (material instanceof THREE.MeshStandardMaterial && material.name) {
+        tuneBattleMaterial(material.name, material);
         (mats[material.name] ??= []).push(material);
       }
+      // The two active fighters are the visual priority. Their shadows give
+      // the arena volume without adding any dynamic lights.
+      node.castShadow = true;
+      node.receiveShadow = true;
     });
 
     // 1:1 onto the rig's 7 materials.

@@ -1,11 +1,14 @@
 import type { Tournament as TournamentRow } from "@prisma/client";
 
-import { applyFightOutcome, canFight, finalHealthPercent } from "../combat";
+import { applyFightOutcome, canFight, simulateFight } from "../combat";
 import { buildBattleReport, type BattleReport } from "../combat/battleReport";
 import { hasActiveInjury } from "../career/injuries";
 import { prisma } from "../db";
 import {
   createTournament,
+  currentOpponent,
+  getTournamentDefinition,
+  tournamentDefinitionFor,
   resolveRound,
   type BracketEntrant,
   type RoundMatch,
@@ -13,7 +16,7 @@ import {
   type TournamentState,
   type TournamentTier,
 } from "../tournament";
-import type { Chicken, CombatRecord } from "../types";
+import type { Chicken, CombatResult } from "../types";
 import { TournamentError } from "./errors";
 
 function stateFromRow(row: TournamentRow): TournamentState {
@@ -30,10 +33,16 @@ function stateFromRow(row: TournamentRow): TournamentState {
   };
 }
 
-export type TournamentView = TournamentState & { id: string; chickenId: string };
+export type TournamentView = TournamentState & { id: string; chickenId: string; definitionId: string };
 
 function toView(row: TournamentRow): TournamentView {
-  return { ...stateFromRow(row), id: row.id, chickenId: row.chickenId };
+  return {
+    ...stateFromRow(row),
+    id: row.id,
+    chickenId: row.chickenId,
+    // Rows created before the event field existed remain resumable.
+    definitionId: row.definitionId ?? tournamentDefinitionFor(row.size as TournamentSize, row.tier as TournamentTier).id,
+  };
 }
 
 async function loadOwnedTournament(playerId: string, tournamentId: string): Promise<TournamentRow> {
@@ -61,6 +70,7 @@ export async function startTournament(
   chickenId: string,
   size: TournamentSize,
   tier: TournamentTier,
+  definitionId = tournamentDefinitionFor(size, tier).id,
 ): Promise<TournamentView> {
   const row = await prisma.chicken.findUnique({ where: { id: chickenId } });
   if (!row) throw new TournamentError("CHICKEN_NOT_FOUND");
@@ -68,6 +78,11 @@ export async function startTournament(
 
   const chicken = row as unknown as Chicken;
   if (!canFight(chicken)) throw new TournamentError("CHICKEN_NOT_ELIGIBLE");
+
+  const definition = getTournamentDefinition(definitionId);
+  if (!definition || definition.bracketSize !== size || definition.tier !== tier) {
+    throw new TournamentError("TOURNAMENT_EVENT_INVALID");
+  }
 
   const active = await findActiveTournament(playerId, chickenId);
   if (active) throw new TournamentError("TOURNAMENT_ALREADY_ACTIVE");
@@ -78,6 +93,7 @@ export async function startTournament(
     data: {
       playerId,
       chickenId,
+      definitionId,
       size: state.size,
       tier: state.tier,
       totalRounds: state.totalRounds,
@@ -91,17 +107,6 @@ export async function startTournament(
   });
 
   return toView(created);
-}
-
-function applyRoundToRecord(record: CombatRecord, match: RoundMatch, chickenId: string): CombatRecord {
-  const won = match.result.winnerId === chickenId;
-  return {
-    ...record,
-    wins: record.wins + (won ? 1 : 0),
-    losses: record.losses + (won ? 0 : 1),
-    koTko: record.koTko + (won && match.result.outcomeReason !== "timeout" ? 1 : 0),
-    decisions: record.decisions + (match.result.outcomeReason === "timeout" ? 1 : 0),
-  };
 }
 
 export type AdvanceRoundResult = {
@@ -118,7 +123,7 @@ export type AdvanceRoundResult = {
  * the chicken's fight outcome and the updated bracket, and — if the bracket
  * just finished — pays out tournamentTokens.
  */
-export async function advanceRound(playerId: string, tournamentId: string): Promise<AdvanceRoundResult> {
+async function persistRound(playerId: string, tournamentId: string, playerResult?: CombatResult): Promise<AdvanceRoundResult> {
   const tournamentRow = await loadOwnedTournament(playerId, tournamentId);
   if (tournamentRow.status === "COMPLETE") throw new TournamentError("TOURNAMENT_COMPLETE");
 
@@ -129,26 +134,37 @@ export async function advanceRound(playerId: string, tournamentId: string): Prom
   if (!canFight(chicken)) throw new TournamentError("CHICKEN_NOT_ELIGIBLE");
 
   const state = stateFromRow(tournamentRow);
-  const { state: nextState, playerMatch } = resolveRound(state, chicken);
+  const opponent = currentOpponent(state);
+  if (playerResult && (!opponent || ![chicken.id, opponent.chicken.id].includes(playerResult.winnerId))) {
+    throw new TournamentError("TOURNAMENT_FIGHT_INVALID");
+  }
+  const { state: nextState, playerMatch } = resolveRound(
+    state,
+    chicken,
+    (a, b) => playerResult && (a.id === chicken.id || b.id === chicken.id) ? playerResult : simulateFight(a, b),
+  );
 
   const outcome = applyFightOutcome(chicken, playerMatch.result);
   const battleReport = buildBattleReport(chicken, playerMatch.result, chicken.id, outcome);
-  const wasInjured = playerMatch.result.injuredChickenId === chicken.id;
-  const record = applyRoundToRecord(chicken.record, playerMatch, chicken.id);
   const wonBracket = nextState.status === "complete" && nextState.placement === 1;
 
   const [updatedChicken, updatedTournament, updatedPlayer] = await prisma.$transaction(async (tx) => {
     const uc = await tx.chicken.update({
       where: { id: chicken.id },
       data: {
-        record: { ...record, championships: record.championships + (wonBracket ? 1 : 0) },
-        health: finalHealthPercent(playerMatch.result, chicken),
-        injured: wasInjured || hasActiveInjury(outcome.injuries ?? []),
-        status: wasInjured ? "injured" : chicken.status,
+        record: { ...outcome.record, championships: outcome.record.championships + (wonBracket ? 1 : 0) },
+        health: outcome.health,
+        injured: outcome.injured || hasActiveInjury(outcome.injuries ?? []),
+        status: outcome.status,
         behavior: outcome.behavior,
         experience: outcome.experience,
         condition: outcome.condition,
         injuries: outcome.injuries,
+        confidence: outcome.confidence,
+        morale: outcome.morale,
+        stress: outcome.stress,
+        battleHardening: outcome.battleHardening,
+        traits: outcome.traits,
       },
     });
 
@@ -178,4 +194,14 @@ export async function advanceRound(playerId: string, tournamentId: string): Prom
     chicken: updatedChicken,
     tournamentTokens: updatedPlayer.tournamentTokens,
   };
+}
+
+/** Legacy one-shot advance retained for callers that do not open a live V2 session. */
+export async function advanceRound(playerId: string, tournamentId: string): Promise<AdvanceRoundResult> {
+  return persistRound(playerId, tournamentId);
+}
+
+/** Commits a completed, server-owned LiveCombatV2Session result into the current bracket round. */
+export async function completeTournamentRound(playerId: string, tournamentId: string, result: CombatResult): Promise<AdvanceRoundResult> {
+  return persistRound(playerId, tournamentId, result);
 }

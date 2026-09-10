@@ -5,7 +5,7 @@ Status: approved for planning
 
 ## Context
 
-`public/3d-chicken/rooster_rigged.glb` (21-bone skeleton, 7 materials, 5 mutation
+`public/3d-chicken/rooster_rigged.glb` (23-joint skeleton, 7 materials, 5 mutation
 mesh slots) and its reference genome runtime `public/3d-chicken/roosterGenome.ts`
 replace the current rooster model (`chicken_rooster.glb`). The reference file is
 not imported as a module (matches this repo's convention: `public/3d-chicken/*`

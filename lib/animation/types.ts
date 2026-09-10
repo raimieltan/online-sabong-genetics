@@ -10,7 +10,7 @@
 
 import type { PhysicalBlock } from "@/lib/types";
 
-/** Every bone in the 14-bone rig we drive. `ChickenRoot` is left to mutation scaling. */
+/** Animation-driven joints in the 23-joint rig. `Root` and cosmetic joints keep their rest pose. */
 export const BONE_NAMES = [
   "Hips",
   "Spine",
@@ -18,7 +18,11 @@ export const BONE_NAMES = [
   "Neck",
   "Head",
   "WingL",
+  "WingL_Mid",
+  "WingL_Tip",
   "WingR",
+  "WingR_Mid",
+  "WingR_Tip",
   "Tail",
   "ThighL",
   "ShankL",

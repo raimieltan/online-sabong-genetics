@@ -7,6 +7,7 @@ import BattleCanvas from "@/components/BattleCanvas";
 import { commandFollowedTag, commentaryForImpact, commentaryForResult } from "@/lib/liveCommentary";
 import type { PlayerCommand } from "@/lib/combat/command";
 import type { CombatLogEntry, CombatResult, Chicken } from "@/lib/types";
+import { PageHeader } from "@/components/PageHeader";
 
 type Phase = "loading" | "ready" | "fighting" | "result" | "error";
 
@@ -241,15 +242,12 @@ export default function SparPage({ params }: { params: Promise<{ chickenId: stri
   return (
     <main className="min-h-screen bg-(--color-ink) p-6">
       <div className="mx-auto flex max-w-3xl flex-col gap-4">
-        <div className="panel-wood flex items-center justify-between rounded-lg p-4">
-          <Link href={`/chicken/${chickenId}`} className="text-sm text-(--color-gold-bright) hover:underline">
-            ← Back
-          </Link>
-          <h1 className="font-display text-lg font-semibold text-(--foreground)">
-            🎮 Spar: {chickenA.name} <span className="text-(--color-text-muted)">vs</span> {chickenB.name}
-          </h1>
-          <span className="text-xs uppercase tracking-wide text-(--color-text-muted)">Test only — no record kept</span>
-        </div>
+        <PageHeader
+          eyebrow="Sparring Yard"
+          title={<>🎮 {chickenA.name} <span className="text-(--color-text-muted)">vs</span> {chickenB.name}</>}
+          description={<Link href={`/chicken/${chickenId}`} className="hover:underline">← Back</Link>}
+          right={<span className="text-xs uppercase tracking-wide text-(--color-text-muted)">Test only — no record kept</span>}
+        />
 
         <div className="panel-wood overflow-hidden rounded-lg">
           <BattleCanvas
