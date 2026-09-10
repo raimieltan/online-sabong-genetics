@@ -114,6 +114,8 @@ export function commentaryForImpact(entry: CombatLogEntry): CommentaryLine {
 
 const COMMAND_FOLLOWED_LABEL: Record<Exclude<PlayerCommand, "FORCE_ENGAGEMENT">, string> = {
   PRESS: "PRESS",
+  COUNTER: "COUNTER",
+  GUARD: "GUARD",
   WAIT: "WAIT",
   RECOVER: "RECOVER",
 };

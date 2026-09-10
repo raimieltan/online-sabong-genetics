@@ -27,7 +27,7 @@
       "file_type": "code",
       "norm_label": "layerrig",
       "source_file": "lib/animation/layers.ts",
-      "source_location": "L68"
+      "source_location": "L78"
     },
     {
       "id": "lib_animation_layers_wingchainspring",
@@ -4806,7 +4806,7 @@
       "file_type": "code",
       "norm_label": ".addhit()",
       "source_file": "lib/animation/layers.ts",
-      "source_location": "L91"
+      "source_location": "L101"
     },
     {
       "id": "lib_animation_layers_layerrig_apply",
@@ -4818,7 +4818,7 @@
       "file_type": "code",
       "norm_label": ".apply()",
       "source_file": "lib/animation/layers.ts",
-      "source_location": "L115"
+      "source_location": "L125"
     },
     {
       "id": "lib_animation_layers_layerrig_reset",
@@ -4830,7 +4830,7 @@
       "file_type": "code",
       "norm_label": ".reset()",
       "source_file": "lib/animation/layers.ts",
-      "source_location": "L101"
+      "source_location": "L111"
     },
     {
       "id": "lib_animation_layers_wingchainspring_apply",
@@ -4842,7 +4842,7 @@
       "file_type": "code",
       "norm_label": ".apply()",
       "source_file": "lib/animation/layers.ts",
-      "source_location": "L50"
+      "source_location": "L51"
     },
     {
       "id": "lib_animation_layers_wingchainspring_reset",
@@ -4854,7 +4854,7 @@
       "file_type": "code",
       "norm_label": ".reset()",
       "source_file": "lib/animation/layers.ts",
-      "source_location": "L46"
+      "source_location": "L47"
     },
     {
       "id": "lib_animation_math_bell",
@@ -44400,7 +44400,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "lib/animation/layers.ts",
-      "source_location": "L122",
+      "source_location": "L132",
       "weight": 1.0
     },
     {
@@ -44412,7 +44412,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "lib/animation/layers.ts",
-      "source_location": "L151",
+      "source_location": "L170",
       "weight": 1.0
     },
     {
@@ -44424,7 +44424,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "lib/animation/layers.ts",
-      "source_location": "L171",
+      "source_location": "L190",
       "weight": 1.0
     },
     {
@@ -44436,7 +44436,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "lib/animation/layers.ts",
-      "source_location": "L171",
+      "source_location": "L190",
       "weight": 1.0
     },
     {
@@ -44448,7 +44448,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "lib/animation/layers.ts",
-      "source_location": "L51",
+      "source_location": "L52",
       "weight": 1.0
     },
     {
@@ -44460,7 +44460,7 @@
       "confidence_score": 1.0,
       "context": "call",
       "source_file": "lib/animation/layers.ts",
-      "source_location": "L47",
+      "source_location": "L48",
       "weight": 1.0
     },
     {
@@ -86293,7 +86293,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "lib/animation/layers.ts",
-      "source_location": "L115",
+      "source_location": "L125",
       "weight": 1.0
     },
     {
@@ -86305,7 +86305,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "lib/animation/layers.ts",
-      "source_location": "L115",
+      "source_location": "L125",
       "weight": 1.0
     },
     {
@@ -86317,7 +86317,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "lib/animation/layers.ts",
-      "source_location": "L115",
+      "source_location": "L125",
       "weight": 1.0
     },
     {
@@ -86329,7 +86329,7 @@
       "confidence_score": 1.0,
       "context": "parameter_type",
       "source_file": "lib/animation/layers.ts",
-      "source_location": "L50",
+      "source_location": "L51",
       "weight": 1.0
     },
     {
@@ -104493,7 +104493,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "lib/animation/layers.ts",
-      "source_location": "L68",
+      "source_location": "L78",
       "weight": 1.0
     },
     {
@@ -116242,7 +116242,7 @@
     },
     {
       "source": "lib_animation_layers_layerrig",
-      "target": "lib_animation_layers_layerrig_reset",
+      "target": "lib_animation_layers_layerrig_addhit",
       "relation": "method",
       "_origin": "ast",
       "confidence": "EXTRACTED",
@@ -116253,24 +116253,24 @@
     },
     {
       "source": "lib_animation_layers_layerrig",
+      "target": "lib_animation_layers_layerrig_reset",
+      "relation": "method",
+      "_origin": "ast",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "lib/animation/layers.ts",
+      "source_location": "L111",
+      "weight": 1.0
+    },
+    {
+      "source": "lib_animation_layers_layerrig",
       "target": "lib_animation_layers_layerrig_apply",
       "relation": "method",
       "_origin": "ast",
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "lib/animation/layers.ts",
-      "source_location": "L115",
-      "weight": 1.0
-    },
-    {
-      "source": "lib_animation_layers_layerrig",
-      "target": "lib_animation_layers_layerrig_addhit",
-      "relation": "method",
-      "_origin": "ast",
-      "confidence": "EXTRACTED",
-      "confidence_score": 1.0,
-      "source_file": "lib/animation/layers.ts",
-      "source_location": "L91",
+      "source_location": "L125",
       "weight": 1.0
     },
     {
@@ -116281,7 +116281,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "lib/animation/layers.ts",
-      "source_location": "L46",
+      "source_location": "L47",
       "weight": 1.0
     },
     {
@@ -116292,7 +116292,7 @@
       "confidence": "EXTRACTED",
       "confidence_score": 1.0,
       "source_file": "lib/animation/layers.ts",
-      "source_location": "L50",
+      "source_location": "L51",
       "weight": 1.0
     },
     {
@@ -117997,5 +117997,5 @@
     }
   ],
   "hyperedges": [],
-  "built_at_commit": "549f10b2b622c28e459e5031931e6b08346dcb52"
+  "built_at_commit": "092ed6b5762d24df00a1e206fe709e0c2586b934"
 }

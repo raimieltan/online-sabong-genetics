@@ -1,16 +1,16 @@
 # Graph Report - rooster-arena  (2026-09-10)
 
 ## Corpus Check
-- 382 files · ~922,835 words
+- 382 files · ~923,576 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
-- 3177 nodes · 6902 edges · 214 communities (178 shown, 33 thin omitted)
+- 3179 nodes · 6902 edges · 215 communities (180 shown, 32 thin omitted)
 - Extraction: 99% EXTRACTED · 1% INFERRED · 0% AMBIGUOUS · INFERRED: 76 edges (avg confidence: 0.83)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `549f10b2`
+- Built from commit: `092ed6b5`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -18,7 +18,7 @@
 - add
 - pve/service.ts
 - BattleCanvas.tsx
-- pveEncounters.ts
+- combat.ts
 - resolution.ts
 - genetics.ts
 - AudioEngine
@@ -28,19 +28,19 @@
 - Strategy Fighter Phase A/B Implementation Plan
 - roosterGenerator.ts
 - combatPresentation.test.ts
-- command.ts
+- behavior.ts
 - visual-style.md
 - Specific animations to improve/build
 - chicken/[chickenId]/page.tsx
-- clinic/page.tsx
+- ConditionMonitor.tsx
 - tournament-flow-spec.md
 - tournament-ui-spec.md
 - build_rooster.mjs
 - post-fight-flow.md
 - BattleStage3D.tsx
-- CameraDirector
+- cameraDirector.ts
 - HOMEPAGE_RANCH_HUB_REVAMP.md
-- marketplace.ts
+- Chicken
 - pedigree.ts
 - training/session.ts
 - liveCommentary.ts
@@ -52,16 +52,16 @@
 - facilities/service.ts
 - game-shell.md
 - ChickenPhysicsRig.tsx
-- recovery/engine.ts
-- behavior.ts
+- medical.test.ts
+- combat/state.ts
 - dependencies
 - BattleSession
 - MatchupScreen.tsx
 - coopVillage.ts
-- medical/service.ts
+- medical-route.test.ts
 - battleReport.ts
 - seed-strategy-fighter-roster.ts
-- battle/[chickenId]/page.tsx
+- setPlayerCredits
 - validation-gate-sim.ts
 - battle-matchup.md
 - thumbnailCache.ts
@@ -73,15 +73,15 @@
 - scripts
 - playerStore.ts
 - rarity.ts
-- effectiveStat
+- medical/service.ts
 - combat-system-v2.md
-- CombatPresentationController
+- choreography.ts
 - 4. Animation implementations (curve sketches)
 - gamefowl_dynasty_full_mechanics.md
-- ChickenCard.tsx
+- growth.ts
 - seed-deep-red-black-roster.ts
 - getOrCreatePlayer
-- combat.ts
+- CoopEnvironment.tsx
 - fight/[chickenId]/page.tsx
 - training.ts
 - training/page.tsx
@@ -97,7 +97,7 @@
 - ContinuousBattle.tsx
 - eslint.config.mjs
 - next.config.ts
-- combat/actions.ts
+- CombatAction
 - postcss.config.mjs
 - File Icon
 - Globe Icon
@@ -112,7 +112,7 @@
 - Training Phase 1 Foundation — Design Spec
 - Hatching & Growth — Design Spec
 - Rig genome integration — design spec
-- market/page.tsx
+- tournament/[chickenId]/page.tsx
 - 65. CORE DESIGN RULES
 - Training — Design Spec
 - FightingStyle
@@ -161,28 +161,29 @@
 - 9. Hens
 - live/page.tsx
 - ChickenViewer.tsx
-- HitZone
+- positioning.ts
 - momentum.ts
-- battleTraits.ts
+- spar/[chickenId]/page.tsx
 - LiveCombatV2Session
 - [bossId]/fight/[sessionId]/step/route.ts
-- mentalState.ts
+- combat/injuries.ts
 - pve/types.ts
-- effort.ts
-- StatBlock
+- rehab.ts
+- training/service.ts
 - TournamentPage
 - 5. Screen 3 — Boss Encounter
 - 31. UX Principle
-- backfill-color-jitter.ts
+- chickens/route.ts
 - 5. Campaign Node Types
 - Suggested sequence
-- pve/route.ts
+- startBossFight
 - aerial-clash.md
-- coop/page.tsx
+- ManageView.tsx
 - liveSession.ts
-- aftermath.ts
+- InjuryRecord
 - 3. Screen 1 — PvE Campaign Home
 - campaign.ts
+- layout.tsx
 - 8. Boss Archetypes as Combat Lessons
 - 24. UI Style System
 - 25. Background Strategy
@@ -210,13 +211,14 @@
 - PvE Campaign Revamp — The Road to Glory
 - 4. Campaign Map
 - 9. Boss Encounter Screen
-- tournament/[chickenId]/page.tsx
+- CoopPage
+- tournament/page.tsx
 - 13. Ranch Journal
 - 29. Implementation Order
 - 6. Central Rooster State
 - Possible states
 - 11. Contextual Quick Actions
-- cameraDirector.ts
+- intensity.ts
 - 21. Empty States
 - 19. Responsive Behavior
 - 2. Non-Negotiable Requirement — NO PLACEHOLDERS
@@ -224,7 +226,6 @@
 - 12. Your Stable
 - Cockfight Chronicles — Ranch Hub / Homepage Revamp
 - 5. Active Fighter / Stable Focus
-- balance-sim.ts
 - seed-monochrome-pairs.ts
 
 ## God Nodes (most connected - your core abstractions)
@@ -240,53 +241,53 @@
 10. `easeOut()` - 26 edges
 
 ## Surprising Connections (you probably didn't know these)
-- `handleSell()` --calls--> `setPlayerCredits()`  [EXTRACTED]
-  app/chicken/[chickenId]/page.tsx → lib/playerStore.ts
 - `FighterVisual` --references--> `Chicken`  [EXTRACTED]
   components/BattleCanvas.tsx → lib/types.ts
 - `POST()` --calls--> `canBreed()`  [EXTRACTED]
   app/api/breed/route.ts → lib/growth.ts
 - `POST()` --calls--> `getOrCreatePlayer()`  [EXTRACTED]
   app/api/breed/route.ts → lib/player.ts
-- `POST()` --calls--> `inheritTraits()`  [EXTRACTED]
-  app/api/breed/route.ts → lib/traits.ts
+- `POST()` --calls--> `canAgeUp()`  [EXTRACTED]
+  app/api/chickens/[id]/age-up/route.ts → lib/growth.ts
+- `POST()` --calls--> `nextGrowthStage()`  [EXTRACTED]
+  app/api/chickens/[id]/age-up/route.ts → lib/growth.ts
 
 ## Import Cycles
 - None detected.
 
-## Communities (214 total, 33 thin omitted)
+## Communities (215 total, 32 thin omitted)
 
 ### Community 0 - "add"
 Cohesion: 0.05
-Nodes (106): applyHenOverride(), applyProportions(), applyRuntimeNeutralPose(), applyVisualTraits(), BONE_PARENT, ChickenModel(), DEFAULT_PHYSICAL_BLOCK, installPatternShader() (+98 more)
+Nodes (105): applyHenOverride(), applyProportions(), applyRuntimeNeutralPose(), applyVisualTraits(), BONE_PARENT, ChickenModel(), DEFAULT_PHYSICAL_BLOCK, installPatternShader() (+97 more)
 
 ### Community 1 - "pve/service.ts"
-Cohesion: 0.14
-Nodes (25): POST(), GET(), Activity, GET(), bossPreview(), getBoss(), previousBossId(), PVE_BOSS_LIST (+17 more)
+Cohesion: 0.26
+Nodes (13): GET(), previousBossId(), PVE_CIRCUITS, buildBossFighter(), campaignProgress(), clamp01(), clampProfile(), FightSim (+5 more)
 
 ### Community 2 - "BattleCanvas.tsx"
-Cohesion: 0.07
-Nodes (32): aerialPose(), AttackPose, attackPoseFor(), attackStateForMove(), BattleCanvas(), bodyAttackPose(), clamp(), FighterVisual (+24 more)
+Cohesion: 0.08
+Nodes (30): aerialPose(), AttackPose, attackPoseFor(), attackStateForMove(), BattleCanvas(), bodyAttackPose(), clamp(), FighterVisual (+22 more)
 
-### Community 3 - "pveEncounters.ts"
-Cohesion: 0.33
-Nodes (8): generateMatchedOpponent(), clamp01(), clampProfile(), generatePveOpponent(), pickPveEncounter(), PVE_ENCOUNTER_LIST, PVE_ENCOUNTERS, PveEncounterId
+### Community 3 - "combat.ts"
+Cohesion: 0.08
+Nodes (35): POST(), POST(), clamp01(), deriveBehaviorProfile(), driftBehaviorProfile(), hasTrait(), canFight(), generateMatchedOpponent() (+27 more)
 
 ### Community 4 - "resolution.ts"
 Cohesion: 0.11
-Nodes (28): adaptationCounterBonus(), experienceConfidenceBonus(), fatigueDecisionPenalty(), rollCriticalInjury(), clampPosition(), deriveContextState(), DISTANCE_ORDER, POSITION_MAX (+20 more)
+Nodes (29): adaptationCounterBonus(), experienceConfidenceBonus(), fatigueAccuracyPenalty(), fatigueDecisionPenalty(), momentumDelta(), clampPosition(), clamp01(), computeCounterChance() (+21 more)
 
 ### Community 5 - "genetics.ts"
-Cohesion: 0.20
-Nodes (20): POST(), clamp(), COLOR_KEYS, driftRgb(), hasAllele(), hexToRgb(), hslToRgb(), inheritColorHex() (+12 more)
+Cohesion: 0.16
+Nodes (26): POST(), clamp(), COLOR_KEYS, driftRgb(), hasAllele(), hexToRgb(), hslToRgb(), inheritColorHex() (+18 more)
 
 ### Community 6 - "AudioEngine"
 Cohesion: 0.10
 Nodes (10): AudioContextCtor, AudioEngine, getAudioContextCtor(), VICTORY_FREQUENCIES, FakeAudioContext, makeFakeAudioNode(), makeFakeAudioParam(), makeFakeFilterNode() (+2 more)
 
 ### Community 7 - "chickenGenerator.ts"
-Cohesion: 0.08
-Nodes (39): POST(), POST(), BREED_IDS, BREED_PRESETS, BreedId, BreedPreset, pickRandomBreed(), createChicken() (+31 more)
+Cohesion: 0.09
+Nodes (36): POST(), BREED_PRESETS, BreedId, pickRandomBreed(), createChicken(), CreateChickenInput, cryptoSafeId(), defaultPhysicalBlock() (+28 more)
 
 ### Community 8 - "combat-v2/engine.ts"
 Cohesion: 0.25
@@ -306,11 +307,11 @@ Nodes (15): calculateOdds(), clamp(), COLOR_PALETTES, createRooster(), cryptoSaf
 
 ### Community 12 - "combatPresentation.test.ts"
 Cohesion: 0.13
-Nodes (21): ATTACK_CHOREOGRAPHY, ATTACK_PHASES, choreographyDuration(), DEFAULT_CHOREOGRAPHY, getChoreography(), HEAVY_STOP, HitStopProfile, impactTime() (+13 more)
+Nodes (18): StyleAnimParams, NEUTRAL_PERSONALITY, PERSONALITIES, PersonalityArchetype, personalityForArchetype(), personalityForStyle(), STYLE_TO_ARCHETYPE, approachScalar() (+10 more)
 
-### Community 13 - "command.ts"
-Cohesion: 0.17
-Nodes (15): clamp01(), COMMAND_ACTIVE_TURNS, COMMAND_POINT_REGEN_TURNS, COMMAND_POINTS_MAX, COMMAND_TARGET_ACTIONS, commandActionModifier(), commandTargetsAction(), complianceFactor() (+7 more)
+### Community 13 - "behavior.ts"
+Cohesion: 0.12
+Nodes (23): chooseAction(), Rng, scoreAction(), clamp01(), COMMAND_ACTIVE_TURNS, COMMAND_POINT_REGEN_TURNS, COMMAND_POINTS_MAX, COMMAND_TARGET_ACTIONS (+15 more)
 
 ### Community 14 - "visual-style.md"
 Cohesion: 0.05
@@ -322,11 +323,11 @@ Nodes (20): `air_clash`, Animation style, Body reaction, `circle`, Core wing ani
 
 ### Community 16 - "chicken/[chickenId]/page.tsx"
 Cohesion: 0.09
-Nodes (19): BEHAVIOR_ICON, ChickenDetailPageContent(), handleSell(), EXPERIENCE_ICON, MUTATION_RARITY_COLOR, MUTATION_RARITY_GEM, PHYSICAL_ICON, SEX_ICON (+11 more)
+Nodes (28): BEHAVIOR_ICON, ChickenDetailPageContent(), EXPERIENCE_ICON, MUTATION_RARITY_COLOR, MUTATION_RARITY_GEM, PHYSICAL_ICON, SEX_ICON, STAT_ICON (+20 more)
 
-### Community 17 - "clinic/page.tsx"
-Cohesion: 0.11
-Nodes (22): ClinicDTO, ClinicPage(), PILL_TONE, RosterEntry, treatmentRemaining(), band(), BAR_TONE, ConditionMonitor() (+14 more)
+### Community 17 - "ConditionMonitor.tsx"
+Cohesion: 0.14
+Nodes (12): ClinicPage(), treatmentRemaining(), band(), BAR_TONE, ConditionMonitor(), inverseBand(), PILL_TONE, Tone (+4 more)
 
 ### Community 18 - "tournament-flow-spec.md"
 Cohesion: 0.04
@@ -348,33 +349,37 @@ Nodes (32): Animation Ownership, Boss, Camera Cues, Championship, Combat Experie
 Cohesion: 0.09
 Nodes (25): ArenaEnvironment(), ArenaGround(), useDirtTexture(), ArenaPhysics(), ANIM_PX_TO_WORLD, BattleStage3D(), CollisionDebugVolumes(), DirectedCamera() (+17 more)
 
+### Community 23 - "cameraDirector.ts"
+Cohesion: 0.17
+Nodes (7): CameraDirector, CameraDirectorOpts, CameraImpulse, CueFraming, CUES, NEUTRAL, Vec3
+
 ### Community 24 - "HOMEPAGE_RANCH_HUB_REVAMP.md"
 Cohesion: 0.10
 Nodes (20): 14. Journal Architecture, 15. World / Career News, 16. Return-to-Game Summary, 17. Homepage Priority Engine, 18. Layout Direction, 20. Loading States, 22. Error States, 23. API / Data Aggregation (+12 more)
 
-### Community 25 - "marketplace.ts"
-Cohesion: 0.26
-Nodes (12): POST(), POST(), GET(), generateListing(), listingToChicken(), MARKET_STOCK_SIZE, MarketListingRow, sellPrice() (+4 more)
+### Community 25 - "Chicken"
+Cohesion: 0.25
+Nodes (13): POST(), POST(), GET(), generateListing(), listingToChicken(), MARKET_STOCK_SIZE, MarketListingRow, sellPrice() (+5 more)
 
 ### Community 26 - "pedigree.ts"
 Cohesion: 0.20
 Nodes (12): findChildren(), GET(), lookup(), PedigreeResponse, isChampion(), PedigreeTreeNode(), buildAncestorTree(), computeDescendantStats() (+4 more)
 
 ### Community 27 - "training/session.ts"
-Cohesion: 0.17
-Nodes (16): BONUS_EV_ON_BREAKTHROUGH, BREAKTHROUGH_BASE_CHANCE, BREAKTHROUGH_MILESTONE_BONUS, checkOvertrainedTrigger(), crossedMilestone(), Rng, rollBreakthrough(), TRAINING_TRAIT_POOL (+8 more)
+Cohesion: 0.13
+Nodes (21): BONUS_EV_ON_BREAKTHROUGH, BREAKTHROUGH_BASE_CHANCE, BREAKTHROUGH_MILESTONE_BONUS, checkOvertrainedTrigger(), crossedMilestone(), Rng, rollBreakthrough(), TRAINING_TRAIT_POOL (+13 more)
 
 ### Community 28 - "liveCommentary.ts"
-Cohesion: 0.09
-Nodes (26): handleImpact(), handleReplayEnd(), clampStepDelay(), COMMAND_LABEL, Phase, Snapshot, SparPage(), StartResponse (+18 more)
+Cohesion: 0.13
+Nodes (16): handleImpact(), COMMAND_FOLLOWED_LABEL, commentaryForBoutStart(), commentaryForImpact(), CommentaryLine, CRIT_BURSTS, CRIT_CAPTIONS, DECISION_CAPTIONS (+8 more)
 
 ### Community 29 - "simulator.ts"
-Cohesion: 0.12
-Nodes (20): generateBattleAnalysis(), gainExperience(), updateOpponentModel(), clampFatigue(), fatigueAccuracyPenalty(), fatigueGain(), fatigueRecoveryPerTurn(), fatigueStatMultiplier() (+12 more)
+Cohesion: 0.14
+Nodes (21): legalActions(), generateBattleAnalysis(), updateOpponentModel(), clampFatigue(), fatigueGain(), fatigueRecoveryPerTurn(), fatigueStatMultiplier(), inactivityPressureBonus() (+13 more)
 
 ### Community 30 - "chickens/[id]/fight/[sessionId]/step/route.ts"
 Cohesion: 0.18
-Nodes (18): POST(), POST(), StepBody, BetBody, POST(), POST(), ResolveBody, applyFightOutcome() (+10 more)
+Nodes (19): POST(), POST(), StepBody, BetBody, POST(), POST(), ResolveBody, applyFightOutcome() (+11 more)
 
 ### Community 31 - "devDependencies"
 Cohesion: 0.11
@@ -389,76 +394,76 @@ Cohesion: 0.03
 Nodes (62): 11. MUTATION TRAITS, 13. MUTATION BLOODLINES, 14. GENERATIONAL BREEDING, 15. PEDIGREE SYSTEM, 16. INBREEDING SYSTEM, 17. GENETIC INSTABILITY, 18. POSITIVE AND NEGATIVE MUTATIONS, 19. GENETIC TRAITS VS ACTUAL STATS (+54 more)
 
 ### Community 34 - "facilities/service.ts"
-Cohesion: 0.09
-Nodes (38): DevAction, POST(), POST(), POST(), GET(), POST(), declineMultiplier(), deriveLifeStage() (+30 more)
+Cohesion: 0.12
+Nodes (26): POST(), POST(), GET(), POST(), isProgramUnlocked(), TRAINING_GYM_LEVELS, TRAINING_GYM_MAX_LEVEL, TRAINING_GYM_UPGRADES (+18 more)
 
 ### Community 35 - "game-shell.md"
 Cohesion: 0.06
 Nodes (32): 10. Full-Bleed Screens, 11. Management Screens, 12. Immersive Mode, 13. Battle Flow, 14. Matchup Shell Behavior, 15. Battle Shell Behavior, 16. Result Shell Behavior, 17. Ranch/Home (+24 more)
 
 ### Community 36 - "ChickenPhysicsRig.tsx"
-Cohesion: 0.20
-Nodes (16): FighterAnim, ChickenPhysicsRig, ChickenPhysicsRigProps, KNOCKBACK_IMPULSE, KNOCKDOWN_RECOVER_MS, scaledRecoveryMs(), scaleSpec(), bodyAxis() (+8 more)
+Cohesion: 0.18
+Nodes (17): FighterAnim, ChickenPhysicsRig, ChickenPhysicsRigProps, KNOCKBACK_IMPULSE, KNOCKDOWN_RECOVER_MS, scaledRecoveryMs(), scaleSpec(), bodyAxis() (+9 more)
 
-### Community 37 - "recovery/engine.ts"
-Cohesion: 0.09
-Nodes (25): recoverCondition(), TIER_STAT_MULTIPLIER, createInjuryRecord(), CRITICAL_HIT_ZONES, nextInjuryId(), RECOVERY_TURNS, Rng, SEVERITY_LABELS (+17 more)
+### Community 37 - "medical.test.ts"
+Cohesion: 0.17
+Nodes (17): recoverCondition(), tickInjuryRecovery(), createIllness(), ILLNESS_LABELS, nextId(), RECOVERY_CYCLES, Rng, rollIllness() (+9 more)
 
-### Community 38 - "behavior.ts"
-Cohesion: 0.16
-Nodes (22): ARCHETYPE_PROFILES, chooseAction(), clamp01(), DecisionContext, deriveBehaviorProfile(), driftBehaviorProfile(), hasTrait(), Rng (+14 more)
+### Community 38 - "combat/state.ts"
+Cohesion: 0.14
+Nodes (20): ARCHETYPE_PROFILES, DecisionContext, emptyExperience(), emptyOpponentModel(), gainExperience(), applyMentalState(), clamp01(), deriveMentalState() (+12 more)
 
 ### Community 39 - "dependencies"
 Cohesion: 0.12
 Nodes (17): next, dependencies, next, @prisma/client, react, react-dom, @react-three/drei, @react-three/fiber (+9 more)
 
 ### Community 40 - "BattleSession"
-Cohesion: 0.18
-Nodes (12): POST(), StepBody, POST(), BattleCanvasProps, PlayerCommand, BattleSession, createSparSession(), endSparSession() (+4 more)
+Cohesion: 0.21
+Nodes (8): POST(), BattleCanvasProps, PlayerCommand, BattleSession, createSparSession(), CombatantState, commandMode(), CombatLogEntry
 
 ### Community 41 - "MatchupScreen.tsx"
-Cohesion: 0.28
-Nodes (11): FighterHud(), FighterPlate(), MatchupScreen(), mockOpponentRecord(), RANK_TITLE, rankTitle(), seededRng(), STAT_LABEL (+3 more)
+Cohesion: 0.30
+Nodes (10): FighterHud(), FighterPlate(), mockOpponentRecord(), RANK_TITLE, rankTitle(), seededRng(), STAT_LABEL, StatCompareRow() (+2 more)
 
 ### Community 42 - "coopVillage.ts"
-Cohesion: 0.07
-Nodes (28): CoopCamera(), IDLE_POS, IDLE_TARGET, CoopChicken(), CoopEnvironment(), useVillageGroundTexture(), CoopHabitat(), HUT_COLORS (+20 more)
+Cohesion: 0.15
+Nodes (19): CoopCamera(), IDLE_POS, IDLE_TARGET, CoopChicken(), CoopHabitat(), HUT_COLORS, CoopWorld(), CENTER (+11 more)
 
-### Community 43 - "medical/service.ts"
-Cohesion: 0.12
-Nodes (33): Body, GET(), POST(), GET(), POST(), MAX_HEALTH, canTreatSeverity(), CLINIC_LEVELS (+25 more)
+### Community 43 - "medical-route.test.ts"
+Cohesion: 0.17
+Nodes (18): Body, GET(), POST(), GET(), POST(), MedicalError, MedicalErrorCode, STATUS_BY_CODE (+10 more)
 
 ### Community 44 - "battleReport.ts"
-Cohesion: 0.13
-Nodes (15): BattleReportPanel(), EXPERIENCE_ICON, CombatResultsScreenProps, OUTCOME_LABEL, BattleReport, nonZeroCategories(), FightOutcomeUpdate, CATEGORY_TO_TRAINING (+7 more)
+Cohesion: 0.09
+Nodes (21): FightResponse, Phase, NEXT, PostFightOverlay(), PostFightState, Props, signed(), STEP_DELAY (+13 more)
 
 ### Community 45 - "seed-strategy-fighter-roster.ts"
-Cohesion: 0.12
-Nodes (20): discoverPotential(), potentialBand(), Rng, rollTrainingPotential(), GeneticStatKey, AGGRESSIVE_SCHEME, ALL_TRAITS, Archetype (+12 more)
+Cohesion: 0.09
+Nodes (25): BATTLE_SCARRED_TRAIT, evaluateBattleTraits(), hasTrait(), severeInjuryCount(), VETERAN_TRAIT, Rng, creditXp(), XP_PER_SESSION (+17 more)
 
-### Community 46 - "battle/[chickenId]/page.tsx"
-Cohesion: 0.12
-Nodes (14): BattlePage(), handleFight(), FightResponse, Phase, LivePage(), placeBet(), NEXT, PostFightOverlay() (+6 more)
+### Community 46 - "setPlayerCredits"
+Cohesion: 0.25
+Nodes (6): BattlePage(), handleFight(), handleSell(), LivePage(), placeBet(), setPlayerCredits()
 
 ### Community 47 - "validation-gate-sim.ts"
-Cohesion: 0.23
-Nodes (12): autoCoachPolicy(), CoachFn, CoachObservation, simulateBattle(), autoWinRate, buildFighter(), manualWinRate, noCommandWinRate (+4 more)
+Cohesion: 0.13
+Nodes (22): POST(), StepBody, POST(), autoCoachPolicy(), endBattleSession(), getTournamentBattleSession(), CoachFn, CoachObservation (+14 more)
 
 ### Community 48 - "battle-matchup.md"
 Cohesion: 0.07
 Nodes (27): 10. RECENT FORM, 11. PRIMARY FIGHT ACTION, 12. PRE-FIGHT STRATEGY INTEGRATION, 13. CONTEXT-SPECIFIC DATA, 14. MATCHUP TRANSITION, 15. FIGHT START TRANSITION, 16. RESPONSIVENESS, 17. COMPONENT ARCHITECTURE (+19 more)
 
 ### Community 49 - "thumbnailCache.ts"
-Cohesion: 0.20
-Nodes (12): cache, Listener, listeners, nextQueued(), queue, queuedSubjects, queueListeners, resolveThumbnail() (+4 more)
+Cohesion: 0.16
+Nodes (18): ChickenThumbnail(), SEX_EMOJI, cache, getThumbnail(), Listener, listeners, nextQueued(), queue (+10 more)
 
 ### Community 50 - "pve_campaign_revamp.md"
 Cohesion: 0.06
 Nodes (31): 10. Scout Report Instead of Raw Stats, 11. Fighter Selection Revamp, 12. Matchup Assessment, 13. Remove the Current Generic Start Battle Page, 14. Pre-Fight Sequence, 15. Venue Establishing Shot, 16. Opponent Introduction, 17. Player Fighter Introduction (+23 more)
 
 ### Community 51 - "tournament/service.ts"
-Cohesion: 0.14
-Nodes (23): GET(), POST(), POST(), GET(), hasActiveInjury(), currentOpponent(), STATUS, TournamentError (+15 more)
+Cohesion: 0.15
+Nodes (22): GET(), POST(), POST(), GET(), hasActiveInjury(), STATUS, TournamentError, TournamentErrorCode (+14 more)
 
 ### Community 52 - "Strategy Fighter — Design Spec"
 Cohesion: 0.17
@@ -469,32 +474,32 @@ Cohesion: 0.04
 Nodes (47): 10. Chicken Actions, 11. Visual Feedback, 12. Chicken Names, 13. Hut Variations, 14. Champion/Veteran Presentation, 15. Eggs, 16. Existing API Functionality, 17. Age Up (+39 more)
 
 ### Community 54 - "tournament.ts"
-Cohesion: 0.13
-Nodes (20): TournamentBracket(), fakeResult(), playerAlwaysLosesFight(), playerAlwaysWinsFight(), advanceEntrantChicken(), BASE_PLACEMENT_TOKENS, BracketEntrant, createTournament() (+12 more)
+Cohesion: 0.19
+Nodes (15): fakeResult(), playerAlwaysLosesFight(), playerAlwaysWinsFight(), advanceEntrantChicken(), BASE_PLACEMENT_TOKENS, createTournament(), resolveRound(), SIZE_TOKEN_MULTIPLIER (+7 more)
 
 ### Community 55 - "scripts"
 Cohesion: 0.15
 Nodes (13): scripts, backfill:colors, build, db:up, dev, lint, postinstall, seed:god (+5 more)
 
 ### Community 56 - "playerStore.ts"
-Cohesion: 0.13
-Nodes (17): bangers, cinzel, geistMono, geistSans, metadata, NAV_ITEMS, TopBar(), mockPlayer (+9 more)
+Cohesion: 0.20
+Nodes (12): NAV_ITEMS, TopBar(), mockPlayer, emit(), getPlayerSnapshot(), Listener, listeners, PlayerSnapshot (+4 more)
 
 ### Community 57 - "rarity.ts"
-Cohesion: 0.21
-Nodes (13): OffspringPreview(), computeOffspringOdds(), atLeast(), passThroughMissChance(), wildMissChance(), dedupe(), OffspringOdds, WILD_RARITY_WEIGHT (+5 more)
+Cohesion: 0.10
+Nodes (25): OffspringPreview(), BreedPageContent(), ParentCard(), ROLE_RIBBON, SEX_ICON, STAT_ICON, fetchMarket(), MarketPage() (+17 more)
 
-### Community 58 - "effectiveStat"
-Cohesion: 0.36
-Nodes (9): finalHealthPercent(), effectiveStat(), maxHealth(), mutationStatMultiplier(), growthFactor(), clamp(), resolvePhysicalProfile(), toModifier() (+1 more)
+### Community 58 - "medical/service.ts"
+Cohesion: 0.17
+Nodes (19): ClinicDTO, PILL_TONE, RosterEntry, canTreatSeverity(), CLINIC_LEVELS, CLINIC_MAX_LEVEL, CLINIC_UPGRADE_COST, clinicConfig() (+11 more)
 
 ### Community 59 - "combat-system-v2.md"
 Cohesion: 0.04
 Nodes (46): 10. STAGGER, 11. KNOCKBACK, 12. KNOCKDOWN, 13. DEATH, 14. MISS / DODGE, 15. ATTACKER RECOVERY, 16. COMBAT PACING, 17. COMBO PRESENTATION (+38 more)
 
-### Community 60 - "CombatPresentationController"
-Cohesion: 0.15
-Nodes (8): BattleDebugState, AttackChoreography, AttackPhase, hitStopFor(), cameraCueForResult(), CombatPresentationController, PresentationCallbacks, harness()
+### Community 60 - "choreography.ts"
+Cohesion: 0.09
+Nodes (21): BattleDebugOverlay(), BattleDebugState, makeDebugState(), ATTACK_CHOREOGRAPHY, ATTACK_PHASES, AttackChoreography, AttackPhase, choreographyDuration() (+13 more)
 
 ### Community 61 - "4. Animation implementations (curve sketches)"
 Cohesion: 0.05
@@ -504,33 +509,33 @@ Nodes (43): 10.1 Automated (Node built-in test runner, `lib/__tests__/animation.
 Cohesion: 0.05
 Nodes (41): 11. Chicken Growth, 13. Training Limits, 14. Vitamins and Consumables, 15. Combat System, 16. Combat Philosophy, 18. Combat AI, 21. Death and Legacy, 22. Animation System (+33 more)
 
-### Community 63 - "ChickenCard.tsx"
-Cohesion: 0.18
-Nodes (13): ParentCard(), ROLE_RIBBON, SEX_ICON, STAT_ICON, SEX_ICON, STAGE_COLOR, ChickenThumbnail(), SEX_EMOJI (+5 more)
+### Community 63 - "growth.ts"
+Cohesion: 0.19
+Nodes (15): ChickenCard(), SEX_ICON, STAGE_COLOR, CoopSelectionPanel(), SEX_ICON, BREEDABLE_STAGES, canAgeUp(), canBattle() (+7 more)
 
 ### Community 64 - "seed-deep-red-black-roster.ts"
-Cohesion: 0.10
-Nodes (20): XP_PER_SESSION, XP_POOLS_BY_CATEGORY, RoosterTrainingState, XpPool, Bred, buildTrainingState(), CINDERFALL_SCHEME, EMBER_WARD_SCHEME (+12 more)
+Cohesion: 0.12
+Nodes (16): Bred, buildTrainingState(), CINDERFALL_SCHEME, EMBER_WARD_SCHEME, FIGHTING_STYLE_CYCLE, Founder, FOUNDERS, GARNET_VALE_SCHEME (+8 more)
 
 ### Community 65 - "getOrCreatePlayer"
-Cohesion: 0.10
-Nodes (24): POST(), POST(), GET(), GET(), POST(), GET(), GET(), GET() (+16 more)
+Cohesion: 0.08
+Nodes (37): POST(), POST(), POST(), POST(), GET(), GET(), GET(), Activity (+29 more)
 
-### Community 66 - "combat.ts"
-Cohesion: 0.14
-Nodes (19): canFight(), healChicken(), MAX_HEALTH, MAX_TURNS, rollHitZone(), Rng, simulateFight(), MAX_TURNS (+11 more)
+### Community 66 - "CoopEnvironment.tsx"
+Cohesion: 0.12
+Nodes (9): CoopEnvironment(), useVillageGroundTexture(), BASE_DURATION, STATE_SEQUENCE, VillageAnimState, VillageChickenAI, VillageIdleConfig, VillageIdleFrame (+1 more)
 
 ### Community 67 - "fight/[chickenId]/page.tsx"
 Cohesion: 0.17
 Nodes (13): BossFightPage(), nextBossName(), Phase, Start, BATTLE_STAGES, BossEncounterPage(), buildBossVisual(), eligible() (+5 more)
 
 ### Community 68 - "training.ts"
-Cohesion: 0.16
-Nodes (18): canAffordTraining(), applyDevelopment(), CATEGORY_PRIMARY_STAT, CATEGORY_TRADEOFF_STAT, ENERGY_PER_TRAIN, EV_PER_TRAIN, TRAINING_FATIGUE_PER_SESSION, TRAINING_FATIGUE_REST_RECOVERY (+10 more)
+Cohesion: 0.12
+Nodes (27): DevAction, POST(), declineMultiplier(), deriveLifeStage(), totalExperience(), VETERAN_STAGES, veteranExperienceBonus(), claimExpiredSessions() (+19 more)
 
 ### Community 69 - "training/page.tsx"
-Cohesion: 0.14
-Nodes (15): FacilityViewDTO, remainingMinutes(), SessionDTO, TrainingPageContent(), cancel(), refresh(), startTraining(), upgrade() (+7 more)
+Cohesion: 0.16
+Nodes (17): FacilityViewDTO, remainingMinutes(), SessionDTO, TrainingPageContent(), cancel(), refresh(), startTraining(), upgrade() (+9 more)
 
 ### Community 70 - "Rooster Arena Project"
 Cohesion: 0.40
@@ -541,8 +546,8 @@ Cohesion: 0.07
 Nodes (27): 11. Screen 9 — Battle Scene HUD, 13. Screen 11 — Rewards, 14. Screen 12 — Progression Update, 15. Screen 13 — Boss Defeated State, 16. Screen 14 — Challenge Received, 17. Screen 15 — Rival Encounter, 18. Screen 16 — Championship Qualifier, 19. Screen 17 — Championship Event (+19 more)
 
 ### Community 73 - "combatPresentation.ts"
-Cohesion: 0.10
-Nodes (25): CameraCue, ChickenPhysicsHandle, Flash, ImpactVFX, ImpactVFXHandle, Shard, BattlePresentationState, BattlePersonality (+17 more)
+Cohesion: 0.13
+Nodes (20): CameraCue, ChickenPhysicsHandle, Flash, ImpactVFX, ImpactVFXHandle, Shard, BattlePresentationState, BattlePersonality (+12 more)
 
 ### Community 74 - "5. Combat — where it all converges"
 Cohesion: 0.08
@@ -564,9 +569,9 @@ Nodes (5): Continuous combat V2 — live authority, Engine boundary, Presentatio
 Cohesion: 0.09
 Nodes (18): animation, bar(), COMMAND_CARDS, ContinuousBattle(), FighterCard(), FighterDisplay, MatchStats, pose() (+10 more)
 
-### Community 82 - "combat/actions.ts"
-Cohesion: 0.24
-Nodes (8): ACTION_DEFINITIONS, ALL_ACTIONS, legalActions(), LOW_COMMITMENT_ACTIONS, actionDurationMs(), exchangeDurationMs(), PhysicalProfile, CombatActionDefinition
+### Community 82 - "CombatAction"
+Cohesion: 0.27
+Nodes (8): ACTION_DEFINITIONS, ALL_ACTIONS, LOW_COMMITMENT_ACTIONS, actionDurationMs(), exchangeDurationMs(), PhysicalProfile, CombatAction, CombatActionDefinition
 
 ### Community 90 - "File Structure"
 Cohesion: 0.12
@@ -600,9 +605,9 @@ Nodes (12): API, Data model, Egg → Chicken mapping on hatch, Growth logic (`li
 Cohesion: 0.17
 Nodes (11): Animation gains (`lib/animation/physicalGenetics.ts`), Breed archetypes (new `lib/breeds.ts`), Color inheritance (`lib/genetics.ts`), Combat coupling (`lib/physicalProfile.ts`, `lib/combat.ts`), Context, Data model (`lib/types.ts`), Mutations (`lib/mutations.ts`), Persistence migration (`prisma/schema.prisma`) (+3 more)
 
-### Community 98 - "market/page.tsx"
-Cohesion: 0.47
-Nodes (5): fetchMarket(), MarketPage(), handleBuy(), SEX_ICON, RARITY_BORDER
+### Community 98 - "tournament/[chickenId]/page.tsx"
+Cohesion: 0.18
+Nodes (11): LiveSnapshot, Phase, PLACEMENT_LABEL, TournamentView, MatchupScreen(), TournamentBracket(), BracketEntrant, roundLabel() (+3 more)
 
 ### Community 99 - "65. CORE DESIGN RULES"
 Cohesion: 0.18
@@ -637,16 +642,16 @@ Cohesion: 0.25
 Nodes (8): 6. Traits, Calm, Counter Fighter, Glass Cannon, Heavy Striker, Iron Stamina, Quick Starter, Survivor
 
 ### Community 108 - "lib/types.ts"
-Cohesion: 0.07
-Nodes (45): POST(), POST(), BreedPageContent(), ChickenCard(), CoopFilters(), STATUS_OPTIONS, CoopSelectionPanel(), SEX_ICON (+37 more)
+Cohesion: 0.11
+Nodes (19): BREED_IDS, BreedPreset, BattleLogEntry, BattleResult, Bet, ChickenColorScheme, ChickenSex, ChickenStatus (+11 more)
 
 ### Community 110 - "32. SPECIALIZED BLOODLINES"
 Cohesion: 0.33
 Nodes (6): 32. SPECIALIZED BLOODLINES, COLLECTION BLOODLINE, CRITICAL BLOODLINE, MUTATION BLOODLINE, SPEED BLOODLINE, TANK BLOODLINE
 
 ### Community 111 - "testHelpers.ts"
-Cohesion: 0.30
-Nodes (5): NO_FILTER, makeChicken(), physicalBlock(), statBlock(), defaultRoosterTrainingState()
+Cohesion: 0.35
+Nodes (5): healChicken(), MAX_TURNS, makeChicken(), physicalBlock(), statBlock()
 
 ### Community 112 - "27. GENETIC RESEARCH"
 Cohesion: 0.40
@@ -760,41 +765,41 @@ Nodes (16): LiveMatchupResponse, LiveMode, LiveResolveResponse, MODE_LABEL, Phas
 Cohesion: 0.19
 Nodes (10): Activity, emptyHub, Home(), Hub, status(), acquireCanvasSlot(), ChickenViewer(), releaseCanvasSlot() (+2 more)
 
-### Community 148 - "HitZone"
-Cohesion: 0.15
-Nodes (11): CombatEvent, STYLE_POLICIES, StylePolicy, styleWeight(), calculateStagger(), LEG_ZONES, STAGGER_THRESHOLDS, StaggerContext (+3 more)
+### Community 148 - "positioning.ts"
+Cohesion: 0.22
+Nodes (7): CombatEvent, DISTANCE_ORDER, POSITION_MAX, POSITION_MIN, shiftDistance(), CombatContextState, CombatDistance
 
 ### Community 149 - "momentum.ts"
-Cohesion: 0.27
-Nodes (8): clampMomentum(), decayMomentum(), MOMENTUM_MAX, MOMENTUM_MIN, MOMENTUM_RISK_NUDGE_CAP, momentumDelta(), MomentumEvent, momentumRiskNudge()
+Cohesion: 0.36
+Nodes (6): clampMomentum(), MOMENTUM_MAX, MOMENTUM_MIN, MOMENTUM_RISK_NUDGE_CAP, MomentumEvent, momentumRiskNudge()
 
-### Community 150 - "battleTraits.ts"
-Cohesion: 0.43
-Nodes (5): BATTLE_SCARRED_TRAIT, evaluateBattleTraits(), hasTrait(), severeInjuryCount(), VETERAN_TRAIT
+### Community 150 - "spar/[chickenId]/page.tsx"
+Cohesion: 0.18
+Nodes (10): handleReplayEnd(), clampStepDelay(), COMMAND_LABEL, Phase, Snapshot, SparPage(), StartResponse, StepResponse (+2 more)
 
 ### Community 151 - "LiveCombatV2Session"
-Cohesion: 0.18
-Nodes (13): POST(), POST(), POST(), createBattleSession(), createTournamentBattleSession(), endBattleSession(), getTournamentBattleSession(), sessions (+5 more)
+Cohesion: 0.35
+Nodes (7): POST(), POST(), createBattleSession(), createTournamentBattleSession(), sessions, tournamentSessionMeta, LiveCombatV2Session
 
 ### Community 152 - "[bossId]/fight/[sessionId]/step/route.ts"
-Cohesion: 0.20
-Nodes (11): POST(), StepBody, BossFightEntry, endBossFightSession(), getBossFightSession(), sessions, PveError, PveErrorCode (+3 more)
+Cohesion: 0.27
+Nodes (9): POST(), StepBody, BossFightEntry, createBossFightSession(), endBossFightSession(), getBossFightSession(), sessions, finishBossFight() (+1 more)
 
-### Community 153 - "mentalState.ts"
-Cohesion: 0.43
-Nodes (5): applyMentalState(), clamp01(), deriveMentalState(), MentalState, MentalStateInput
+### Community 153 - "combat/injuries.ts"
+Cohesion: 0.24
+Nodes (8): createInjuryRecord(), CRITICAL_HIT_ZONES, nextInjuryId(), RECOVERY_TURNS, Rng, rollCriticalInjury(), rollInjurySeverity(), SEVERITY_LABELS
 
 ### Community 154 - "pve/types.ts"
 Cohesion: 0.19
 Nodes (10): CampaignMap(), NODE_ICON, Props, BossPreviewBars, BossProgressView, BossRewardConfig, CampaignProgressView, PublicPveBoss (+2 more)
 
-### Community 155 - "effort.ts"
-Cohesion: 0.57
-Nodes (5): effortHeadroom(), MAX_TRAINING_EFFORT_PER_STAT, MAX_TRAINING_EFFORT_TOTAL, spendEffort(), totalSpent()
+### Community 155 - "rehab.ts"
+Cohesion: 0.22
+Nodes (8): isTrainingLocked(), LOCATION_LOCKS, REHAB_LABEL, REHAB_LADDER, rehabStage(), trainingLocks(), InjuryLocation, RehabStage
 
-### Community 156 - "StatBlock"
-Cohesion: 0.11
-Nodes (24): POST(), POST(), canTrain(), seedEgg(), zeroBlock(), seedChicken(), statBlock(), seedChicken() (+16 more)
+### Community 156 - "training/service.ts"
+Cohesion: 0.19
+Nodes (16): POST(), seedChicken(), statBlock(), effortHeadroom(), MAX_TRAINING_EFFORT_PER_STAT, MAX_TRAINING_EFFORT_TOTAL, REDISTRIBUTE_CREDITS_PER_POINT, redistributeEffort() (+8 more)
 
 ### Community 157 - "TournamentPage"
 Cohesion: 0.36
@@ -808,9 +813,9 @@ Nodes (13): 5. Screen 3 — Boss Encounter, Archetype, Boss description, Fight h
 Cohesion: 0.18
 Nodes (11): 31. UX Principle, Battle, Boss encounter, Campaign map, Campaign return, Entrance, Fighter selection, Progression (+3 more)
 
-### Community 160 - "backfill-color-jitter.ts"
-Cohesion: 0.73
-Nodes (5): jitterColorScheme(), backfillChickens(), backfillEggs(), backfillMarketListings(), main()
+### Community 160 - "chickens/route.ts"
+Cohesion: 0.39
+Nodes (5): GET(), GET(), POST(), generateUniqueRandomChicken(), experienceInsights()
 
 ### Community 161 - "5. Campaign Node Types"
 Cohesion: 0.20
@@ -820,25 +825,33 @@ Nodes (10): 5. Campaign Node Types, Challenge, Championship, Gatekeeper, Invitat
 Cohesion: 0.20
 Nodes (10): 10. Screen 8 — Arena Entrance / Boss Intro, Beat 1, Beat 2, Beat 3, Beat 4, Beat 5, Beat 6, Beat 7 (+2 more)
 
-### Community 163 - "pve/route.ts"
-Cohesion: 0.60
-Nodes (3): POST(), isDevModeEnabled(), DevPveAction
+### Community 163 - "startBossFight"
+Cohesion: 0.22
+Nodes (10): POST(), POST(), isDevModeEnabled(), getBoss(), PveError, PveErrorCode, STATUS_BY_CODE, DevPveAction (+2 more)
 
-### Community 165 - "coop/page.tsx"
-Cohesion: 0.19
-Nodes (5): CoopHUD(), CoopMode, CoopPage(), VillageView(), PageHeader()
+### Community 165 - "ManageView.tsx"
+Cohesion: 0.16
+Nodes (13): CoopFilters(), STATUS_OPTIONS, CoopHUD(), CoopMode, EggGrid(), ManageView(), VillageView(), CoopFilterState (+5 more)
 
 ### Community 166 - "liveSession.ts"
 Cohesion: 0.11
 Nodes (20): COMBAT_DT, COMBAT_TICK_RATE, COMBAT_VERSION, COMMAND_BUFFER_TICKS, createMatch(), freeze(), queueCommand(), validateNumbers() (+12 more)
+
+### Community 167 - "InjuryRecord"
+Cohesion: 0.43
+Nodes (3): battleAftermath, clamp(), InjuryRecord
 
 ### Community 168 - "3. Screen 1 — PvE Campaign Home"
 Cohesion: 0.22
 Nodes (9): 3. Screen 1 — PvE Campaign Home, Bottom campaign panel, Center content, Current node treatment, Example, Full-screen background, Layout, Purpose (+1 more)
 
 ### Community 169 - "campaign.ts"
-Cohesion: 0.32
-Nodes (6): campaignPresentation(), circuitFor(), circuitForBoss(), quotes, titles, PveOpponentPresentation
+Cohesion: 0.17
+Nodes (11): bossPreview(), PVE_BOSS_LIST, PVE_BOSSES, campaignPresentation(), circuitFor(), circuitForBoss(), quotes, titles (+3 more)
+
+### Community 170 - "layout.tsx"
+Cohesion: 0.29
+Nodes (5): bangers, cinzel, geistMono, geistSans, metadata
 
 ### Community 171 - "8. Boss Archetypes as Combat Lessons"
 Cohesion: 0.25
@@ -853,8 +866,8 @@ Cohesion: 0.29
 Nodes (7): 25. Background Strategy, Boss encounter, Campaign map, Championship, Fighter selection, Results, Tale of the Tape
 
 ### Community 174 - "seed-god-chickens.ts"
-Cohesion: 0.15
-Nodes (17): CALM, IRON_STAMINA, inheritTraits(), pickWeightedTrait(), RARITY_WEIGHT, Rng, TRAIT_POOL, MutationGenome (+9 more)
+Cohesion: 0.16
+Nodes (14): CALM, IRON_STAMINA, pickWeightedTrait(), RARITY_WEIGHT, Rng, TRAIT_POOL, Trait, TraitRarity (+6 more)
 
 ### Community 175 - "6. Circuit / Chapter Presentation"
 Cohesion: 0.33
@@ -920,9 +933,9 @@ Nodes (4): 9. Screen 7 — Tale of the Tape, CTA, Layout, Purpose
 Cohesion: 0.67
 Nodes (3): 12. Screen 10 — Victory / Defeat Result, Defeat, Victory
 
-### Community 199 - "tournament/[chickenId]/page.tsx"
-Cohesion: 0.15
-Nodes (12): LiveSnapshot, Phase, PLACEMENT_LABEL, TournamentView, CircuitStep, eligibility(), TournamentCircuitPage(), TournamentAction() (+4 more)
+### Community 199 - "tournament/page.tsx"
+Cohesion: 0.27
+Nodes (7): CircuitStep, eligibility(), TournamentCircuitPage(), TournamentAction(), TournamentShell(), TOURNAMENT_DEFINITIONS, TournamentDefinition
 
 ### Community 200 - "13. Ranch Journal"
 Cohesion: 0.29
@@ -944,9 +957,9 @@ Nodes (7): 8. Road to Glory / Career Objective, Challenge pending, Championship 
 Cohesion: 0.33
 Nodes (6): 11. Contextual Quick Actions, After a fight, Eggs ready, Fighter ready, Injury present, Tournament active
 
-### Community 205 - "cameraDirector.ts"
-Cohesion: 0.22
-Nodes (8): BattleDebugOverlay(), makeDebugState(), CameraDirectorOpts, CameraImpulse, CueFraming, CUES, NEUTRAL, Vec3
+### Community 205 - "intensity.ts"
+Cohesion: 0.60
+Nodes (3): applyIntensity(), INTENSITY_MULTIPLIERS, IntensityMultiplier
 
 ### Community 208 - "21. Empty States"
 Cohesion: 0.40
@@ -960,33 +973,29 @@ Nodes (4): 19. Responsive Behavior, Desktop, Mobile, Tablet
 Cohesion: 0.67
 Nodes (3): 2. Non-Negotiable Requirement — NO PLACEHOLDERS, Absolutely no placeholder gameplay data, Missing data
 
-### Community 217 - "balance-sim.ts"
-Cohesion: 0.39
-Nodes (7): ActionTally, buildFighter(), formatMix(), N, runMatchup(), seededRng(), tallyActions()
-
 ### Community 218 - "seed-monochrome-pairs.ts"
 Cohesion: 0.48
 Nodes (6): balancedStatBlock(), baselinePhysicalBlock(), main(), PAIRS, solidColorScheme(), zeroStatBlock()
 
 ## Knowledge Gaps
 - **1436 isolated node(s):** `StepBody`, `Body`, `DevAction`, `BetBody`, `ResolveBody` (+1431 more)
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 1604 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
-- **33 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 1603 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+- **32 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `Chicken` connect `lib/types.ts` to `add`, `pve/service.ts`, `BattleCanvas.tsx`, `pveEncounters.ts`, `chickenGenerator.ts`, `chicken/[chickenId]/page.tsx`, `clinic/page.tsx`, `live/page.tsx`, `ChickenViewer.tsx`, `BattleStage3D.tsx`, `LiveCombatV2Session`, `[bossId]/fight/[sessionId]/step/route.ts`, `marketplace.ts`, `liveCommentary.ts`, `StatBlock`, `chickens/[id]/fight/[sessionId]/step/route.ts`, `simulator.ts`, `facilities/service.ts`, `ChickenPhysicsRig.tsx`, `coop/page.tsx`, `behavior.ts`, `liveSession.ts`, `BattleSession`, `MatchupScreen.tsx`, `coopVillage.ts`, `medical/service.ts`, `battleReport.ts`, `recovery/engine.ts`, `battle/[chickenId]/page.tsx`, `validation-gate-sim.ts`, `thumbnailCache.ts`, `tournament/service.ts`, `tournament.ts`, `rarity.ts`, `effectiveStat`, `ChickenCard.tsx`, `getOrCreatePlayer`, `combat.ts`, `fight/[chickenId]/page.tsx`, `training.ts`, `training/page.tsx`, `tournament/[chickenId]/page.tsx`, `ContinuousBattle.tsx`, `balance-sim.ts`, `testHelpers.ts`?**
-  _High betweenness centrality (0.043) - this node is a cross-community bridge._
+- **Why does `Chicken` connect `Chicken` to `add`, `pve/service.ts`, `BattleCanvas.tsx`, `combat.ts`, `chickenGenerator.ts`, `chicken/[chickenId]/page.tsx`, `ConditionMonitor.tsx`, `live/page.tsx`, `ChickenViewer.tsx`, `spar/[chickenId]/page.tsx`, `BattleStage3D.tsx`, `LiveCombatV2Session`, `[bossId]/fight/[sessionId]/step/route.ts`, `simulator.ts`, `chickens/[id]/fight/[sessionId]/step/route.ts`, `chickens/route.ts`, `facilities/service.ts`, `ChickenPhysicsRig.tsx`, `ManageView.tsx`, `combat/state.ts`, `liveSession.ts`, `BattleSession`, `MatchupScreen.tsx`, `coopVillage.ts`, `medical.test.ts`, `battleReport.ts`, `validation-gate-sim.ts`, `thumbnailCache.ts`, `tournament/service.ts`, `tournament.ts`, `rarity.ts`, `medical/service.ts`, `growth.ts`, `getOrCreatePlayer`, `fight/[chickenId]/page.tsx`, `training.ts`, `training/page.tsx`, `tournament/page.tsx`, `ContinuousBattle.tsx`, `tournament/[chickenId]/page.tsx`, `lib/types.ts`, `testHelpers.ts`?**
+  _High betweenness centrality (0.040) - this node is a cross-community bridge._
 - **Why does `AudioEngine` connect `AudioEngine` to `BattleCanvas.tsx`, `ContinuousBattle.tsx`?**
   _High betweenness centrality (0.013) - this node is a cross-community bridge._
 - **What connects `StepBody`, `Body`, `DevAction` to the rest of the system?**
   _1436 weakly-connected nodes found - possible documentation gaps or missing edges._
 - **Should `add` be split into smaller, more focused modules?**
-  _Cohesion score 0.0547945205479452 - nodes in this community are weakly interconnected._
-- **Should `pve/service.ts` be split into smaller, more focused modules?**
-  _Cohesion score 0.14193548387096774 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.05395582890690523 - nodes in this community are weakly interconnected._
 - **Should `BattleCanvas.tsx` be split into smaller, more focused modules?**
-  _Cohesion score 0.07474747474747474 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.07751937984496124 - nodes in this community are weakly interconnected._
+- **Should `combat.ts` be split into smaller, more focused modules?**
+  _Cohesion score 0.08350951374207188 - nodes in this community are weakly interconnected._
 - **Should `resolution.ts` be split into smaller, more focused modules?**
-  _Cohesion score 0.11494252873563218 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.11397849462365592 - nodes in this community are weakly interconnected._

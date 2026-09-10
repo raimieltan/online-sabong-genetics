@@ -1,7 +1,7 @@
 # Graph Report - rooster-arena  (2026-09-10)
 
 ## Corpus Check
-- 382 files · ~923,043 words
+- 382 files · ~924,032 words
 - Verdict: corpus is large enough that graph structure adds value.
 
 ## Summary
@@ -10,7 +10,7 @@
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `549f10b2`
+- Built from commit: `092ed6b5`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 

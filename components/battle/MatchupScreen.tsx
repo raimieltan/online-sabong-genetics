@@ -5,6 +5,7 @@ import { GENETIC_STAT_KEYS } from "@/lib/types";
 import { effectiveStat, type PveEncounterDefinition } from "@/lib/combat";
 import { RARITY_GEM, topRarity } from "@/lib/rarity";
 import { ChickenViewer } from "@/components/chicken3d/ChickenViewer";
+import { normalizeCombatCareer } from "@/lib/combat/evolution";
 
 const STAT_LABEL: Record<GeneticStatKey, string> = {
   power: "Power",
@@ -151,6 +152,10 @@ export function FighterPlate({
 
 function FighterHud({ fighter, corner, record, align }: { fighter: Chicken; corner: string; record: CombatRecord; align: "left" | "right" }) {
   const rarity = topRarity(fighter.traits);
+  const career = normalizeCombatCareer(fighter.combatCareer);
+  const knownTraits = career.evolutionTraits.filter(entry => entry.active).slice(0, 2);
+  const signature = career.signatures.find(entry => entry.developed);
+  const awakeningKnown = career.awakenings.some(entry => entry.unlocked);
   // Both HUDs keep the numeric value at the outside edge, followed by the
   // flexible bar track and a fixed-width label column. The right HUD only
   // differs in text alignment; reordering its grid children would put the
@@ -168,6 +173,9 @@ function FighterHud({ fighter, corner, record, align }: { fighter: Chicken; corn
         <span className="matchup-badge">{rankTitle(record.wins)}</span>
         <span className="matchup-badge">{fighter.fightingStyle}</span>
         <span className="matchup-badge">{record.wins}W · {record.losses}L</span>
+        {knownTraits.map(trait => <span key={trait.id} className="matchup-badge">{trait.name} {trait.level > 1 ? trait.level : ''}</span>)}
+        {signature && <span className="matchup-badge">Signature · {signature.name}</span>}
+        {awakeningKnown && <span className="matchup-badge">Awakening · Unknown</span>}
       </div>
       <div className="mt-4 space-y-1.5">
         {GENETIC_STAT_KEYS.map((stat) => {

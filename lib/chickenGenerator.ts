@@ -1,6 +1,7 @@
 import { BREED_PRESETS, pickRandomBreed, type BreedId } from "./breeds";
 import { deriveBehaviorProfile } from "./combat/behavior";
 import { emptyExperience } from "./combat/experience";
+import { emptyCombatCareer } from "./combat/evolution";
 import { inheritPhysicalTrait, jitterColorScheme } from "./genetics";
 import { defaultTrainingState } from "./training/limits";
 import {
@@ -250,6 +251,7 @@ export function createChicken(input: CreateChickenInput): Chicken {
     experience: emptyExperience(),
     condition: 100,
     injuries: [],
+    combatCareer: emptyCombatCareer(),
     trainingState: defaultTrainingState(),
   };
 }

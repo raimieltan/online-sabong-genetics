@@ -70,6 +70,10 @@ export class BattleDirector {
       Object.assign(next, phaseState("clashing"));
     } else if (event.type === "CLASH_ENDED") {
       Object.assign(next, phaseState("breaking"));
+    } else if (event.type === "AWAKENING_STARTED") {
+      Object.assign(next, { intensity: 4, hud: "CINEMATIC", camera: "critical", focus: attacker, crowd: 1, duckAudio: true, hitStopSeconds: 0.12 });
+    } else if (event.type === "SIGNATURE_TECHNIQUE") {
+      Object.assign(next, { intensity: 3, hud: "CINEMATIC", camera: "attack", focus: attacker, crowd: 0.9, duckAudio: true });
     } else if (event.type === "ATTACK_STARTED" || event.type === "ATTACK_ACTIVE") {
       Object.assign(next, { intensity: 2, hud: "CINEMATIC", camera: "attack", focus: attacker, crowd: 0.66 });
     } else if (event.type === "ATTACK_LANDED" || event.type === "COUNTER_LANDED" || event.type === "DAMAGE") {

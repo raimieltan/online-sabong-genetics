@@ -1,5 +1,6 @@
 import { battleAftermath } from "./combat/aftermath";
 import { evaluateBattleTraits } from "./combat/battleTraits";
+import { evolveCombatCareer } from "./combat/evolution";
 import { deriveBehaviorProfile, driftBehaviorProfile } from "./combat/behavior";
 import { rollHitZone } from "./combat/resolution";
 import { MAX_TURNS as SIM_MAX_TURNS } from "./combat/simulator";
@@ -11,6 +12,7 @@ import type {
   BehavioralProfile,
   Chicken,
   CombatExperience,
+  CombatCareerState,
   CombatRecord,
   CombatResult,
   InjuryRecord,
@@ -83,6 +85,7 @@ export type FightOutcomeUpdate = {
   stress: number;
   battleHardening: number;
   traits: Trait[];
+  combatCareer: CombatCareerState;
   /** Traits newly earned by this fight (spec §43-44) — subset of `traits`, empty on most fights. */
   newTraits: Trait[];
 };
@@ -127,7 +130,10 @@ export function applyFightOutcome(chicken: Chicken, result: CombatResult): Fight
   const injuries = [...(chicken.injuries ?? []), ...newInjuries];
   const aftermath = battleAftermath(chicken, result, chicken.id, wasInjured, newInjuries);
   const earnedTraits = evaluateBattleTraits(chicken, aftermath, injuries);
-  const traits = earnedTraits.length ? [...chicken.traits, ...earnedTraits] : chicken.traits;
+  const evolution = evolveCombatCareer(chicken, result.combatCareerGained?.[chicken.id]);
+  const allEarnedTraits = [...earnedTraits, ...evolution.newTraits];
+  const replacedIds = new Set(evolution.newTraits.map((trait) => trait.id));
+  const traits = allEarnedTraits.length ? [...chicken.traits.filter((trait) => !replacedIds.has(trait.id)), ...allEarnedTraits] : chicken.traits;
 
   return {
     record: {
@@ -149,6 +155,7 @@ export function applyFightOutcome(chicken: Chicken, result: CombatResult): Fight
     stress: aftermath.stress,
     battleHardening: aftermath.battleHardening,
     traits,
-    newTraits: earnedTraits,
+    combatCareer: evolution.career,
+    newTraits: allEarnedTraits,
   };
 }

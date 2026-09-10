@@ -55,6 +55,7 @@ model Chicken {
   morale        Int     @default(75)
   confidence    Int     @default(50)
   battleHardening Int   @default(0)
+  combatCareer   Json    @default("{\"version\":1,\"fightsProcessed\":0,\"telemetry\":{},\"evolutionTraits\":[],\"signatures\":[],\"rivalries\":[],\"awakenings\":[],\"recentDevelopment\":[]}")
   trainingState Json    @default("{\"trainingPoints\":100,\"trainingFatigue\":0,\"history\":[]}")
   createdAt   DateTime @default(now())
 }

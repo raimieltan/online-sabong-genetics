@@ -165,6 +165,7 @@ async function persistRound(playerId: string, tournamentId: string, playerResult
         stress: outcome.stress,
         battleHardening: outcome.battleHardening,
         traits: outcome.traits,
+        combatCareer: outcome.combatCareer,
       },
     });
 

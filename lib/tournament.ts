@@ -211,6 +211,7 @@ function advanceEntrantChicken(chicken: Chicken, result: CombatResult): Chicken 
     stress: outcome.stress,
     battleHardening: outcome.battleHardening,
     traits: outcome.traits,
+    combatCareer: outcome.combatCareer,
   };
 }
 

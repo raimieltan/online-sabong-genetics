@@ -1,4 +1,4 @@
-import type { CombatExperience, CombatExperienceCategory, CombatResult, InjuryRecord, Trait } from "../types";
+import type { CombatDevelopmentNotice, CombatExperience, CombatExperienceCategory, CombatResult, InjuryRecord, Trait } from "../types";
 import { COMBAT_EXPERIENCE_CATEGORIES } from "../types";
 import type { FightOutcomeUpdate } from "../combat";
 import { matchupInsight } from "../training/insights";
@@ -16,6 +16,8 @@ export type BattleReport = {
   insight: string | null;
   /** Traits newly earned this fight (spec §43-44), e.g. Veteran, Battle-Scarred. */
   newTraits: Trait[];
+  development?: CombatDevelopmentNotice[];
+  telemetryGained?: Record<string, number>;
 };
 
 function nonZeroCategories(gained: CombatExperience | undefined): Partial<Record<CombatExperienceCategory, number>> {
@@ -53,5 +55,7 @@ export function buildBattleReport(
     conditionDelta: result.conditionDelta?.[chickenId] ?? 0,
     insight: matchupInsight(result, chickenId),
     newTraits: outcome.newTraits,
+    development: outcome.combatCareer.recentDevelopment,
+    telemetryGained: Object.fromEntries(Object.entries(result.combatCareerGained?.[chickenId]?.telemetry ?? {}).filter(([, value]) => (value ?? 0) > 0)) as Record<string, number>,
   };
 }

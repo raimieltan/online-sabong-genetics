@@ -474,9 +474,9 @@
     "semantic_hash": ""
   },
   "components/chicken3d/ChickenModel.tsx": {
-    "mtime": 1789037339.1769822,
-    "seen": 1789037372.407477,
-    "ast_hash": "bb9955883c01ded1dbebbb065b6fe90d",
+    "mtime": 1789039600.9003332,
+    "seen": 1789039675.749877,
+    "ast_hash": "da3ca5df95023b77a657ede908923b95",
     "semantic_hash": ""
   },
   "components/chicken3d/ChickenPhysicsRig.tsx": {
@@ -768,9 +768,9 @@
     "semantic_hash": "b9e3fa0037f694233cf77d74f5908705"
   },
   "lib/animation/ProceduralAnimationController.ts": {
-    "mtime": 1789037577.8872933,
-    "seen": 1789037618.5054889,
-    "ast_hash": "76d645ee9ad479ef42dd1274d732634b",
+    "mtime": 1789037812.375479,
+    "seen": 1789037850.3863611,
+    "ast_hash": "a25116daf12ba1f679947aa9dcbeaa40",
     "semantic_hash": ""
   },
   "lib/animation/animations/attacks.ts": {
@@ -786,9 +786,9 @@
     "semantic_hash": "a70b40d2027962f065f7ed7ab84fdea2"
   },
   "lib/animation/animations/helpers.ts": {
-    "mtime": 1789037598.2168784,
-    "seen": 1789037618.505589,
-    "ast_hash": "74860719fa664522b7e98e47a9a37fd0",
+    "mtime": 1789037758.5994458,
+    "seen": 1789037850.3869472,
+    "ast_hash": "dc701ef341932d13dd6bce47044c2c7e",
     "semantic_hash": ""
   },
   "lib/animation/animations/hitReactions.ts": {
@@ -870,9 +870,9 @@
     "semantic_hash": ""
   },
   "lib/animation/layers.ts": {
-    "mtime": 1789037114.1921628,
-    "seen": 1789037142.4313788,
-    "ast_hash": "e6239961e766a245a40a816c06a4d623",
+    "mtime": 1789038350.045377,
+    "seen": 1789038382.088782,
+    "ast_hash": "81765820605d2f890faf0fca88b487fe",
     "semantic_hash": ""
   },
   "lib/animation/math.ts": {
@@ -1296,9 +1296,9 @@
     "semantic_hash": "ee064970af3a8483c80c1346617b5913"
   },
   "public/3d-chicken/roosterGenome.ts": {
-    "mtime": 1789037114.3437202,
-    "seen": 1789037142.438606,
-    "ast_hash": "569c1f6800ad1971bcbb6773870fdd75",
+    "mtime": 1789039601.7907016,
+    "seen": 1789039675.757338,
+    "ast_hash": "838191ec56d03421de0afa4a140c12d9",
     "semantic_hash": ""
   },
   "public/new-chickens/build_rooster.mjs": {
@@ -1374,9 +1374,9 @@
     "semantic_hash": ""
   },
   "docs/genetics-training-combat-overview.md": {
-    "mtime": 1789037114.4117525,
-    "seen": 1789037142.439253,
-    "ast_hash": "89938c3fb3f2d5496c5cd0826a1e3bad",
+    "mtime": 1789039603.6766655,
+    "seen": 1789039675.758113,
+    "ast_hash": "d743a430c689eea44396f586a54b0def",
     "semantic_hash": ""
   },
   "docs/rooster-training-medical-v3-progress.md": {
@@ -1446,9 +1446,9 @@
     "semantic_hash": ""
   },
   "docs/superpowers/specs/2026-09-07-rig-genome-integration-design.md": {
-    "mtime": 1789037114.538181,
-    "seen": 1789037142.439666,
-    "ast_hash": "2849e244da8d07bbae81b137a2677b6b",
+    "mtime": 1789039603.141575,
+    "seen": 1789039675.758671,
+    "ast_hash": "b19e19cd95e10c35e414784e2c173ca1",
     "semantic_hash": ""
   },
   "docs/superpowers/specs/2026-09-07-training-phase1-foundation-design.md": {
@@ -1470,9 +1470,9 @@
     "semantic_hash": ""
   },
   "public/3d-chicken/rooster_viewer.html": {
-    "mtime": 1789037114.269627,
-    "seen": 1789037142.439919,
-    "ast_hash": "36b00334d268c5406b61aaf35a1ee0c5",
+    "mtime": 1789039601.2997668,
+    "seen": 1789039675.75899,
+    "ast_hash": "e90ff2e0be22ef068af8d82d1d1f755b",
     "semantic_hash": ""
   },
   "public/background/arena-background.png": {
@@ -2058,9 +2058,9 @@
     "semantic_hash": ""
   },
   "lib/animation/animations/aerial.ts": {
-    "mtime": 1789037475.515006,
-    "seen": 1789037513.243202,
-    "ast_hash": "0fc28c8f0f49bb12aa2b0dae74b4253e",
+    "mtime": 1789037812.2162864,
+    "seen": 1789037850.3863711,
+    "ast_hash": "f0121aded915c6f2876e85110307fbc0",
     "semantic_hash": ""
   },
   "lib/combat-v2/aerial.ts": {
@@ -2274,9 +2274,9 @@
     "semantic_hash": ""
   },
   "docs/animations/rooster-anims.md": {
-    "mtime": 1789036965.0044045,
-    "seen": 1789037142.439071,
-    "ast_hash": "1cddca9803cfccbf8c69eec9f3b060d0",
+    "mtime": 1789039602.1631975,
+    "seen": 1789039675.757897,
+    "ast_hash": "130f1ff8a98bd4e11b3dbeeb182e4ba7",
     "semantic_hash": ""
   }
 }

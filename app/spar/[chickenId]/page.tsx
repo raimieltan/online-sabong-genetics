@@ -52,6 +52,8 @@ function clampStepDelay(durationMs: number): number {
 
 const COMMAND_LABEL: Record<Exclude<PlayerCommand, "FORCE_ENGAGEMENT">, { label: string; emoji: string }> = {
   PRESS: { label: "Press", emoji: "⚡" },
+  COUNTER: { label: "Counter", emoji: "↩️" },
+  GUARD: { label: "Guard", emoji: "🪶" },
   WAIT: { label: "Wait", emoji: "🛡️" },
   RECOVER: { label: "Recover", emoji: "💨" },
 };

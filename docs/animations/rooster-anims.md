@@ -1,4 +1,4 @@
-Implement a full animation pass for `rooster_rigged_corrected_symmetry.glb`.
+Implement a full animation pass for `rooster_rigged_rebuilt_skinned_wingfans.glb`.
 
 The rooster now uses a clean symmetrical wing rig:
 

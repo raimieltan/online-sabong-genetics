@@ -8,6 +8,8 @@ export interface AerialRuntime {
   recoil?: { tick: number; zone: string; strength: number; side: number };
 }
 export type TacticalMode = 'balanced' | 'pressure' | 'defensive' | 'counter' | 'recover' | 'all_in';
+export type CommandCompliance = 'ignore' | 'resist' | 'partial' | 'obey' | 'commit';
+export type AwakeningType = 'unbreakable' | 'berserker' | 'flow-state' | 'second-wind' | 'apex';
 export type FighterState = 'neutral' | 'advancing' | 'retreating' | 'circling' | 'feinting' | 'winding_up' | 'attacking' | 'defending' | 'evading' | 'countering' | 'recovering' | 'staggered' | 'down' | 'finished';
 export type EngagementPhase = 'stalking' | 'committing' | 'clashing' | 'breaking' | 'resetting';
 export type Behavior = Record<'aggression' | 'caution' | 'patience' | 'persistence' | 'riskTolerance' | 'counterPreference' | 'pressurePreference' | 'recoveryPreference', number>;
@@ -21,6 +23,12 @@ export interface FighterCombatSnapshot {
   readonly experience: number;
   readonly condition: number;
   readonly maxHealth: number;
+  readonly evolution: Readonly<{
+    traitLevels: Readonly<Record<string, number>>;
+    signatures: readonly ('relentless-rush' | 'sky-counter' | 'ghost-step' | 'second-wind')[];
+    awakenings: readonly AwakeningType[];
+    rivalryFamiliarity: number;
+  }>;
 }
 export interface ActionDefinition {
   readonly id: string;
@@ -58,6 +66,10 @@ export interface FighterRuntimeState {
   currentAction?: ActionRuntime;
   aerial?: AerialRuntime;
   tacticalMode: TacticalMode;
+  coaching?: { command: TacticalMode; compliance: CommandCompliance; strength: number; issuedTick: number; exchangeTick: number; successful: boolean };
+  awakening?: { type: AwakeningType; startedTick: number };
+  awakeningAttempted: boolean;
+  lastSignatureTick: number;
   nextDecisionTick: number;
   lastCommandTick: number;
   lastSequence: number;
@@ -71,7 +83,7 @@ export interface FighterRuntimeState {
   utilities: Record<string, number>;
 }
 export interface CombatCommand { playerId: string; fighterId: string; command: TacticalMode; issuedTick: number; effectiveTick: number; sequence: number }
-export interface CombatEvent { type: 'ENGAGEMENT_CHANGED' | 'CLASH_STARTED' | 'CLASH_ENDED' | 'COLLISION' | 'STATE_CHANGED' | 'INTENT_CHANGED' | 'TELL_STARTED' | 'TELL_DETECTED' | 'ATTACK_STARTED' | 'ATTACK_ACTIVE' | 'ATTACK_MISSED' | 'ATTACK_LANDED' | 'BLOCK' | 'EVADE' | 'COUNTER_LANDED' | 'DAMAGE' | 'STAGGER' | 'COMMAND' | 'MATCH_FINISHED'; tick: number; fighterId: string; targetId?: string; actionId?: string; value?: number; detail?: string }
+export interface CombatEvent { type: 'ENGAGEMENT_CHANGED' | 'CLASH_STARTED' | 'CLASH_ENDED' | 'COLLISION' | 'STATE_CHANGED' | 'INTENT_CHANGED' | 'TELL_STARTED' | 'TELL_DETECTED' | 'ATTACK_STARTED' | 'ATTACK_ACTIVE' | 'ATTACK_MISSED' | 'ATTACK_LANDED' | 'BLOCK' | 'EVADE' | 'COUNTER_LANDED' | 'DAMAGE' | 'STAGGER' | 'COMMAND' | 'COMMAND_RESPONSE' | 'SIGNATURE_TECHNIQUE' | 'AWAKENING_STARTED' | 'MATCH_FINISHED'; tick: number; fighterId: string; targetId?: string; actionId?: string; value?: number; detail?: string }
 export interface MatchConfig { id: string; version: string; seed: number; fighterA: FighterCombatSnapshot; fighterB: FighterCombatSnapshot; arena: { radius: number }; maxTicks: number; commands?: CombatCommand[] }
 export interface MatchResult { winnerId: string | null; finishReason: 'KO' | 'double_KO' | 'time_limit'; durationTicks: number }
 export interface CombatMatchState { config: MatchConfig; tick: number; phase: 'active' | 'paused' | 'finished'; rngState: number; fighters: [FighterRuntimeState, FighterRuntimeState]; commands: CombatCommand[]; eventBuffer: CombatEvent[]; lastContactTick: number; result?: MatchResult }

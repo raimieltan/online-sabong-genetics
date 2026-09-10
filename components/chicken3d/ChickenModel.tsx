@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type { RefObject } from "react";
 import * as THREE from "three";
 import { useFrame } from "@react-three/fiber";
@@ -17,10 +17,72 @@ import type { Chicken, ChickenColorScheme, PhysicalBlock } from "@/lib/types";
 // geometry, so a hen is rendered as the same rig with a sex-specific pose
 // override (see applyHenOverride) rather than a different model.
 /** Canonical symmetric T-pose rig; all procedural poses are additive to its bind pose. */
-const MODEL_PATH = "/3d-chicken/rooster_rigged_corrected_symmetry.glb";
+const MODEL_PATH = "/3d-chicken/rooster_rigged_rebuilt_skinned_wingfans.glb";
 
 /** Bone scaled by "Giant" when the mutation is expressed. */
 const GIANT_SCALE = 1.4;
+
+const WING_TRAIL_POINTS = 64;
+
+function makeWingTrail(color: number) {
+  const positions = new Float32Array(WING_TRAIL_POINTS * 3);
+  const geometry = new THREE.BufferGeometry();
+  const attribute = new THREE.BufferAttribute(positions, 3);
+  attribute.setUsage(THREE.DynamicDrawUsage);
+  geometry.setAttribute("position", attribute);
+  geometry.setDrawRange(0, 0);
+  const material = new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.9, depthTest: false });
+  const line = new THREE.Line(geometry, material);
+  line.frustumCulled = false;
+  line.renderOrder = 1000;
+  return {
+    positions,
+    geometry,
+    material,
+    line,
+    samples: Array.from({ length: WING_TRAIL_POINTS }, () => new THREE.Vector3()),
+  };
+}
+
+class WingTrajectoryRecorder {
+  readonly left = makeWingTrail(0x45d8ff);
+  readonly right = makeWingTrail(0xffb13b);
+  private cursor = 0;
+  private count = 0;
+  private accumulator = 0;
+
+  record(leftTip: THREE.Object3D, rightTip: THREE.Object3D, dt: number) {
+    this.accumulator += dt;
+    if (this.accumulator < 1 / 60) return;
+    this.accumulator %= 1 / 60;
+
+    leftTip.getWorldPosition(this.left.samples[this.cursor]);
+    rightTip.getWorldPosition(this.right.samples[this.cursor]);
+    this.cursor = (this.cursor + 1) % WING_TRAIL_POINTS;
+    this.count = Math.min(WING_TRAIL_POINTS, this.count + 1);
+
+    for (const trail of [this.left, this.right]) {
+      for (let i = 0; i < this.count; i++) {
+        const sampleIndex = (this.cursor - this.count + i + WING_TRAIL_POINTS) % WING_TRAIL_POINTS;
+        const point = trail.samples[sampleIndex];
+        const p = i * 3;
+        trail.positions[p] = point.x;
+        trail.positions[p + 1] = point.y;
+        trail.positions[p + 2] = point.z;
+      }
+      trail.geometry.setDrawRange(0, this.count);
+      (trail.geometry.getAttribute("position") as THREE.BufferAttribute).needsUpdate = true;
+      trail.geometry.computeBoundingSphere();
+    }
+  }
+
+  dispose() {
+    this.left.geometry.dispose();
+    this.left.material.dispose();
+    this.right.geometry.dispose();
+    this.right.material.dispose();
+  }
+}
 
 /** All-1 baseline across the 18-trait genome, for callers that don't pass `physical`. */
 const DEFAULT_PHYSICAL_BLOCK: PhysicalBlock = {
@@ -353,6 +415,7 @@ export function ChickenModel({
   opponentPos,
   facing,
   basePosition = [0, 0, 0],
+  debugWingTrajectory,
 }: {
   colorScheme: Chicken["colorScheme"];
   sex: Chicken["sex"];
@@ -368,6 +431,8 @@ export function ChickenModel({
   /** Which way the fighter should face when `combatAnim` drives it (head points toward the opponent). */
   facing?: "left" | "right";
   basePosition?: [number, number, number];
+  /** Draw ~1 second of each wing tip's world-space path. Also enabled by ?debugWingTrail. */
+  debugWingTrajectory?: boolean;
 }) {
   const { scene } = useGLTF(MODEL_PATH);
   const group = useRef<THREE.Group>(null);
@@ -444,6 +509,20 @@ export function ChickenModel({
   const lastIntentKey = useRef<string>("");
   const prevOffset = useRef({ x: 0, y: 0, z: 0, valid: false });
   const scratchVec = useRef(new THREE.Vector3());
+  const showWingTrajectory = debugWingTrajectory ?? (
+    typeof window !== "undefined" && new URLSearchParams(window.location.search).has("debugWingTrail")
+  );
+  const wingTrails = useMemo(() => new WingTrajectoryRecorder(), []);
+
+  useEffect(() => () => wingTrails.dispose(), [wingTrails]);
+
+  const recordWingTrails = (dt: number) => {
+    if (!showWingTrajectory) return;
+    const leftTip = clonedScene.bones.WingL_Tip;
+    const rightTip = clonedScene.bones.WingR_Tip;
+    if (!leftTip || !rightTip) return;
+    wingTrails.record(leftTip, rightTip, dt);
+  };
 
   useFrame((state, delta) => {
     if (!group.current) return;
@@ -515,6 +594,7 @@ export function ChickenModel({
       }
 
       controller.update({ dt: safeDt, now: state.clock.elapsedTime * 1000, speed, velX, velZ, velY, aimYaw, simulationIntent: intent?.simulationProgress !== undefined ? intent : undefined });
+      recordWingTrails(safeDt);
 
       modelScene.traverse((node) => {
         if (node instanceof THREE.Mesh && node.material instanceof THREE.MeshStandardMaterial) {
@@ -540,12 +620,17 @@ export function ChickenModel({
       velY: 0,
       aimYaw: 0,
     });
+    recordWingTrails(delta);
   });
 
   return (
-    <group ref={group} position={basePosition} dispose={null}>
-      <primitive object={clonedScene.scene} />
-    </group>
+    <>
+      <group ref={group} position={basePosition} dispose={null}>
+        <primitive object={clonedScene.scene} />
+      </group>
+      {showWingTrajectory && <primitive object={wingTrails.left.line} />}
+      {showWingTrajectory && <primitive object={wingTrails.right.line} />}
+    </>
   );
 }
 

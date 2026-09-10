@@ -145,7 +145,7 @@
 
   <div id="loading">
     <div id="drop">
-      <b>Drop rooster_rigged_corrected_symmetry.glb here</b>
+      <b>Drop rooster_rigged_rebuilt_skinned_wingfans.glb here</b>
       <small>or click to browse<br/>23 joints · 5 mutation slots · 7 materials</small>
     </div>
     <input type="file" id="file" accept=".glb" style="display:none" />
@@ -216,7 +216,10 @@
       <div class="section-title">Skeleton</div>
       <button class="action" id="btnWalk">Play walk cycle</button>
       <button class="action" id="btnFight">Play fight animation</button>
-      <button class="action secondary" id="btnBones">Show bones</button>
+      <button class="action" id="btnFlapTest">Play 3-joint flap test</button>
+      <button class="action secondary" id="btnWeights">Show wing weight map</button>
+      <button class="action secondary" id="btnBones">Hide bones</button>
+      <div class="note">Bones are shown by default. In the flap test, verify that shoulder moves first, mid follows, and tip trails/overshoots.</div>
     </div>
 
     <div class="section">
@@ -244,7 +247,6 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
-import { SkeletonHelper } from "three";
 
 /* ---------------------------------------------------------------- */
 /*  Feather colour-pattern shader (unchanged from the earlier rig —   */
@@ -390,6 +392,7 @@ function worldScales(t) {
   };
   for (const s of ["L", "R"]) {
     S[`Wing${s}`]     = [t.wingSpan, t.wingSize, t.wingSize];
+    S[`Wing${s}_Mid`] = [t.wingSpan, t.wingSize, t.wingSize];
     S[`Wing${s}_Tip`] = [t.wingSpan, t.wingSize, t.wingSize];
     S[`Thigh${s}`]    = [t.legThick, t.legLength, t.legThick];
     S[`Shank${s}`]    = [t.legThick, t.legLength, t.legThick];
@@ -470,19 +473,20 @@ scene.add(ground);
 /* ---------------------------------------------------------------- */
 /*  Model                                                            */
 /* ---------------------------------------------------------------- */
-let roosterRoot = null, mats = {}, nodes = {}, bones = {}, parentOf = {}, restLocal = {};
-let skeletonHelper = null;
+let roosterRoot = null, mats = {}, nodes = {}, bones = {}, parentOf = {}, restLocal = {}, restQuat = {}, skinMeshes = [];
+let boneDebug = null, boneLinks = [], boneLinePositions = null, bonePointPositions = null;
 let prev = performance.now();
-let walking = false, walkT = 0, fighting = false, fightT = 0;
+let walking = false, walkT = 0, fighting = false, fightT = 0, flapTesting = false, flapTestT = 0;
+let weightDebug = false;
 
 const loader = new GLTFLoader();
 
 function ingest(gltf) {
   if (roosterRoot) {
     scene.remove(roosterRoot);
-    if (skeletonHelper) { scene.remove(skeletonHelper); skeletonHelper = null; }
+    if (boneDebug) { scene.remove(boneDebug.group); boneDebug = null; }
   }
-  mats = {}; nodes = {}; bones = {}; parentOf = {}; restLocal = {};
+  mats = {}; nodes = {}; bones = {}; parentOf = {}; restLocal = {}; restQuat = {}; skinMeshes = []; weightDebug = false;
   roosterRoot = gltf.scene;
   roosterRoot.traverse((obj) => {
     if (obj.isMesh) {
@@ -491,17 +495,20 @@ function ingest(gltf) {
       obj.frustumCulled = false;
       const add = (m) => { if (m && m.name) mats[m.name] = m; };
       if (Array.isArray(obj.material)) obj.material.forEach(add); else add(obj.material);
+      if (obj.isSkinnedMesh) skinMeshes.push({ mesh: obj, material: obj.material });
     }
     if (obj.name) nodes[obj.name] = obj;
     if (obj.isBone) {
       bones[obj.name] = obj;
       parentOf[obj.name] = (obj.parent && obj.parent.isBone) ? obj.parent.name : null;
       restLocal[obj.name] = obj.position.clone();
+      restQuat[obj.name] = obj.quaternion.clone();
     }
   });
   scene.add(roosterRoot);
   loadingEl.style.display = "none";
   applyAll();
+  showBones();
 }
 
 function loadBuffer(buf) {
@@ -512,7 +519,7 @@ function loadBuffer(buf) {
 }
 
 // If the page is served over http(s) and the GLB sits next to it, just load it.
-fetch("rooster_rigged_corrected_symmetry.glb")
+fetch("rooster_rigged_rebuilt_skinned_wingfans.glb")
   .then(r => r.ok ? r.arrayBuffer() : Promise.reject())
   .then(loadBuffer)
   .catch(() => { /* file:// — fall through to the drop zone */ });
@@ -688,36 +695,123 @@ document.getElementById("btnCopy").addEventListener("click", function () {
 
 document.getElementById("btnWalk").addEventListener("click", function () {
   walking = !walking;
-  if (walking) { fighting = false; document.getElementById("btnFight").textContent = "Play fight animation"; }
+  if (walking) { fighting = false; flapTesting = false; document.getElementById("btnFight").textContent = "Play fight animation"; document.getElementById("btnFlapTest").textContent = "Play 3-joint flap test"; }
   else resetActionPose();
   this.textContent = walking ? "Stop walk cycle" : "Play walk cycle";
 });
 document.getElementById("btnFight").addEventListener("click", function () {
   fighting = !fighting;
-  if (fighting) { walking = false; document.getElementById("btnWalk").textContent = "Play walk cycle"; }
+  if (fighting) { walking = false; flapTesting = false; document.getElementById("btnWalk").textContent = "Play walk cycle"; document.getElementById("btnFlapTest").textContent = "Play 3-joint flap test"; }
   else resetActionPose();
   this.textContent = fighting ? "Stop fight animation" : "Play fight animation";
 });
+document.getElementById("btnFlapTest").addEventListener("click", function () {
+  flapTesting = !flapTesting;
+  if (flapTesting) { walking = false; fighting = false; showBones(); document.getElementById("btnWalk").textContent = "Play walk cycle"; document.getElementById("btnFight").textContent = "Play fight animation"; }
+  else resetActionPose();
+  this.textContent = flapTesting ? "Stop 3-joint flap test" : "Play 3-joint flap test";
+});
+document.getElementById("btnWeights").addEventListener("click", function () {
+  weightDebug = !weightDebug;
+  applyWingWeightMap(weightDebug);
+  this.textContent = weightDebug ? "Hide wing weight map" : "Show wing weight map";
+});
 document.getElementById("btnBones").addEventListener("click", function () {
-  if (skeletonHelper) {
-    scene.remove(skeletonHelper); skeletonHelper = null;
+  if (boneDebug) {
+    scene.remove(boneDebug.group); boneDebug = null;
     this.textContent = "Show bones"; return;
   }
-  let skinned = null;
-  if (roosterRoot) roosterRoot.traverse(o => { if (o.isSkinnedMesh) skinned = o; });
-  if (skinned) {
-    skeletonHelper = new SkeletonHelper(skinned);
-    skeletonHelper.material.linewidth = 2;
-    scene.add(skeletonHelper);
-    this.textContent = "Hide bones";
-  }
+  showBones();
 });
+
+function showBones() {
+  if (boneDebug || !roosterRoot) return;
+  boneLinks = Object.keys(bones).filter(name => parentOf[name] && bones[parentOf[name]]);
+  const group = new THREE.Group();
+  group.renderOrder = 1000;
+  boneLinePositions = new Float32Array(boneLinks.length * 6);
+  bonePointPositions = new Float32Array(Object.keys(bones).length * 3);
+  const lines = new THREE.LineSegments(
+    new THREE.BufferGeometry().setAttribute("position", new THREE.BufferAttribute(boneLinePositions, 3)),
+    new THREE.LineBasicMaterial({ color: 0x00f6ff, transparent: true, opacity: 0.98, depthTest: false, depthWrite: false })
+  );
+  const joints = new THREE.Points(
+    new THREE.BufferGeometry().setAttribute("position", new THREE.BufferAttribute(bonePointPositions, 3)),
+    new THREE.PointsMaterial({ color: 0xffd43b, size: 0.035, sizeAttenuation: true, depthTest: false, depthWrite: false })
+  );
+  lines.renderOrder = 1000; joints.renderOrder = 1001;
+  group.add(lines, joints);
+  boneDebug = { group, lines, joints };
+  scene.add(group);
+  updateBoneDebug();
+  document.getElementById("btnBones").textContent = "Hide bones";
+}
+
+/** Color every vertex by its dominant wing joint to audit actual skinning. */
+function applyWingWeightMap(enabled) {
+  const colors = {
+    WingL: 0xff3b30, WingL_Mid: 0x34c759, WingL_Tip: 0x007aff,
+    WingR: 0xff9500, WingR_Mid: 0xaf52de, WingR_Tip: 0x00c7be,
+  };
+  for (const entry of skinMeshes) {
+    const { mesh } = entry;
+    if (!enabled) { mesh.material = entry.material; continue; }
+    const indices = mesh.geometry.getAttribute("skinIndex");
+    const weights = mesh.geometry.getAttribute("skinWeight");
+    if (!indices || !weights || !mesh.skeleton) continue;
+    const attr = new Float32Array(indices.count * 3);
+    const color = new THREE.Color(0x232323);
+    for (let i = 0; i < indices.count; i++) {
+      let joint = null, strongest = 0;
+      for (let c = 0; c < 4; c++) {
+        const name = mesh.skeleton.bones[indices.getComponent(i, c)]?.name;
+        const weight = weights.getComponent(i, c);
+        if (colors[name] !== undefined && weight > strongest) { joint = name; strongest = weight; }
+      }
+      color.setHex(joint ? colors[joint] : 0x232323);
+      attr[i * 3] = color.r; attr[i * 3 + 1] = color.g; attr[i * 3 + 2] = color.b;
+    }
+    mesh.geometry.setAttribute("color", new THREE.BufferAttribute(attr, 3));
+    mesh.material = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
+  }
+}
+
+const debugParentPos = new THREE.Vector3();
+const debugChildPos = new THREE.Vector3();
+function updateBoneDebug() {
+  if (!boneDebug || !roosterRoot) return;
+  roosterRoot.updateMatrixWorld(true);
+  boneLinks.forEach((childName, i) => {
+    bones[parentOf[childName]].getWorldPosition(debugParentPos);
+    bones[childName].getWorldPosition(debugChildPos);
+    const offset = i * 6;
+    boneLinePositions.set([debugParentPos.x, debugParentPos.y, debugParentPos.z, debugChildPos.x, debugChildPos.y, debugChildPos.z], offset);
+  });
+  Object.values(bones).forEach((bone, i) => {
+    bone.getWorldPosition(debugChildPos);
+    bonePointPositions.set([debugChildPos.x, debugChildPos.y, debugChildPos.z], i * 3);
+  });
+  boneDebug.lines.geometry.attributes.position.needsUpdate = true;
+  boneDebug.joints.geometry.attributes.position.needsUpdate = true;
+}
 
 /* ---------------------------------------------------------------- */
 /*  Animation — same rotation-driven approach, retimed for this rig  */
 /*  (model is 1.0 units tall, so Hips rest at y = 0.42 not 0.22)     */
 /* ---------------------------------------------------------------- */
-const rot = (n, axis, v) => { if (bones[n]) bones[n].rotation[axis] = v; };
+function resetRigPose() {
+  for (const n in bones) {
+    if (restQuat[n]) bones[n].quaternion.copy(restQuat[n]);
+    if (restLocal[n]) bones[n].position.copy(restLocal[n]);
+  }
+}
+const rot = (n, axis, v) => {
+  const bone = bones[n];
+  if (!bone) return;
+  if (axis === "x") bone.rotateX(v);
+  else if (axis === "y") bone.rotateY(v);
+  else bone.rotateZ(v);
+};
 
 function animateWalk(dt) {
   if (!walking) return;
@@ -736,35 +830,64 @@ function animateWalk(dt) {
 
 function animateFight(dt) {
   if (!fighting) return;
-  fightT += dt * 8;
-  const flap = Math.sin(fightT), fast = Math.sin(fightT * 1.7);
-  rot("WingL","z", 0.9 + flap * 0.35); rot("WingL","x", fast * 0.25);
-  rot("WingR","z", -0.9 - flap * 0.35); rot("WingR","x", -fast * 0.25);
+  fightT += dt;
+  const stroke = (offset = 0) => {
+    const p = (((fightT - offset) * 3.8) % 1 + 1) % 1;
+    return p < 0.3 ? -Math.cos((p / 0.3) * Math.PI) : Math.cos(((p - 0.3) / 0.7) * Math.PI);
+  };
+  const shoulder = stroke(), mid = stroke(0.025), tip = stroke(0.05);
+  rot("WingL","x", shoulder * 1.5); rot("WingL","y", shoulder * 0.18); rot("WingL","z", 0.9 - shoulder * 0.38);
+  rot("WingR","x", stroke(0.018) * 1.42); rot("WingR","y", -stroke(0.018) * 0.17); rot("WingR","z", -0.9 + stroke(0.018) * 0.36);
   // The new weighted middle joints trail the shoulder, then the wrist curls
   // lightly back through the tip. This preserves the feather fan in a flap.
-  rot("WingL_Mid","z", 0.47 + flap * 0.18); rot("WingL_Mid","x", fast * 0.12);
-  rot("WingR_Mid","z", -0.47 - flap * 0.18); rot("WingR_Mid","x", -fast * 0.12);
-  rot("WingL_Tip","z", 0.12 + flap * 0.06);
-  rot("WingR_Tip","z", -0.12 - flap * 0.06);
-  rot("Spine","x", 0.22 + Math.sin(fightT * 2) * 0.03);
-  rot("Chest","x", 0.14);
-  rot("Neck","x", 0.28 + Math.sin(fightT * 2.5) * 0.22);
-  rot("Head","x", Math.sin(fightT * 2.5 + 0.3) * 0.3);
-  const kick = Math.sin(fightT * 2), kickOpp = Math.sin(fightT * 2 + Math.PI);
+  rot("WingL_Mid","z", 0.47 - mid * 0.68); rot("WingL_Mid","x", mid * 0.72);
+  rot("WingR_Mid","z", -0.47 + stroke(0.043) * 0.64); rot("WingR_Mid","x", stroke(0.043) * 0.68);
+  rot("WingL_Tip","z", 0.12 - tip * 0.88); rot("WingL_Tip","x", tip * 0.96);
+  rot("WingR_Tip","z", -0.12 + stroke(0.068) * 0.82); rot("WingR_Tip","x", stroke(0.068) * 0.9);
+  rot("Spine","x", 0.22 - shoulder * 0.055);
+  rot("Chest","x", 0.14 + shoulder * 0.075);
+  rot("Neck","x", 0.28 - shoulder * 0.04);
+  rot("Head","x", Math.sin(fightT * 5 + 0.3) * 0.18);
+  const kick = Math.sin(fightT * 5), kickOpp = Math.sin(fightT * 5 + Math.PI);
   rot("ThighL","x", kick * 0.75);
   rot("ThighR","x", kickOpp * 0.75);
   rot("ShankL","x", Math.max(0, -kick) * 0.9);
   rot("ShankR","x", Math.max(0, -kickOpp) * 0.9);
-  rot("Tail","x", 0.18 + Math.sin(fightT * 3) * 0.08);
-  if (bones["Hips"]) bones["Hips"].position.y = restLocal["Hips"].y + Math.abs(Math.sin(fightT * 2)) * 0.035;
+  rot("Tail","x", 0.18 + shoulder * 0.1);
+  if (bones["Hips"]) bones["Hips"].position.y = restLocal["Hips"].y - Math.abs(shoulder) * 0.012;
+}
+
+/** Isolated diagnostic: deliberately exaggerated overlapping chain motion. */
+function animateFlapTest(dt) {
+  if (!flapTesting) return;
+  flapTestT += dt;
+  const rate = 3.8;
+  const stroke = (time) => {
+    const p = ((time * rate) % 1 + 1) % 1;
+    return p < 0.3 ? -Math.cos((p / 0.3) * Math.PI) : Math.cos(((p - 0.3) / 0.7) * Math.PI);
+  };
+  const chain = (side, sign, wingDelay, amp = 1) => {
+    const shoulder = stroke(flapTestT - wingDelay) * amp;
+    const mid = stroke(flapTestT - wingDelay - 0.035) * amp;
+    const tip = stroke(flapTestT - wingDelay - 0.075) * amp;
+    // The rebuilt chain points along local -Z, so X produces the broad
+    // shoulder-centred arc; Y/Z add only a small cupping/sweep component.
+    rot(`Wing${side}`, "x", shoulder * 1.5); rot(`Wing${side}`, "y", -sign * shoulder * 0.2); rot(`Wing${side}`, "z", sign * shoulder * 0.4);
+    // Deliberately large on this diagnostic: the mid/tip offsets run along
+    // local Z, so X folding clearly proves the weighted mesh is deforming.
+    rot(`Wing${side}_Mid`, "z", sign * mid * 0.88); rot(`Wing${side}_Mid`, "x", mid * 0.95); rot(`Wing${side}_Mid`, "y", -sign * mid * 0.38);
+    // Tip receives the largest delayed whip and a small twist.
+    rot(`Wing${side}_Tip`, "z", sign * (tip * 1.18 + (mid - tip) * 0.42)); rot(`Wing${side}_Tip`, "x", tip * 1.3); rot(`Wing${side}_Tip`, "y", -sign * tip * 0.68);
+  };
+  chain("L", -1, 0, 1);
+  chain("R", 1, 0.028, 0.94);
+  const body = stroke(flapTestT);
+  rot("Chest", "x", body * 0.05); rot("Spine", "x", -body * 0.035); rot("Tail", "x", body * 0.08);
+  if (bones["Hips"]) bones["Hips"].position.y += -Math.abs(body) * 0.01;
 }
 
 function resetActionPose() {
-  ["ThighL","ThighR","ShankL","ShankR","Neck","Head","Tail","Spine","Chest",
-   "WingL","WingR","WingL_Mid","WingR_Mid","WingL_Tip","WingR_Tip"].forEach((n) => {
-    if (bones[n]) bones[n].rotation.set(0, 0, 0);
-  });
-  if (bones["Hips"]) bones["Hips"].position.y = restLocal["Hips"].y;
+  resetRigPose();
 }
 
 function idleBreathe(t) {
@@ -783,9 +906,12 @@ function tick(now) {
   prev = now;
   controls.update();
   if (roosterRoot) {
+    resetRigPose();
     animateWalk(dt);
     animateFight(dt);
+    animateFlapTest(dt);
     idleBreathe(now / 1000);
+    updateBoneDebug();
   }
   renderer.render(scene, camera);
   requestAnimationFrame(tick);

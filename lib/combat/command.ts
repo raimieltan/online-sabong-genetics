@@ -7,7 +7,7 @@ import type { CombatIdentity } from "./identity";
  * this scope — it is auto-triggered by lib/combat/inactivity.ts once a
  * stalemate crosses threshold, exempt from CommandPoints entirely.
  */
-export type PlayerCommand = "PRESS" | "WAIT" | "RECOVER" | "FORCE_ENGAGEMENT";
+export type PlayerCommand = "PRESS" | "COUNTER" | "GUARD" | "WAIT" | "RECOVER" | "FORCE_ENGAGEMENT";
 
 export const COMMAND_POINTS_MAX = 3;
 /**
@@ -23,6 +23,8 @@ export const COMMAND_ACTIVE_TURNS = 3;
 
 const COMMAND_TARGET_ACTIONS: Record<PlayerCommand, readonly CombatAction[]> = {
   PRESS: ["PRESSURE", "HEAVY_ATTACK", "LIGHT_ATTACK"],
+  COUNTER: ["COUNTER", "EVADE", "REPOSITION"],
+  GUARD: ["GUARD", "REPOSITION", "EVADE"],
   WAIT: ["GUARD", "REPOSITION", "EVADE"],
   RECOVER: ["RECOVER", "GUARD"],
   FORCE_ENGAGEMENT: ["PRESSURE", "LIGHT_ATTACK", "COUNTER"],
@@ -43,7 +45,9 @@ export function complianceFactor(command: PlayerCommand, identity: CombatIdentit
   const alignment =
     command === "PRESS"
       ? identity.aggression
-      : command === "WAIT"
+      : command === "COUNTER"
+        ? identity.counterPreference * 0.6 + identity.patience * 0.4
+      : command === "WAIT" || command === "GUARD"
         ? identity.patience
         : command === "RECOVER"
           ? 1 - identity.riskTolerance

@@ -10,7 +10,9 @@ export function setEngagement(s: CombatMatchState, f: FighterRuntimeState, phase
 }
 export function resetProfile(f: FighterRuntimeState) {
   const b = f.snapshot.behavior;
-  const pressure = f.tacticalMode === 'pressure' || f.tacticalMode === 'all_in' ? .4 : 0;
+  const influence = f.coaching?.strength ?? (f.tacticalMode === 'balanced' ? 0 : 1);
+  const pressure = f.tacticalMode === 'pressure' || f.tacticalMode === 'all_in' ? .55 * influence : 0;
+  const safety = f.tacticalMode === 'recover' ? .8 * influence : f.tacticalMode === 'defensive' || f.tacticalMode === 'counter' ? .35 * influence : 0;
   const fatigue = 1 - f.stamina / 100;
   const urgency = clamp(b.aggression * .5 + b.pressurePreference * .5 + pressure);
   return {
@@ -18,14 +20,15 @@ export function resetProfile(f: FighterRuntimeState) {
     resetTicks: Math.round(clamp(75 + b.patience * 45 + fatigue * 45 - urgency * 45, 60, 180)),
     // A break deliberately exceeds ordinary neutral range.  The old 2–3m
     // reset was the source of the perpetual close orbit in V2.
-    distance: clamp(5.1 + b.counterPreference * 1.15 + b.caution * .8 + b.patience * .55 + fatigue * .65 - urgency * .9, 3.8, 7.4),
+    distance: clamp(5.1 + b.counterPreference * 1.15 + b.caution * .8 + b.patience * .55 + fatigue * .65 + safety - urgency * .9, 3.8, 7.4),
   };
 }
 /** Readiness changes with temperament and current condition, not a fixed attack clock. */
 export function readTicks(f: FighterRuntimeState) {
   const b = f.snapshot.behavior;
-  const pressure = f.tacticalMode === 'pressure' || f.tacticalMode === 'all_in' ? 60 : 0;
-  const patientMode = f.tacticalMode === 'counter' || f.tacticalMode === 'defensive' ? 45 : f.tacticalMode === 'recover' ? 75 : 0;
+  const influence = f.coaching?.strength ?? (f.tacticalMode === 'balanced' ? 0 : 1);
+  const pressure = f.tacticalMode === 'pressure' || f.tacticalMode === 'all_in' ? 75 * influence : 0;
+  const patientMode = f.tacticalMode === 'counter' || f.tacticalMode === 'defensive' ? 70 * influence : f.tacticalMode === 'recover' ? 110 * influence : 0;
   return Math.round(clamp(180 + b.patience * 100 + b.caution * 50 + b.counterPreference * 50
     - b.aggression * 90 - b.pressurePreference * 45 - pressure + patientMode
     + (1 - f.stamina / 100) * 90 + (1 - f.health / f.snapshot.maxHealth) * 60, 60, 480));
@@ -34,9 +37,11 @@ export function readTicks(f: FighterRuntimeState) {
  * fighters can create; neither an attack nor a hit ends it on its own. */
 export function clashTicks(f: FighterRuntimeState) {
   const b = f.snapshot.behavior;
-  const pressure = f.tacticalMode === 'pressure' || f.tacticalMode === 'all_in' ? .25 : 0;
+  const influence = f.coaching?.strength ?? (f.tacticalMode === 'balanced' ? 0 : 1);
+  const pressure = f.tacticalMode === 'pressure' || f.tacticalMode === 'all_in' ? .35 * influence : 0;
+  const restraint = f.tacticalMode === 'defensive' || f.tacticalMode === 'recover' ? .25 * influence : 0;
   const fatigue = 1 - f.stamina / 100;
-  return Math.round(clamp(30 + b.persistence * 55 + b.aggression * 20 + pressure * 20 - b.caution * 12 - fatigue * 28, 24, 120));
+  return Math.round(clamp(30 + b.persistence * 55 + b.aggression * 20 + pressure * 28 - restraint * 35 - b.caution * 12 - fatigue * 28, 24, 120));
 }
 export function beginClash(s: CombatMatchState, f: FighterRuntimeState) {
   const until = s.tick + clashTicks(f);
@@ -53,6 +58,10 @@ export function beginBreak(s: CombatMatchState, f: FighterRuntimeState) {
   f.engagement.desiredRange = profile.distance;
   f.engagement.orbitDirection *= -1;
   setEngagement(s, f, 'breaking');
+  // One coaching decision governs one complete engagement, then personality
+  // returns to baseline for the next read window.
+  f.tacticalMode = 'balanced';
+  f.coaching = undefined;
 }
 export function updateEngagement(s: CombatMatchState, f: FighterRuntimeState) {
   if (f.engagement.phase === 'clashing' && s.tick >= f.engagement.clashUntil && !f.currentAction) {

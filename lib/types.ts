@@ -234,6 +234,108 @@ export type CombatRecord = {
   decisions: number;
 };
 
+/** Persistent, event-derived combat history. These counters describe what a
+ * rooster actually lived through; they are never direct purchasable stats. */
+export type CombatCareerTelemetry = {
+  heavyHitsTaken: number;
+  lightHitsTaken: number;
+  clashesWon: number;
+  clashesLost: number;
+  knockdownsTaken: number;
+  knockdownsRecovered: number;
+  fightsWon: number;
+  fightsLost: number;
+  comebackWins: number;
+  dominantWins: number;
+  closeLosses: number;
+  damageTakenWhilePressing: number;
+  damageTakenWhileRetreating: number;
+  successfulCounters: number;
+  failedCounters: number;
+  successfulChases: number;
+  punishedChases: number;
+  lowStaminaClashesWon: number;
+  retaliationDamageAfterHit: number;
+  successfulDisengagements: number;
+  timesIntimidated: number;
+  strongerOpponentsFaced: number;
+  openingClashesWon: number;
+  openingClashesLost: number;
+  lateFightPerformance: number;
+  playerCommandCompliance: number;
+  playerCommandSuccess: number;
+  playerCommandsIssued: number;
+};
+
+export type CombatEvolutionTrait = {
+  id: string;
+  name: string;
+  level: 1 | 2 | 3;
+  stage: string;
+  progress: number;
+  active: boolean;
+  advantages: string[];
+  tradeoffs: string[];
+};
+
+export type SignatureTechnique = {
+  id: "relentless-rush" | "sky-counter" | "ghost-step" | "second-wind";
+  name: string;
+  progress: number;
+  developed: boolean;
+  attempts: number;
+  successes: number;
+};
+
+export type RivalryRecord = {
+  opponentId: string;
+  opponentName: string;
+  fights: number;
+  wins: number;
+  losses: number;
+  familiarity: number;
+  counterSuccesses: number;
+};
+
+export type AwakeningState = {
+  id: "unbreakable" | "berserker" | "flow-state" | "second-wind" | "apex";
+  name: string;
+  unlocked: boolean;
+  triggerCount: number;
+};
+
+export type CombatDevelopmentNotice = {
+  kind: "trait" | "trait_level" | "signature" | "awakening" | "rivalry";
+  id: string;
+  title: string;
+  detail: string;
+};
+
+export type CombatCareerState = {
+  version: 1;
+  fightsProcessed: number;
+  telemetry: CombatCareerTelemetry;
+  evolutionTraits: CombatEvolutionTrait[];
+  signatures: SignatureTechnique[];
+  rivalries: RivalryRecord[];
+  awakenings: AwakeningState[];
+  recentDevelopment: CombatDevelopmentNotice[];
+};
+
+export type CombatCareerFightDelta = {
+  telemetry: Partial<CombatCareerTelemetry>;
+  opponentId: string;
+  opponentName: string;
+  opponentStrength: number;
+  ownStrength: number;
+  won: boolean;
+  finalHealthRatio: number;
+  opponentFinalHealthRatio: number;
+  signatureAttempts: Partial<Record<SignatureTechnique["id"], number>>;
+  signatureSuccesses: Partial<Record<SignatureTechnique["id"], number>>;
+  awakeningTriggered?: AwakeningState["id"];
+};
+
 /** A chicken's combat fighting style — persistent, set once at creation. */
 export type FightingStyle = "aggressive" | "counter" | "endurance" | "balanced";
 
@@ -293,6 +395,9 @@ export type Chicken = {
   confidence?: number;
   /** Lifetime count of fights survived without a career-altering injury (spec §44) — feeds veteran trait eligibility, never decays. */
   battleHardening?: number;
+  /** Emergent career identity built from combat telemetry, rival familiarity,
+   * signature patterns and earned awakenings. */
+  combatCareer?: CombatCareerState;
   trainingState?: TrainingState;
 };
 
@@ -678,6 +783,9 @@ export type CombatResult = {
   conditionDelta?: Record<string, number>;
   /** Human-readable "why you won/lost" breakdown (spec §49), keyed by chicken id. */
   analysis?: Record<string, string>;
+  /** Raw per-fight behavioral evidence. Persistence applies opponent-quality
+   * weighting and anti-farming before merging it into the career. */
+  combatCareerGained?: Record<string, CombatCareerFightDelta>;
 };
 
 export type EggStatus = "incubating";

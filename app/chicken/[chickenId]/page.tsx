@@ -15,6 +15,7 @@ import { ChickenViewer } from "@/components/chicken3d/ChickenViewer";
 import { ConditionMonitor } from "@/components/ConditionMonitor";
 import { deriveBehaviorProfile } from "@/lib/combat/behavior";
 import { emptyExperience } from "@/lib/combat/experience";
+import { normalizeCombatCareer } from "@/lib/combat/evolution";
 import { summarizeCareer } from "@/lib/career/retirement";
 import { growthFactor } from "@/lib/growth";
 import { setPlayerCredits } from "@/lib/playerStore";
@@ -212,6 +213,7 @@ function ChickenDetailPageContent({ params }: { params: Promise<{ chickenId: str
   const injuries = chicken.injuries ?? [];
   const trainingState = chicken.trainingState ?? defaultTrainingState();
   const careerStory = summarizeCareer(chicken);
+  const combatCareer = normalizeCombatCareer(chicken.combatCareer);
   const expressedMutations = Object.entries(chicken.mutations)
     .filter(([, gene]) => gene.expressed)
     .map(([id]) => getMutationDefinition(id))
@@ -506,6 +508,10 @@ function ChickenDetailPageContent({ params }: { params: Promise<{ chickenId: str
                 </div>
               ))
             )}
+            {combatCareer.evolutionTraits.length > 0 && <div className="mt-5 border-t border-(--color-gold)/20 pt-4"><h3 className="font-display text-base font-semibold text-(--color-gold-bright)">Combat Evolution</h3><div className="mt-2 space-y-2">{combatCareer.evolutionTraits.map(trait => <div key={trait.id} className={`rounded-lg border p-3 ${trait.active ? 'border-(--color-gold)/25 bg-black/20' : 'border-white/10 bg-black/10 opacity-55'}`}><div className="flex items-center justify-between"><p className="font-display text-(--foreground)">{trait.name} {trait.level > 1 ? `III`.slice(0, trait.level) : 'I'} · {trait.stage}</p><span className="text-[10px] uppercase tracking-[.14em] text-(--color-text-muted)">{trait.active ? 'active' : 'conflicted'}</span></div><div className="mt-2 h-1.5 overflow-hidden rounded-full bg-black/40"><div className="h-full bg-gradient-to-r from-(--color-gold) to-(--color-gold-bright)" style={{ width: `${trait.progress}%` }} /></div><p className="mt-2 text-xs text-emerald-200/75">+ {trait.advantages.join(' · ')}</p><p className="mt-1 text-xs text-red-200/65">− {trait.tradeoffs.join(' · ')}</p></div>)}</div></div>}
+            {combatCareer.signatures.some(signature => signature.developed) && <div className="mt-5 border-t border-(--color-gold)/20 pt-4"><h3 className="font-display text-base font-semibold text-(--color-gold-bright)">Signature Techniques</h3><div className="mt-2 flex flex-wrap gap-2">{combatCareer.signatures.filter(signature => signature.developed).map(signature => <span key={signature.id} className="rounded-full border border-violet-300/30 bg-violet-950/25 px-3 py-1 text-xs text-violet-100">{signature.name} · {signature.successes}/{signature.attempts}</span>)}</div></div>}
+            {combatCareer.awakenings.some(awakening => awakening.unlocked) && <div className="mt-5 border-t border-(--color-gold)/20 pt-4"><h3 className="font-display text-base font-semibold text-[#f1cf77]">Awakening</h3><div className="mt-2 flex flex-wrap gap-2">{combatCareer.awakenings.filter(awakening => awakening.unlocked).map(awakening => <span key={awakening.id} className="rounded-full border border-amber-200/40 bg-amber-950/25 px-3 py-1 font-display text-xs uppercase tracking-[.12em] text-amber-100">{awakening.name} · {awakening.triggerCount} manifestations</span>)}</div></div>}
+            {combatCareer.rivalries.length > 0 && <div className="mt-5 border-t border-(--color-gold)/20 pt-4"><h3 className="font-display text-base font-semibold text-(--color-gold-bright)">Rival Familiarity</h3><div className="mt-2 space-y-1">{combatCareer.rivalries.slice(0, 5).map(rivalry => <p key={rivalry.opponentId} className="flex justify-between text-xs text-(--color-text-muted)"><span>{rivalry.opponentName} · {rivalry.wins}W–{rivalry.losses}L</span><span>{Math.round(rivalry.familiarity)}% familiar</span></p>)}</div></div>}
           </div>
         )}
 

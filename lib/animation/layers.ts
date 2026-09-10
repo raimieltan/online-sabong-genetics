@@ -7,6 +7,7 @@
 
 import { Spring, clamp, clamp01, damp } from "./math";
 import { add, type AnimContext, type AnimState, type PoseMap } from "./types";
+import { sampleWingFlapCycle, type WingFlapSample } from "./wingFlap";
 
 /** States during which breathing is damped down so it doesn't fight the motion. */
 const BREATH_SUPPRESS: Partial<Record<AnimState, number>> = {
@@ -31,36 +32,60 @@ const BREATH_SUPPRESS: Partial<Record<AnimState, number>> = {
 };
 
 /** One side of the wing as a damped, momentum-carrying three-joint chain. */
+interface WingChainTarget {
+  shoulder: WingFlapSample;
+  mid: WingFlapSample;
+  tip: WingFlapSample;
+}
+
 class WingChainSpring {
   // Shoulder is muscular and decisive; every distal joint is looser and more
   // under-damped, so it visibly continues after the stroke reverses.
-  private shoulderRz = new Spring(260, 23);
-  private shoulderRx = new Spring(220, 21);
-  private midRz = new Spring(105, 11);
-  private midRx = new Spring(96, 10);
-  private midRy = new Spring(90, 10);
-  private tipRz = new Spring(54, 6.5);
-  private tipRx = new Spring(50, 6);
-  private tipRy = new Spring(46, 5.5);
+  private shoulderRz = new Spring(230, 18);
+  private shoulderRx = new Spring(255, 19);
+  private shoulderRy = new Spring(215, 17);
+  private midRz = new Spring(165, 13);
+  private midRx = new Spring(175, 13.5);
+  private midRy = new Spring(145, 12);
+  private tipRz = new Spring(110, 9);
+  private tipRx = new Spring(118, 9.5);
+  private tipRy = new Spring(96, 8.5);
 
   reset(): void {
-    for (const spring of [this.shoulderRz, this.shoulderRx, this.midRz, this.midRx, this.midRy, this.tipRz, this.tipRx, this.tipRy]) spring.reset();
+    for (const spring of [this.shoulderRz, this.shoulderRx, this.shoulderRy, this.midRz, this.midRx, this.midRy, this.tipRz, this.tipRx, this.tipRy]) spring.reset();
   }
 
-  apply(pose: PoseMap, side: "L" | "R", sign: number, shoulder: number, mid: number, tip: number, intensity: number, dt: number): void {
+  apply(pose: PoseMap, side: "L" | "R", sign: number, target: WingChainTarget, intensity: number, dt: number): void {
+    const shoulder = target.shoulder;
+    const midStroke = target.mid.flap;
+    const tipStroke = target.tip.flap;
+    // Ported from rooster_viewer's 3-joint diagnostic: the wrist receives
+    // both its delayed stroke and the mid-to-tip velocity difference.
+    const tipWhip = tipStroke * 1.18 + (midStroke - tipStroke) * 0.42;
+
     add(pose, `Wing${side}`, {
-      rz: this.shoulderRz.step(sign * shoulder * 0.36 * intensity, dt),
-      rx: this.shoulderRx.step(shoulder * 0.1 * intensity, dt),
+      // The shoulder now owns the silhouette. At full force it traverses a
+      // broad arc instead of merely exciting the looser mid/tip joints.
+      // Wing_Mid extends mostly down local -Z in this rig. Rotating about X
+      // therefore carries the whole fan through the large shoulder-centred
+      // arc; Y/Z only cup and sweep the fan within that arc.
+      // Keep the viewer's large three-axis rotation, then add independently
+      // phased sweep/twist so the world-space path remains a loop.
+      rx: this.shoulderRx.step(shoulder.flap * 1.5 * intensity, dt),
+      ry: this.shoulderRy.step(-sign * (shoulder.flap * 0.2 + shoulder.sweep * 0.38) * intensity, dt),
+      rz: this.shoulderRz.step(sign * (shoulder.flap * 0.4 + shoulder.twist * 0.28) * intensity, dt),
     });
     add(pose, `Wing${side}_Mid`, {
-      rz: this.midRz.step(sign * mid * 0.58 * intensity, dt),
-      rx: this.midRx.step(mid * 0.28 * intensity, dt),
-      ry: this.midRy.step(-sign * mid * 0.14 * intensity, dt),
+      // Full bipolar rotation is what made the viewer diagnostic feel alive;
+      // the recovery-fold term closes the silhouette without replacing it.
+      rz: this.midRz.step(sign * (midStroke * 0.88 + target.mid.fold * 0.1) * intensity, dt),
+      rx: this.midRx.step((midStroke * 0.95 + target.mid.fold * 0.12) * intensity, dt),
+      ry: this.midRy.step(-sign * (midStroke * 0.38 + target.mid.fold * 0.08) * intensity, dt),
     });
     add(pose, `Wing${side}_Tip`, {
-      rz: this.tipRz.step(sign * tip * 0.67 * intensity, dt),
-      rx: this.tipRx.step(tip * 0.32 * intensity, dt),
-      ry: this.tipRy.step(-sign * tip * 0.23 * intensity, dt),
+      rz: this.tipRz.step(sign * tipWhip * intensity, dt),
+      rx: this.tipRx.step(tipStroke * 1.3 * intensity, dt),
+      ry: this.tipRy.step(-sign * tipStroke * 0.68 * intensity, dt),
     });
   }
 }
@@ -77,6 +102,7 @@ export class LayerRig {
   private flapIntensity = new Spring(72, 16);
   private flapLeft = new WingChainSpring();
   private flapRight = new WingChainSpring();
+  private flapPhase = 0;
 
   // Head-tracking damped state.
   private aim = 0;
@@ -104,6 +130,7 @@ export class LayerRig {
     }
     this.flapLeft.reset();
     this.flapRight.reset();
+    this.flapPhase = 0;
     this.aim = 0;
   }
 
@@ -121,38 +148,47 @@ export class LayerRig {
     // assignment, so a stopped flap settles in a visible wave.
     const flap = this.flapIntensity.step(clamp01(ctx.wingFlapIntensity * g.wingForce), dt);
     if (flap > 0.002) {
-      const rate = 6.4 + flap * 2.4;
-      const phase = ctx.stateTime * rate * Math.PI * 2;
-      const stroke = (p: number) => {
-        const cycle = ((p / (Math.PI * 2)) % 1 + 1) % 1;
-        // 35% SNAP downstroke, 65% slower folding recovery.
-        return cycle < 0.35 ? -1 + (cycle / 0.35) * 2 : 1 - ((cycle - 0.35) / 0.65) * 2;
-      };
+      // Keep the phase continuous while intensity changes; deriving it from
+      // absolute time * rate causes a visible jump at every burst boundary.
+      const rate = 1.65 + flap * 1.1;
+      this.flapPhase = (this.flapPhase + rate * dt) % 1;
       const lead = ctx.facing === "right" ? "R" : "L";
-      const phaseFor = (side: "L" | "R") => phase - (side === lead ? 0 : 0.82);
       const targetFor = (side: "L" | "R") => {
-        const p = phaseFor(side);
-        const variation = 1 + Math.sin(ctx.stateTime * 0.83 + (side === "L" ? 0.4 : 2.1)) * 0.035;
-        return [stroke(p) * variation, stroke(p - 0.92) * variation, stroke(p - 1.78) * variation] as const;
+        // Viewer-calibrated delays are expressed in seconds, so the distal
+        // wave retains the same physical timing as combat cadence changes.
+        const wingDelay = side === lead ? 0 : 0.028;
+        const shoulderCycle = this.flapPhase - rate * wingDelay;
+        const target: WingChainTarget = {
+          shoulder: sampleWingFlapCycle(shoulderCycle),
+          mid: sampleWingFlapCycle(shoulderCycle - rate * 0.035),
+          tip: sampleWingFlapCycle(shoulderCycle - rate * 0.075),
+        };
+        const variation = 1 + Math.sin(ctx.now * 0.00083 + (side === "L" ? 0.4 : 2.1)) * 0.035;
+        target.shoulder.flap *= variation;
+        target.shoulder.sweep *= variation;
+        target.mid.flap *= variation;
+        target.tip.flap *= variation;
+        return target;
       };
-      const [leftShoulder, leftMid, leftTip] = targetFor("L");
-      const [rightShoulder, rightMid, rightTip] = targetFor("R");
-      this.flapLeft.apply(pose, "L", -1, leftShoulder, leftMid, leftTip, flap, dt);
+      const left = targetFor("L");
+      const right = targetFor("R");
+      this.flapLeft.apply(pose, "L", -1, left, flap, dt);
       // A stable asymmetry avoids mirror-perfect combat motion without RNG.
-      this.flapRight.apply(pose, "R", 1, rightShoulder, rightMid, rightTip, flap * 0.94, dt);
+      this.flapRight.apply(pose, "R", 1, right, flap * 0.94, dt);
 
       // Hard strokes move mass. Keep this restrained: it sells force without
       // turning the torso into a second set of wings, while head tracking
       // below continues to stabilize the opponent-facing gaze.
       const force = Math.max(0, flap - 0.35);
       if (force > 0) {
-        const pulse = leftShoulder;
+        const pulse = left.shoulder.downstroke;
+        const settle = left.shoulder.settle;
         const lead = ctx.facing === "right" ? 1 : -1;
-        add(pose, "Chest", { rx: pulse * force * 0.045, rz: lead * pulse * force * 0.025 });
-        add(pose, "Spine", { rx: -pulse * force * 0.035 });
-        add(pose, "Hips", { py: -Math.abs(pulse) * force * 0.008, rz: -lead * pulse * force * 0.018 });
-        add(pose, "Neck", { rx: -pulse * force * 0.025 });
-        add(pose, "Tail", { rx: pulse * force * 0.07 * g.tailCounter });
+        add(pose, "Chest", { py: pulse * force * 0.026, rx: -pulse * force * 0.085, rz: lead * pulse * force * 0.035 });
+        add(pose, "Spine", { py: pulse * force * 0.012, rx: pulse * force * 0.045 });
+        add(pose, "Hips", { py: (pulse * 0.028 - settle * 0.012) * force, rx: settle * force * 0.025 });
+        add(pose, "Neck", { rx: pulse * force * 0.035 });
+        add(pose, "Tail", { rx: -pulse * force * 0.13 * g.tailCounter + settle * force * 0.05 });
       }
     }
 

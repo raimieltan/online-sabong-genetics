@@ -3,10 +3,11 @@ import { effectiveStat, maxHealth } from './combat/stats';
 import { deriveBehaviorProfile } from './combat/behavior';
 import { resolvePhysicalProfile } from './physicalProfile';
 import { clamp } from './combat-v2/constants';
+import { combatEvolutionSnapshot } from './combat/evolution';
 import type { FighterCombatSnapshot } from './combat-v2/types';
 import type { Chicken } from './types';
 
-export function toCombatV2Snapshot(chicken: Chicken, playerId: string): FighterCombatSnapshot {
+export function toCombatV2Snapshot(chicken: Chicken, playerId: string, opponentId = ''): FighterCombatSnapshot {
   const physical = resolvePhysicalProfile(chicken);
   const condition = clamp((chicken.condition ?? 100) / 100);
   const legInjury = (chicken.injuries ?? []).some(i => i.location === 'leg' || i.location === 'foot' || i.location === 'joint');
@@ -17,5 +18,6 @@ export function toCombatV2Snapshot(chicken: Chicken, playerId: string): FighterC
     behavior: { ...(chicken.behavior ?? deriveBehaviorProfile(chicken.fightingStyle, chicken.traits)) },
     experience: clamp(Object.values(chicken.experience ?? {}).reduce((sum, n) => sum + n, 0) / 700),
     condition, maxHealth: maxHealth(chicken) * (.6 + condition * .4),
+    evolution: combatEvolutionSnapshot(chicken, opponentId),
   };
 }

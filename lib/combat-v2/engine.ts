@@ -5,7 +5,7 @@ import { beginBreak, beginClash, readTicks, setEngagement, updateEngagement } fr
 import { canTransition } from './transitions';
 import { clamp, COMBAT_VERSION, COMMAND_COOLDOWN_TICKS, TACTICAL_MODES, quantize as q } from './constants';
 import { createCombatRng } from './rng';
-import type { CombatMatchState, CombatCommand, CombatEvent, FighterRuntimeState as Fighter, FighterState, MatchConfig } from './types';
+import type { CombatMatchState, CombatCommand, CombatEvent, CommandCompliance, FighterRuntimeState as Fighter, FighterState, MatchConfig, TacticalMode } from './types';
 
 const GROUND_HEIGHT = 0;
 const GROUND_EPSILON = .001;
@@ -34,7 +34,7 @@ export function createMatch(input: MatchConfig): CombatMatchState {
   const fighter = (snapshot: MatchConfig['fighterA'], x: number): Fighter => {
     const b = snapshot.behavior;
     const preferred = clamp(5.1 + b.caution * 1.35 + b.patience * .8 + b.counterPreference * .75 - b.aggression * .9 - b.pressurePreference * .6, 4.1, 7.3);
-    return { snapshot, state: 'circling', previousState: 'neutral', stateEnteredTick: 0, position: { x, y: 0, z: 0 }, velocity: { x: 0, y: 0, z: 0 }, grounded: true, wasGrounded: true, justLanded: false, groundedTicks: 1, locomotion: 'GROUNDED', facing: x < 0 ? 0 : Math.PI, health: snapshot.maxHealth, stamina: 100, balance: 100, currentIntent: 'probe', tacticalMode: 'balanced', nextDecisionTick: Math.round(18 + snapshot.behavior.patience * 20), lastCommandTick: -COMMAND_COOLDOWN_TICKS, lastSequence: -1, openingUntil: 0, cooldowns: {}, engagement: { phase: 'stalking', enteredTick: 0, clashUntil: 0, breakUntil: 0, resetUntil: 0, desiredRange: preferred, orbitDirection: x < 0 ? 1 : -1, lastCollisionTick: -1000 }, observedTellTick: -1, memory: { attacks: {}, successfulCounters: 0, failedCounters: 0 }, utilities: {} };
+    return { snapshot, state: 'circling', previousState: 'neutral', stateEnteredTick: 0, position: { x, y: 0, z: 0 }, velocity: { x: 0, y: 0, z: 0 }, grounded: true, wasGrounded: true, justLanded: false, groundedTicks: 1, locomotion: 'GROUNDED', facing: x < 0 ? 0 : Math.PI, health: snapshot.maxHealth, stamina: 100, balance: 100, currentIntent: 'probe', tacticalMode: 'balanced', awakeningAttempted: false, lastSignatureTick: -1000, nextDecisionTick: Math.round(18 + snapshot.behavior.patience * 20), lastCommandTick: -COMMAND_COOLDOWN_TICKS, lastSequence: -1, openingUntil: 0, cooldowns: {}, engagement: { phase: 'stalking', enteredTick: 0, clashUntil: 0, breakUntil: 0, resetUntil: 0, desiredRange: preferred, orbitDirection: x < 0 ? 1 : -1, lastCollisionTick: -1000 }, observedTellTick: -1, memory: { attacks: {}, successfulCounters: 0, failedCounters: 0, recentDamageTaken: 0 }, utilities: {} };
   };
   const openingHalfGap = Math.min(input.arena.radius * .55, 4.6);
   const state: CombatMatchState = { config, tick: 0, phase: 'active', rngState: input.seed >>> 0, fighters: [fighter(config.fighterA, -openingHalfGap), fighter(config.fighterB, openingHalfGap)], commands: [], eventBuffer: [], lastContactTick: 0 };
@@ -50,6 +50,52 @@ export function queueCommand(s: CombatMatchState, c: CombatCommand): void {
   s.commands.sort((a, b) => a.effectiveTick - b.effectiveTick || (a.fighterId < b.fighterId ? -1 : a.fighterId > b.fighterId ? 1 : a.sequence - b.sequence));
 }
 function emit(s: CombatMatchState, f: Fighter, type: CombatEvent['type'], fields: Partial<CombatEvent> = {}) { s.eventBuffer.push({ type, tick: s.tick, fighterId: f.snapshot.fighterId, ...fields }); }
+
+function traitLevel(f: Fighter, id: string) { return f.snapshot.evolution.traitLevels[id] ?? 0; }
+function awakeningPower(f: Fighter) {
+  if (!f.awakening) return 1;
+  return f.awakening.type === 'apex' ? 1.15 : f.awakening.type === 'berserker' ? 1.12 : f.awakening.type === 'flow-state' ? 1.08 : 1.06;
+}
+function tryAwakening(s: CombatMatchState, f: Fighter, other: Fighter, rng: ReturnType<typeof createCombatRng>) {
+  if (f.awakening || f.awakeningAttempted || !f.snapshot.evolution.awakenings.length) return;
+  const healthRatio = f.health / f.snapshot.maxHealth;
+  if (healthRatio > .18 || healthRatio >= other.health / other.snapshot.maxHealth) return;
+  f.awakeningAttempted = true;
+  const available = f.snapshot.evolution.awakenings;
+  const preferred = available.includes('apex') ? 'apex'
+    : available.includes('flow-state') && traitLevel(f, 'counter-instinct') >= 3 ? 'flow-state'
+    : available.includes('unbreakable') ? 'unbreakable'
+    : available.includes('second-wind') && f.stamina < 28 ? 'second-wind'
+    : available[0] ?? 'unbreakable';
+  const chance = clamp(.24 + f.snapshot.experience * .28 + (f.stamina < 20 ? .1 : 0) - (preferred === 'apex' ? .18 : 0), .08, .62);
+  if (!rng.chance(chance)) return;
+  f.awakening = { type: preferred, startedTick: s.tick };
+  f.balance = Math.max(f.balance, preferred === 'unbreakable' ? 55 : 40);
+  emit(s, f, 'AWAKENING_STARTED', { detail: preferred });
+}
+function commandAlignment(f: Fighter, command: TacticalMode) {
+  const b = f.snapshot.behavior;
+  const temperament = command === 'pressure' ? (b.aggression + b.pressurePreference + b.persistence) / 3
+    : command === 'counter' ? (b.counterPreference + b.patience + b.caution) / 3
+    : command === 'defensive' ? (b.caution + b.patience + (1 - b.riskTolerance)) / 3
+    : command === 'recover' ? (b.recoveryPreference + b.caution + (1 - b.aggression)) / 3
+    : command === 'all_in' ? (b.aggression + b.riskTolerance + b.persistence) / 3 : .65;
+  const discipline = f.snapshot.experience * .15 + f.snapshot.evolution.rivalryFamiliarity / 1000;
+  const physical = command === 'recover' ? (100 - f.stamina) / 500 : f.balance < 30 ? -.08 : 0;
+  return clamp(temperament + discipline + physical, .05, .95);
+}
+function resolveCoaching(s: CombatMatchState, f: Fighter, command: CombatCommand, rng: ReturnType<typeof createCombatRng>) {
+  const roll = rng.next();
+  const alignment = commandAlignment(f, command.command);
+  const shifted = roll - (alignment - .5) * .45;
+  const compliance: CommandCompliance = shifted < .08 ? 'commit' : shifted < .38 ? 'obey' : shifted < .7 ? 'partial' : shifted < .9 ? 'resist' : 'ignore';
+  const strength = compliance === 'commit' ? 1.15 : compliance === 'obey' ? .9 : compliance === 'partial' ? .58 : compliance === 'resist' ? .28 : 0;
+  f.tacticalMode = strength > 0 ? command.command : 'balanced';
+  f.coaching = { command: command.command, compliance, strength, issuedTick: command.issuedTick, exchangeTick: s.tick, successful: false };
+  f.lastCommandTick = s.tick; f.lastSequence = command.sequence;
+  emit(s, f, 'COMMAND', { detail: command.command });
+  emit(s, f, 'COMMAND_RESPONSE', { detail: `${command.command}:${compliance}`, value: strength });
+}
 function transition(s: CombatMatchState, f: Fighter, next: FighterState) {
   if (f.state === next) return;
   if (!canTransition(f.state, next)) throw new Error(`Illegal fighter transition: ${f.state} → ${next}`);
@@ -102,13 +148,16 @@ function normalizePhysicsState(s: CombatMatchState, f: Fighter) {
 }
 function start(s: CombatMatchState, f: Fighter, id: string) {
   const a = ACTIONS[id];
-  if (!free(f) || f.stamina < a.staminaCost || (f.cooldowns[id] ?? 0) > s.tick) return false;
+  const rushCost = f.snapshot.evolution.signatures.includes('relentless-rush') && (f.tacticalMode === 'pressure' || f.tacticalMode === 'all_in') ? 1.14 : 1;
+  const awakeningCost = f.awakening?.type === 'berserker' ? 1.18 : 1;
+  const staminaCost = a.staminaCost * rushCost * awakeningCost;
+  if (!free(f) || f.stamina < staminaCost || (f.cooldowns[id] ?? 0) > s.tick) return false;
   if (a.damage && f.engagement.phase === 'stalking') setEngagement(s, f, 'committing');
   f.lastActionId = id;
   // Cooldowns prevent one animation from looping mechanically, while still
   // allowing a fighter to return to that move during the same clash.
   f.cooldowns[id] = s.tick + a.startupTicks + a.activeTicks + a.recoveryTicks + (a.aerial ? 16 : id === 'peck_strike' ? 10 : 8);
-  f.stamina = q(f.stamina - a.staminaCost);
+  f.stamina = q(f.stamina - staminaCost);
   f.currentAction = { id, startedTick: s.tick, hit: false, phase: 'startup' };
   if (a.aerial) {
     f.aerial = { phase: 'PRELOAD', phaseTick: s.tick, launchedTick: -1, followups: 0,
@@ -117,6 +166,14 @@ function start(s: CombatMatchState, f: Fighter, id: string) {
   }
   transition(s, f, a.category === 'feint' ? 'feinting' : 'winding_up');
   emit(s, f, 'ATTACK_STARTED', { actionId: id });
+  const signature = id === 'wing_counter' && f.snapshot.evolution.signatures.includes('sky-counter') ? 'sky-counter'
+    : ['flying_spur', 'spur_lunge'].includes(id) && f.tacticalMode === 'pressure' && f.snapshot.evolution.signatures.includes('relentless-rush') ? 'relentless-rush'
+    : id === 'sidestep' && f.snapshot.evolution.signatures.includes('ghost-step') ? 'ghost-step'
+    : f.stamina < 25 && f.snapshot.evolution.signatures.includes('second-wind') ? 'second-wind' : undefined;
+  if (signature && s.tick - f.lastSignatureTick > 120) {
+    f.lastSignatureTick = s.tick;
+    emit(s, f, 'SIGNATURE_TECHNIQUE', { actionId: signature, detail: signature });
+  }
   if (a.damage || a.category === 'feint') emit(s, f, 'TELL_STARTED', { actionId: id, detail: a.category === 'feint' ? 'feint' : 'attack_windup' });
   return true;
 }
@@ -173,25 +230,43 @@ function decide(s: CombatMatchState, f: Fighter, other: Fighter, rng: ReturnType
   }
   if (s.tick < f.nextDecisionTick) return;
   f.nextDecisionTick = s.tick + (f.engagement.phase === 'clashing' ? 4 : 12);
-  const b = f.snapshot.behavior, mode = f.tacticalMode, d = distance(f, other);
+  const b = f.snapshot.behavior, mode = f.tacticalMode, d = distance(f, other), coaching = f.coaching?.strength ?? (mode === 'balanced' ? 0 : 1);
   const pressure = clamp((s.tick - s.lastContactTick - 360) / 480), tired = 1 - f.stamina / 100;
   const reading = f.engagement.phase === 'stalking' && s.tick - f.engagement.enteredTick < readTicks(f);
   const opening = other.openingUntil > s.tick;
-  const patternRead = Math.max(0, ...Object.values(f.memory.attacks)) >= 3 ? .15 + f.snapshot.experience * .5 : 0;
+  const patternRead = Math.max(0, ...Object.values(f.memory.attacks)) >= 3 ? .15 + f.snapshot.experience * .5 + f.snapshot.evolution.rivalryFamiliarity / 180 : 0;
   const aggressive = mode === 'pressure' || mode === 'all_in';
+  const behind = f.health / f.snapshot.maxHealth < other.health / other.snapshot.maxHealth - .12;
+  const ahead = f.health / f.snapshot.maxHealth > other.health / other.snapshot.maxHealth + .15;
+  const battleHardened = traitLevel(f, 'battle-hardened');
+  const comeback = traitLevel(f, 'comeback-fighter');
+  const bully = traitLevel(f, 'bully');
+  const giantKiller = traitLevel(f, 'giant-killer');
+  const onceBitten = traitLevel(f, 'once-bitten');
+  const slowStarter = traitLevel(f, 'slow-starter');
+  const lateFight = s.tick > s.config.maxTicks * .55;
   const scores: Record<string, number> = {
-    peck_strike: d < 1.25 * f.snapshot.physical.reach ? .25 + b.aggression * .4 + pressure * .3 - tired : 0,
-    spur_lunge: d < 1.65 * f.snapshot.physical.reach ? .2 + b.riskTolerance * .5 + pressure + (mode === 'all_in' ? 1 : 0) - tired : 0,
-    jump_kick: d > .9 && d < 1.8 ? .7 + b.aggression * .5 + f.snapshot.stats.agility / 120 + (opening ? .4 : 0) - tired : 0,
-    flying_spur: d > 2.2 && d < 7.4 ? 1 + b.riskTolerance + b.pressurePreference + pressure - tired * 1.5 : 0,
-    wing_counter: opening && d < 1.6 ? 1 + b.counterPreference * 2 + (mode === 'counter' ? 2 : 0) + f.snapshot.experience + patternRead : 0,
-    guard: .05 + (mode === 'defensive' ? .6 : 0) + b.caution * .2 + patternRead - pressure,
+    peck_strike: d < 1.25 * f.snapshot.physical.reach ? .25 + b.aggression * .4 + pressure * .3 + (mode === 'pressure' ? coaching * .55 : 0) - tired : 0,
+    spur_lunge: d < 1.65 * f.snapshot.physical.reach ? .2 + b.riskTolerance * .5 + pressure + (mode === 'all_in' ? 1 + coaching : mode === 'pressure' ? coaching : 0) - tired : 0,
+    jump_kick: d > .9 && d < 1.8 ? .7 + b.aggression * .5 + f.snapshot.stats.agility / 120 + (opening ? .4 : 0) + (mode === 'pressure' ? coaching * .6 : 0) - tired : 0,
+    flying_spur: d > 2.2 && d < 7.4 ? 1 + b.riskTolerance + b.pressurePreference + pressure + (mode === 'pressure' || mode === 'all_in' ? coaching * 1.2 : 0) - tired * 1.5 : 0,
+    wing_counter: opening && d < 1.6 ? 1 + b.counterPreference * 2 + (mode === 'counter' ? 2.2 * coaching + .5 : 0) + f.snapshot.experience + patternRead + traitLevel(f, 'counter-instinct') * .18 : 0,
+    guard: .05 + (mode === 'defensive' ? .65 + coaching : mode === 'counter' ? coaching * .35 : 0) + b.caution * .2 + patternRead - pressure,
     feint: d < 1.5 ? .1 + b.patience * .2 + b.counterPreference * .2 - tired : 0,
-    advance: d > f.engagement.desiredRange - .45 ? .7 + pressure * 2 + b.pressurePreference + (aggressive ? .5 : 0) : 0,
-    retreat: d < f.engagement.desiredRange - .9 ? .6 + tired + b.recoveryPreference * tired + (mode === 'recover' ? .8 : 0) - pressure * .3 : 0,
-    circle: .45 + b.patience * .3 - pressure * .3,
-    recover: tired * 1.5 + (mode === 'recover' ? .6 : 0) - pressure,
+    advance: d > f.engagement.desiredRange - .45 ? .7 + pressure * 2 + b.pressurePreference + (aggressive ? .5 + coaching : 0) : 0,
+    retreat: d < f.engagement.desiredRange - .9 ? .6 + tired + b.recoveryPreference * tired + (mode === 'recover' ? .8 + coaching * 1.25 : mode === 'defensive' || mode === 'counter' ? coaching * .35 : 0) - pressure * .3 : 0,
+    circle: .45 + b.patience * .3 + (mode === 'counter' || mode === 'defensive' ? coaching * .8 : mode === 'recover' ? coaching : 0) - pressure * .3,
+    recover: tired * 1.5 + (mode === 'recover' ? .6 + coaching * 1.4 : 0) - pressure,
   };
+  if (f.memory.recentDamageTaken > 0) {
+    scores.peck_strike += battleHardened * .12;
+    scores.wing_counter += battleHardened * .18;
+  }
+  if (behind) { scores.circle += comeback * .12; scores.wing_counter += comeback * .16; if (lateFight) scores.advance += comeback * .18; }
+  if (bully) { scores.advance += ahead ? bully * .2 : -bully * .08; scores.guard += behind ? bully * .1 : 0; }
+  if (giantKiller && other.snapshot.physical.mass > f.snapshot.physical.mass) { scores.circle += giantKiller * .12; scores.wing_counter += giantKiller * .15; }
+  if (onceBitten && f.memory.recentDamageTaken > 8) { scores.retreat += onceBitten * .25; scores.advance *= Math.max(.45, 1 - onceBitten * .14); }
+  if (slowStarter && s.tick < s.config.maxTicks * .25) { scores.circle += slowStarter * .2; scores.advance *= Math.max(.55, 1 - slowStarter * .12); }
   // A real recovery opening permits a counter; feints and defensive tells remain live while reading.
   if (reading) for (const id of Object.keys(scores)) {
     if (ACTIONS[id]?.category === 'attack') scores[id] = 0;
@@ -212,11 +287,22 @@ function decide(s: CombatMatchState, f: Fighter, other: Fighter, rng: ReturnType
     for (const id of Object.keys(scores)) if (ACTIONS[id] && (f.stamina < ACTIONS[id].staminaCost || (f.cooldowns[id] ?? 0) > s.tick)) scores[id] = 0;
   }
   if (f.lastActionId && scores[f.lastActionId]) scores[f.lastActionId] *= .3;
+  if (f.snapshot.evolution.signatures.includes('relentless-rush')) { scores.advance *= 1.12; scores.flying_spur *= 1.12; scores.retreat *= .82; }
+  if (f.snapshot.evolution.signatures.includes('sky-counter')) scores.wing_counter *= 1.22;
+  if (f.snapshot.evolution.signatures.includes('ghost-step')) { scores.sidestep = (scores.sidestep ?? 0) * 1.2; scores.circle *= 1.12; }
+  if (f.snapshot.evolution.signatures.includes('second-wind') && f.stamina < 30) { scores.recover *= 1.2; scores.retreat *= .85; }
   f.utilities = scores;
   let roll = rng.next() * Object.values(scores).reduce((sum, x) => sum + x, 0);
   let choice = 'advance';
   for (const [id, score] of Object.entries(scores)) { roll -= score; if (score > 0 && roll <= 0) { choice = id; break; } }
   f.currentIntent = choice; emit(s, f, 'INTENT_CHANGED', { detail: choice });
+  if (f.coaching) {
+    const follows = f.coaching.command === 'pressure' || f.coaching.command === 'all_in' ? ['advance', 'peck_strike', 'spur_lunge', 'jump_kick', 'flying_spur'].includes(choice)
+      : f.coaching.command === 'counter' ? ['circle', 'retreat', 'guard', 'sidestep', 'wing_counter'].includes(choice)
+      : f.coaching.command === 'defensive' ? ['circle', 'retreat', 'guard', 'sidestep'].includes(choice)
+      : f.coaching.command === 'recover' ? ['recover', 'retreat', 'circle', 'guard'].includes(choice) : true;
+    f.coaching.successful ||= follows;
+  }
   if (ACTIONS[choice]) start(s, f, choice);
   else transition(s, f, choice === 'advance' ? 'advancing' : choice === 'retreat' ? 'retreating' : choice === 'circle' ? 'circling' : 'neutral');
 }
@@ -284,7 +370,8 @@ function move(s: CombatMatchState) {
     if (action?.damage && rt?.phase === 'startup' && f.engagement.phase === 'committing' && d > 1.15) forward = 15;
     if (action?.id === 'wing_counter' && rt?.phase === 'active') forward = 1.8;
     if (action?.id === 'spur_lunge' && rt?.phase === 'active') forward = 2;
-    const speed = (.9 + f.snapshot.stats.speed / 120) * f.snapshot.physical.mobility / f.snapshot.physical.mass * (.5 + f.stamina / 200) * (.6 + f.snapshot.condition * .4);
+    const awakenedSpeed = f.awakening?.type === 'flow-state' || f.awakening?.type === 'apex' ? 1.08 : f.awakening ? 1.04 : 1;
+    const speed = (.9 + f.snapshot.stats.speed / 120) * awakenedSpeed * f.snapshot.physical.mobility / f.snapshot.physical.mass * (.5 + f.stamina / 200) * (.6 + f.snapshot.condition * .4);
     let y = f.position.y, vy = f.velocity.y;
     if (launch) {
       f.aerial!.launchedTick = s.tick; aerialPhase(s, f, 'TAKEOFF');
@@ -320,10 +407,12 @@ export function stepCombat(s: CombatMatchState): CombatMatchState {
   // normalization passes in this tick, then clear it before the next one.
   s.fighters.forEach(f => { f.justLanded = false; });
   const rng = createCombatRng(s.rngState);
-  for (const c of s.commands.filter(c => c.effectiveTick === s.tick)) {
-    const f = s.fighters.find(f => f.snapshot.fighterId === c.fighterId)!;
-    f.tacticalMode = c.command; f.lastCommandTick = s.tick; f.lastSequence = c.sequence;
-    emit(s, f, 'COMMAND', { detail: c.command });
+  for (const f of s.fighters) {
+    // Coaching belongs to the next quiet read window. Commands issued while a
+    // clash is playing remain buffered instead of becoming mid-clash QTEs. If
+    // the coach revises the plan before that window, the newest call wins.
+    const c = s.commands.filter(command => command.fighterId === f.snapshot.fighterId && command.effectiveTick <= s.tick && command.sequence > f.lastSequence).at(-1);
+    if (c && f.engagement.phase === 'stalking') resolveCoaching(s, f, c, rng);
   }
   s.fighters.forEach(f => { timeline(s, f); updateEngagement(s, f); });
   s.fighters.forEach((f, i) => perceive(s, f, s.fighters[1 - i], rng));
@@ -356,11 +445,13 @@ export function stepCombat(s: CombatMatchState): CombatMatchState {
     if (!zone) return;
     rt.hit = true;
     const blocked = target.state === 'defending';
-    const damage = q(a.damage * (.6 + f.snapshot.stats.power / 100) * (zone === 'head' ? 1.15 * target.snapshot.physical.neck : 1) * (.65 + f.stamina / 285) * (.8 + f.snapshot.condition * .2) / (1 + target.snapshot.stats.defense / 120) / target.snapshot.physical.mass * (blocked ? .25 : 1));
+    const damage = q(a.damage * (.6 + f.snapshot.stats.power / 100) * awakeningPower(f) * (zone === 'head' ? 1.15 * target.snapshot.physical.neck : 1) * (.65 + f.stamina / 285) * (.8 + f.snapshot.condition * .2) / (1 + target.snapshot.stats.defense / 120) / target.snapshot.physical.mass * (blocked ? .25 : 1));
     const resistance = target.currentAction ? ACTIONS[target.currentAction.id].interruptResistance : 0;
     // Balanced strikes and deliberate meet-in counters follow through so overlapping hits can trade.
     // Ordinary startup and off-balance attacks can still be stuffed; damage is never suppressed.
-    const followingThrough = target.currentAction && ACTIONS[target.currentAction.id].damage > 0 && target.balance >= 45
+    const hardened = traitLevel(target, 'battle-hardened');
+    const resolve = (target.awakening?.type === 'unbreakable' || target.awakening?.type === 'flow-state' ? 15 : 0) + (hardened >= 3 ? 12 : hardened === 2 ? 5 : hardened === 1 ? -4 : 0);
+    const followingThrough = target.currentAction && ACTIONS[target.currentAction.id].damage > 0 && target.balance + resolve >= 45
       && (target.currentAction.phase === 'active'
         || (target.currentAction.phase === 'startup' && ['committing', 'clashing'].includes(target.engagement.phase))
         || target.currentAction.meetingCommitment && target.currentAction.phase === 'startup');
@@ -388,13 +479,17 @@ export function stepCombat(s: CombatMatchState): CombatMatchState {
     h.target.velocity.x = q(dx / length * recoil); h.target.velocity.z = q(dz / length * recoil);
     emit(s, h.target, 'STAGGER', { value: h.damage });
   }
+  s.fighters.forEach((f, index) => tryAwakening(s, f, s.fighters[1 - index], rng));
   // Collision resolution can interrupt an action after movement. Reassert the
   // physics invariant so neither fighter can retain an airborne presentation
   // after their own root has landed; each fighter is normalized independently.
   s.fighters.forEach(f => normalizePhysicsState(s, f));
   for (const f of s.fighters) {
-    f.stamina = q(clamp(f.stamina + (f.currentAction ? .04 : .10 + f.snapshot.stats.stamina / 1200), 0, 100));
+    const awakenedRecovery = f.awakening?.type === 'second-wind' ? .16 : f.awakening ? .05 : 0;
+    const reserves = f.stamina < 30 ? traitLevel(f, 'deep-reserves') * .025 : 0;
+    f.stamina = q(clamp(f.stamina + (f.currentAction ? .04 : .10 + f.snapshot.stats.stamina / 1200) + awakenedRecovery + reserves, 0, 100));
     f.balance = q(clamp(f.balance + .08 * f.snapshot.physical.wingControl, 0, 100));
+    f.memory.recentDamageTaken = q(Math.max(0, f.memory.recentDamageTaken - .035));
   }
   s.rngState = rng.state;
   const [a, b] = s.fighters;
