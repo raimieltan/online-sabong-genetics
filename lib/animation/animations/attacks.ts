@@ -12,7 +12,7 @@
 
 import { bell, clamp01, easeIn, easeOut, easeOutBack, smoothstep } from "../math";
 import { add, addPair, type AnimContext, type PoseMap } from "../types";
-import { combatBase, inOutWindow, inward, wingRaise, wingSpread } from "./helpers";
+import { combatBase, inOutWindow, inward, wingOpen, wingRaise, wingSpread } from "./helpers";
 
 /** Normalized progress within [a,b], clamped to 0..1 outside. */
 function seg(t: number, a: number, b: number): number {
@@ -177,6 +177,8 @@ export function wingStrike(t: number, ctx: AnimContext, out: PoseMap): void {
 
   // Strike wing (right): open wide, then whip forward through contact.
   const strikeWing = (1.1 * openP + 0.5 * swingP - 1.2 * followP) * active;
+  wingOpen(out, (0.28 + 0.66 * openP) * active, "R");
+  wingOpen(out, 0.18 * active, "L");
   add(out, "WingR", { rz: strikeWing * w, rx: (0.3 * openP + 0.5 * swingP) * active, ry: -swingP * 0.4 * active });
   // Off wing tucks for balance.
   add(out, "WingL", { rz: -(0.3 + 0.2 * swingP) * w * active });
@@ -219,6 +221,7 @@ export function jumpAttack(t: number, ctx: AnimContext, out: PoseMap): void {
     addPair(out, "Shank", { rx: 0.9 * (1 - p) });
     add(out, "Hips", { py: -0.06 * (1 - p) });
     add(out, "Spine", { rx: 0.1 * (1 - p) - 0.05 * p });
+    wingOpen(out, 0.78 * p);
     wingRaise(out, (-0.2 + 0.9 * p) * ctx.gains.wingForce);
   } else if (t < 0.7) {
     // Airborne — legs tuck then strike out, chest forward, wings hold spread.
@@ -230,6 +233,7 @@ export function jumpAttack(t: number, ctx: AnimContext, out: PoseMap): void {
     add(out, "ShankR", { rx: -0.3 * easeIn(p) * k });
     add(out, "Spine", { rx: 0.2 * easeIn(p) });
     add(out, "Chest", { rx: 0.15 * easeIn(p) });
+    wingOpen(out, 0.82);
     wingSpread(out, 0.6 * ctx.gains.wingForce);
     add(out, "Head", { rx: 0.1 * p });
     add(out, "Tail", { rx: -0.2 * p * ctx.gains.tailCounter });

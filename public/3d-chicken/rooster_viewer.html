@@ -145,7 +145,7 @@
 
   <div id="loading">
     <div id="drop">
-      <b>Drop rooster_rigged.glb here</b>
+      <b>Drop rooster_rigged_corrected_symmetry.glb here</b>
       <small>or click to browse<br/>23 joints · 5 mutation slots · 7 materials</small>
     </div>
     <input type="file" id="file" accept=".glb" style="display:none" />
@@ -512,7 +512,7 @@ function loadBuffer(buf) {
 }
 
 // If the page is served over http(s) and the GLB sits next to it, just load it.
-fetch("rooster_rigged.glb")
+fetch("rooster_rigged_corrected_symmetry.glb")
   .then(r => r.ok ? r.arrayBuffer() : Promise.reject())
   .then(loadBuffer)
   .catch(() => { /* file:// — fall through to the drop zone */ });

@@ -15,7 +15,6 @@ import * as THREE from "three";
 
 import { ANIMATIONS } from "./animations/index";
 import { aerialAttack } from './animations/aerial';
-import { articulateWingChain } from "./animations/helpers";
 import { LayerRig } from "./layers";
 import { clamp, clamp01, smoothstep } from "./math";
 import { AnimationStateMachine } from "./stateMachine";
@@ -98,6 +97,7 @@ export class ProceduralAnimationController {
       velX: 0,
       velZ: 0,
       velY: 0,
+      wingFlapIntensity: 0,
       aimYaw: 0,
       alive: true,
     };
@@ -207,6 +207,7 @@ export class ProceduralAnimationController {
     ctx.velX = frame.velX;
     ctx.velZ = frame.velZ;
     ctx.velY = frame.velY;
+    ctx.wingFlapIntensity = flapIntensityFor(state, frame, simulation);
     ctx.aimYaw = frame.aimYaw;
     ctx.alive = this.alive;
     ctx.stateTime = this.sm.stateTime * this.playbackSpeed;
@@ -233,8 +234,6 @@ export class ProceduralAnimationController {
     }
 
     this.layers.apply(this.poseOut, ctx, state);
-    articulateWingChain(this.poseOut);
-
     this.writeBones();
   }
 
@@ -261,4 +260,25 @@ function isAttack(s: AnimState): boolean {
 
 function isRestState(s: AnimState): boolean {
   return s === "idle" || s === "ready" || s === "idle_alert";
+}
+
+/** Strength for the additive flap layer. Base clips still own their silhouettes. */
+function flapIntensityFor(
+  state: AnimState,
+  frame: { speed: number; velY: number },
+  simulation?: AnimIntent
+): number {
+  if (simulation?.aerial) {
+    if (simulation.aerial.phase === "LAND") return 0.2;
+    // Deterministic short bursts: drive → breath → double drive, rather than
+    // an endlessly even flight loop. wingOffset de-synchronizes both birds.
+    const beat = ((simulation.aerial.tick + Math.round(simulation.aerial.wingOffset * 7)) % 17 + 17) % 17;
+    const burst = beat < 5 ? 1 : beat < 7 ? 0.22 : beat < 11 ? 0.78 : 0.34;
+    return 0.28 + burst * 0.58;
+  }
+  if (state === "wing_strike") return 0.62;
+  if (state === "jump_attack" || state === "flying_kick" || state === "double_kick") return 0.7;
+  if (state === "knockback" || state === "stagger" || state === "stagger_heavy") return 0.3;
+  if (state === "run") return 0.18;
+  return Math.min(0.2, Math.max(0, frame.speed - 0.4) * 0.12 + Math.abs(frame.velY) * 0.025);
 }

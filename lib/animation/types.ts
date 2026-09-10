@@ -210,6 +210,8 @@ export interface AnimContext {
   velZ: number;
   /** Vertical velocity of the whole fighter (world units/sec) — landing/launch cues. */
   velY: number;
+  /** 0..1 reusable procedural flap layer strength, independent of the base pose. */
+  wingFlapIntensity: number;
   /** Move variant for attack states that share a base state. */
   moveKind?: string;
   stagger?: string;

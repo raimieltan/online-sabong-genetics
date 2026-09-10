@@ -5,7 +5,7 @@
  * allocation. Layers only ever `add` into the accumulator pose.
  */
 
-import { Spring, clamp, damp } from "./math";
+import { Spring, clamp, clamp01, damp } from "./math";
 import { add, type AnimContext, type AnimState, type PoseMap } from "./types";
 
 /** States during which breathing is damped down so it doesn't fight the motion. */
@@ -30,6 +30,41 @@ const BREATH_SUPPRESS: Partial<Record<AnimState, number>> = {
   death: 0,
 };
 
+/** One side of the wing as a damped, momentum-carrying three-joint chain. */
+class WingChainSpring {
+  // Shoulder is muscular and decisive; every distal joint is looser and more
+  // under-damped, so it visibly continues after the stroke reverses.
+  private shoulderRz = new Spring(260, 23);
+  private shoulderRx = new Spring(220, 21);
+  private midRz = new Spring(105, 11);
+  private midRx = new Spring(96, 10);
+  private midRy = new Spring(90, 10);
+  private tipRz = new Spring(54, 6.5);
+  private tipRx = new Spring(50, 6);
+  private tipRy = new Spring(46, 5.5);
+
+  reset(): void {
+    for (const spring of [this.shoulderRz, this.shoulderRx, this.midRz, this.midRx, this.midRy, this.tipRz, this.tipRx, this.tipRy]) spring.reset();
+  }
+
+  apply(pose: PoseMap, side: "L" | "R", sign: number, shoulder: number, mid: number, tip: number, intensity: number, dt: number): void {
+    add(pose, `Wing${side}`, {
+      rz: this.shoulderRz.step(sign * shoulder * 0.36 * intensity, dt),
+      rx: this.shoulderRx.step(shoulder * 0.1 * intensity, dt),
+    });
+    add(pose, `Wing${side}_Mid`, {
+      rz: this.midRz.step(sign * mid * 0.58 * intensity, dt),
+      rx: this.midRx.step(mid * 0.28 * intensity, dt),
+      ry: this.midRy.step(-sign * mid * 0.14 * intensity, dt),
+    });
+    add(pose, `Wing${side}_Tip`, {
+      rz: this.tipRz.step(sign * tip * 0.67 * intensity, dt),
+      rx: this.tipRx.step(tip * 0.32 * intensity, dt),
+      ry: this.tipRy.step(-sign * tip * 0.23 * intensity, dt),
+    });
+  }
+}
+
 export class LayerRig {
   // Recoil springs — kicked on impact, otherwise pull to 0.
   private headRx = new Spring(180, 16);
@@ -39,6 +74,9 @@ export class LayerRig {
   private wingL = new Spring(120, 12);
   private wingR = new Spring(120, 12);
   private tailRx = new Spring(110, 12);
+  private flapIntensity = new Spring(72, 16);
+  private flapLeft = new WingChainSpring();
+  private flapRight = new WingChainSpring();
 
   // Head-tracking damped state.
   private aim = 0;
@@ -61,9 +99,11 @@ export class LayerRig {
   }
 
   reset(): void {
-    for (const s of [this.headRx, this.headRy, this.neckRx, this.spineRy, this.wingL, this.wingR, this.tailRx]) {
+    for (const s of [this.headRx, this.headRy, this.neckRx, this.spineRy, this.wingL, this.wingR, this.tailRx, this.flapIntensity]) {
       s.reset();
     }
+    this.flapLeft.reset();
+    this.flapRight.reset();
     this.aim = 0;
   }
 
@@ -75,6 +115,46 @@ export class LayerRig {
   apply(pose: PoseMap, ctx: AnimContext, state: AnimState): void {
     const dt = ctx.dt;
     const g = ctx.gains;
+
+    // Additive spring-chain flap. The target travels shoulder → mid → tip;
+    // each joint has different stiffness/damping instead of direct Euler
+    // assignment, so a stopped flap settles in a visible wave.
+    const flap = this.flapIntensity.step(clamp01(ctx.wingFlapIntensity * g.wingForce), dt);
+    if (flap > 0.002) {
+      const rate = 6.4 + flap * 2.4;
+      const phase = ctx.stateTime * rate * Math.PI * 2;
+      const stroke = (p: number) => {
+        const cycle = ((p / (Math.PI * 2)) % 1 + 1) % 1;
+        // 35% SNAP downstroke, 65% slower folding recovery.
+        return cycle < 0.35 ? -1 + (cycle / 0.35) * 2 : 1 - ((cycle - 0.35) / 0.65) * 2;
+      };
+      const lead = ctx.facing === "right" ? "R" : "L";
+      const phaseFor = (side: "L" | "R") => phase - (side === lead ? 0 : 0.82);
+      const targetFor = (side: "L" | "R") => {
+        const p = phaseFor(side);
+        const variation = 1 + Math.sin(ctx.stateTime * 0.83 + (side === "L" ? 0.4 : 2.1)) * 0.035;
+        return [stroke(p) * variation, stroke(p - 0.92) * variation, stroke(p - 1.78) * variation] as const;
+      };
+      const [leftShoulder, leftMid, leftTip] = targetFor("L");
+      const [rightShoulder, rightMid, rightTip] = targetFor("R");
+      this.flapLeft.apply(pose, "L", -1, leftShoulder, leftMid, leftTip, flap, dt);
+      // A stable asymmetry avoids mirror-perfect combat motion without RNG.
+      this.flapRight.apply(pose, "R", 1, rightShoulder, rightMid, rightTip, flap * 0.94, dt);
+
+      // Hard strokes move mass. Keep this restrained: it sells force without
+      // turning the torso into a second set of wings, while head tracking
+      // below continues to stabilize the opponent-facing gaze.
+      const force = Math.max(0, flap - 0.35);
+      if (force > 0) {
+        const pulse = leftShoulder;
+        const lead = ctx.facing === "right" ? 1 : -1;
+        add(pose, "Chest", { rx: pulse * force * 0.045, rz: lead * pulse * force * 0.025 });
+        add(pose, "Spine", { rx: -pulse * force * 0.035 });
+        add(pose, "Hips", { py: -Math.abs(pulse) * force * 0.008, rz: -lead * pulse * force * 0.018 });
+        add(pose, "Neck", { rx: -pulse * force * 0.025 });
+        add(pose, "Tail", { rx: pulse * force * 0.07 * g.tailCounter });
+      }
+    }
 
     // --- 1. Breathing -----------------------------------------------------
     if (ctx.alive) {

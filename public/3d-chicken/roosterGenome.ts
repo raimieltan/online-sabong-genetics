@@ -1,8 +1,8 @@
 /**
  * Rooster Arena — genome runtime.
- * Pairs with rooster_rigged.glb (23 joints, 5 mutation nodes, 7 materials).
+ * Pairs with rooster_rigged_corrected_symmetry.glb (23 joints, 7 materials).
  *
- *   const gltf = await new GLTFLoader().loadAsync('/models/rooster_rigged.glb')
+ *   const gltf = await new GLTFLoader().loadAsync('/3d-chicken/rooster_rigged_corrected_symmetry.glb')
  *   const rig  = bindRig(gltf.scene)
  *   applyGenome(rig, genome)
  */

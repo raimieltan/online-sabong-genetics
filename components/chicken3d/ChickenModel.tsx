@@ -16,7 +16,8 @@ import type { Chicken, ChickenColorScheme, PhysicalBlock } from "@/lib/types";
 // Both sexes share the single rigged mesh — there is no separate hen
 // geometry, so a hen is rendered as the same rig with a sex-specific pose
 // override (see applyHenOverride) rather than a different model.
-const MODEL_PATH = "/3d-chicken/rooster_rigged.glb";
+/** Canonical symmetric T-pose rig; all procedural poses are additive to its bind pose. */
+const MODEL_PATH = "/3d-chicken/rooster_rigged_corrected_symmetry.glb";
 
 /** Bone scaled by "Giant" when the mutation is expressed. */
 const GIANT_SCALE = 1.4;
@@ -266,6 +267,18 @@ function applyHenOverride(bones: Record<string, THREE.Object3D>, physical: Physi
 }
 
 /**
+ * The corrected source GLB is intentionally authored in a symmetric T-pose.
+ * Its former counterpart stored the folded-wing silhouette in the bind-local
+ * shoulder rotations, which is what the procedural clips were designed to
+ * start from. Keep the source bind pose untouched, but give every runtime
+ * clone that same folded neutral pose before additive animation is captured.
+ */
+function applyRuntimeNeutralPose(bones: Record<string, THREE.Object3D>) {
+  bones["WingL"]?.quaternion.identity();
+  bones["WingR"]?.quaternion.identity();
+}
+
+/**
  * Genome → expressed mutation tags drives the mutation-slot bone nodes and material overrides.
  * `mats` maps a rig material name to every cloned instance that shares it — several meshes (e.g.
  * WingL/WingL_Tip/WingR/WingR_Tip) reuse the same named material in the source GLB, and each gets
@@ -412,6 +425,7 @@ export function ChickenModel({
     applyProportions(bones, physical ?? DEFAULT_PHYSICAL_BLOCK);
     if (sex === "hen") applyHenOverride(bones, physical ?? DEFAULT_PHYSICAL_BLOCK);
     applyVisualTraits(bones, mats, mutations ? resolveVisualTraits({ mutations }) : []);
+    applyRuntimeNeutralPose(bones);
 
     return { scene: clone, bones };
   }, [scene, colorScheme, physical, mutations, sex]);
@@ -511,23 +525,21 @@ export function ChickenModel({
       return;
     }
 
+    // Profile/coop views use the same neutral controller as combat, so the
+    // corrected GLB never exposes its source T-pose between animation states.
     if (!animate) return;
     const t = state.clock.elapsedTime;
     group.current.rotation.y = Math.sin(t * 0.4) * 0.35;
-
-    const neck = modelScene.getObjectByName("Neck");
-    if (neck) neck.rotation.x = Math.sin(t * 1.6) * 0.06;
-
-    const tail = modelScene.getObjectByName("Tail");
-    if (tail) tail.rotation.x = Math.sin(t * 1.2) * 0.05;
-
-    const wingR = modelScene.getObjectByName("WingR");
-    const wingL = modelScene.getObjectByName("WingL");
-    if (wingR) wingR.rotation.z = Math.sin(t * 5) * 0.15;
-    if (wingL) wingL.rotation.z = -Math.sin(t * 5) * 0.15;
-
-    const head = modelScene.getObjectByName("Head");
-    if (head) head.rotation.x = Math.sin(t * 2) * 0.15;
+    controller.setFacing("right");
+    controller.update({
+      dt: delta,
+      now: t * 1000,
+      speed: 0,
+      velX: 0,
+      velZ: 0,
+      velY: 0,
+      aimYaw: 0,
+    });
   });
 
   return (
