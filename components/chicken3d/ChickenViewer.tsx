@@ -42,7 +42,7 @@ export function ChickenViewer({
   className,
   cameraDistance = 4,
 }: {
-  chicken: Pick<Chicken, "colorScheme" | "sex" | "physical" | "mutations">;
+  chicken: Pick<Chicken, "colorScheme" | "sex" | "physical" | "mutations" | "growthStage">;
   interactive?: boolean;
   animate?: boolean;
   className?: string;
@@ -113,6 +113,7 @@ export function ChickenViewer({
               <ChickenModel
                 colorScheme={chicken.colorScheme}
                 sex={chicken.sex}
+                growthStage={chicken.growthStage}
                 physical={chicken.physical}
                 mutations={chicken.mutations}
                 animate={animate}

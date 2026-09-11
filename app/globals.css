@@ -340,6 +340,218 @@ body {
   border-color: transparent transparent transparent color-mix(in srgb, var(--ribbon, var(--color-gold)) 55%, black);
 }
 
+/* Breeding lab — a single bloodline composition over the cinematic ranch. */
+.breeding-page {
+  position: relative;
+  isolation: isolate;
+  background:
+    linear-gradient(180deg, rgba(7, 5, 3, .38), rgba(7, 5, 3, .72)),
+    url('/background/breeding-background.png') center top / cover fixed;
+}
+
+.breeding-page::before {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  content: "";
+  background:
+    radial-gradient(ellipse 55% 45% at 50% 24%, rgba(225, 182, 92, .13), transparent 72%),
+    linear-gradient(90deg, rgba(5, 3, 2, .42), transparent 24%, transparent 76%, rgba(5, 3, 2, .42));
+}
+
+.breeding-back-button {
+  display: flex;
+  width: 2.5rem;
+  height: 2.5rem;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(215, 164, 65, .28);
+  border-radius: .6rem;
+  background: rgba(8, 6, 4, .36);
+  color: var(--color-gold-bright);
+  transition: .18s ease;
+}
+
+.breeding-back-button:hover { border-color: rgba(239, 190, 91, .7); background: rgba(215, 164, 65, .1); }
+
+.breeding-status-pill {
+  border: 1px solid rgba(215, 164, 65, .2);
+  border-radius: 999px;
+  padding: .45rem .7rem;
+  background: rgba(8, 6, 4, .4);
+  color: var(--color-text-muted);
+  font-size: .55rem;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
+
+.breeding-console {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(19rem, 1.14fr) minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid rgba(215, 164, 65, .38);
+  border-radius: 1rem;
+  background: linear-gradient(145deg, rgba(30, 20, 12, .67), rgba(10, 7, 4, .6));
+  box-shadow: inset 0 1px 0 rgba(255, 225, 170, .07), 0 28px 70px rgba(0, 0, 0, .42);
+  backdrop-filter: blur(18px) saturate(118%);
+  -webkit-backdrop-filter: blur(18px) saturate(118%);
+}
+
+.breeding-parent-card { position: relative; min-width: 0; background: rgba(10, 7, 4, .28); }
+.breeding-parent-card-father { border-right: 1px solid rgba(55, 158, 216, .2); }
+.breeding-parent-card-mother { border-left: 1px solid rgba(214, 75, 75, .2); }
+.breeding-parent-card::after { position: absolute; inset: 0 auto 0 0; width: 2px; pointer-events: none; content: ""; background: linear-gradient(transparent, var(--lineage-color), transparent); opacity: .65; }
+.breeding-parent-card-mother::after { right: 0; left: auto; }
+
+.breeding-change-button {
+  border: 1px solid color-mix(in srgb, var(--lineage-color) 45%, transparent);
+  border-radius: 999px;
+  padding: .4rem .65rem;
+  background: color-mix(in srgb, var(--lineage-color) 10%, transparent);
+  color: var(--color-parchment);
+  font-size: .52rem;
+  font-weight: 700;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  transition: .18s ease;
+}
+
+.breeding-change-button:hover { border-color: var(--lineage-color); background: color-mix(in srgb, var(--lineage-color) 18%, transparent); }
+
+.breeding-model-stage {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(215, 164, 65, .12);
+  border-radius: .7rem;
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, .1), rgba(0, 0, 0, .5)),
+    radial-gradient(ellipse 70% 46% at 50% 78%, var(--stage-glow, rgba(212, 162, 78, .28)), transparent 72%);
+  box-shadow: inset 0 -35px 45px rgba(0, 0, 0, .28);
+}
+
+.breeding-model-stage::after {
+  position: absolute;
+  right: 12%;
+  bottom: 8%;
+  left: 12%;
+  height: 1.25rem;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, .5);
+  filter: blur(9px);
+  pointer-events: none;
+  content: "";
+}
+
+.breeding-model-stage > * { position: relative; z-index: 1; }
+
+.breeding-offspring {
+  position: relative;
+  padding: 1.1rem 1.25rem 1.35rem;
+  background: linear-gradient(180deg, rgba(8, 6, 4, .45), rgba(28, 18, 10, .38));
+}
+
+.breeding-offspring::before,
+.breeding-offspring::after {
+  position: absolute;
+  top: 4.5rem;
+  width: 2.5rem;
+  height: 1px;
+  pointer-events: none;
+  content: "";
+  opacity: .45;
+}
+.breeding-offspring::before { left: 0; background: linear-gradient(90deg, #379ed8, transparent); }
+.breeding-offspring::after { right: 0; background: linear-gradient(270deg, #d64b4b, transparent); }
+
+.breeding-egg-aura { position: absolute; inset: 10%; border: 1px solid rgba(225, 182, 92, .28); border-radius: 50%; background: radial-gradient(circle, rgba(225, 182, 92, .2), transparent 68%); box-shadow: 0 0 35px rgba(225, 182, 92, .12); }
+.breeding-gene-line { position: absolute; top: 50%; width: 5rem; height: 1px; opacity: .7; }
+.breeding-gene-line-left { right: 92%; background: linear-gradient(90deg, transparent, #379ed8); }
+.breeding-gene-line-right { left: 92%; background: linear-gradient(90deg, #d64b4b, transparent); }
+.breeding-egg-ready { animation: breeding-egg-pulse 3.2s ease-in-out infinite; }
+@keyframes breeding-egg-pulse { 0%, 100% { transform: translateY(0); filter: brightness(1); } 50% { transform: translateY(-4px); filter: brightness(1.12); } }
+
+.breeding-commit-bar {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  border-top: 1px solid rgba(215, 164, 65, .24);
+  padding: .9rem 1.1rem;
+  background: linear-gradient(90deg, rgba(12, 8, 5, .78), rgba(39, 25, 13, .62), rgba(12, 8, 5, .78));
+}
+
+.breeding-primary-button {
+  display: flex;
+  min-width: 18rem;
+  align-items: center;
+  justify-content: center;
+  gap: .8rem;
+  border: 1px solid rgba(255, 225, 170, .8);
+  border-radius: .55rem;
+  padding: .75rem 1.25rem;
+  background: linear-gradient(180deg, #f0c76b, #d5a342);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .4), 0 8px 24px rgba(0, 0, 0, .32);
+  color: #201309;
+  font-family: var(--font-cinzel), Georgia, serif;
+  font-size: .72rem;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  transition: .18s ease;
+}
+.breeding-primary-button:hover:not(:disabled) { transform: translateY(-1px); filter: brightness(1.08); box-shadow: inset 0 1px 0 rgba(255, 255, 255, .45), 0 10px 28px rgba(0, 0, 0, .38), 0 0 24px rgba(218, 163, 64, .13); }
+.breeding-primary-button:disabled { cursor: not-allowed; border-color: rgba(255, 255, 255, .1); background: linear-gradient(#47413a, #2f2a25); box-shadow: none; color: #8e877e; }
+
+.breeding-nest-card,
+.breeding-empty-nest {
+  display: flex;
+  min-height: 8.5rem;
+  align-items: center;
+  gap: 1rem;
+  border: 1px solid rgba(215, 164, 65, .27);
+  border-radius: .8rem;
+  padding: 1rem;
+  background: linear-gradient(145deg, rgba(25, 17, 10, .62), rgba(8, 6, 4, .48));
+  box-shadow: inset 0 1px 0 rgba(255, 225, 170, .04), 0 12px 30px rgba(0, 0, 0, .26);
+  backdrop-filter: blur(14px) saturate(115%);
+  -webkit-backdrop-filter: blur(14px) saturate(115%);
+}
+
+.breeding-nest-egg { display: flex; width: 4.5rem; height: 5.5rem; flex: none; align-items: center; justify-content: center; border-radius: 50%; background: radial-gradient(circle, rgba(225, 182, 92, .18), transparent 68%); font-size: 2.6rem; }
+.breeding-empty-nest { flex-direction: column; justify-content: center; border-style: dashed; background: rgba(10, 7, 4, .34); text-align: center; transition: .18s ease; }
+.breeding-empty-nest:hover { border-color: rgba(239, 190, 91, .7); background: rgba(42, 27, 15, .5); }
+
+.breeding-selector {
+  overflow: hidden;
+  border: 1px solid rgba(215, 164, 65, .45);
+  background: linear-gradient(145deg, rgba(35, 24, 14, .94), rgba(9, 7, 5, .92));
+  box-shadow: inset 0 1px 0 rgba(255, 225, 170, .07), 0 30px 80px rgba(0, 0, 0, .58);
+  backdrop-filter: blur(24px) saturate(120%);
+  -webkit-backdrop-filter: blur(24px) saturate(120%);
+}
+
+@media (max-width: 960px) {
+  .breeding-console { grid-template-columns: 1fr 1fr; }
+  .breeding-offspring { grid-column: 1 / -1; grid-row: 1; }
+  .breeding-parent-card-father { border-top: 1px solid rgba(55, 158, 216, .2); border-right: 1px solid rgba(55, 158, 216, .2); }
+  .breeding-parent-card-mother { border-top: 1px solid rgba(214, 75, 75, .2); border-left: 0; }
+}
+
+@media (max-width: 620px) {
+  .breeding-page { background-attachment: scroll; }
+  .breeding-console { display: block; }
+  .breeding-offspring { border-bottom: 1px solid rgba(215, 164, 65, .18); }
+  .breeding-parent-card-father,
+  .breeding-parent-card-mother { border: 0; border-bottom: 1px solid rgba(215, 164, 65, .14); }
+  .breeding-commit-bar { flex-direction: column; }
+  .breeding-primary-button { width: 100%; min-width: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) { .breeding-egg-ready { animation: none; } }
+
 /* --------------------------------------------------------------------- */
 /* Versus arena: comic-style rival face-off used on the pre-fight screen */
 /* --------------------------------------------------------------------- */

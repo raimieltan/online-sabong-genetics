@@ -90,6 +90,7 @@ export function ThumbnailGenerator() {
             <ChickenModel
               colorScheme={job.subject.colorScheme}
               sex={job.subject.sex}
+              growthStage={job.subject.growthStage}
               physical={job.subject.physical}
               mutations={job.subject.mutations}
               animate={false}

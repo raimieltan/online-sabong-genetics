@@ -8,21 +8,10 @@ import { CoopWorld } from "@/components/chicken3d/CoopWorld";
 
 import { CoopSelectionPanel } from "./CoopSelectionPanel";
 import { EggGrid } from "./EggGrid";
+import { CoopIcon } from "./CoopIcons";
+import styles from "./coop.module.css";
 
-/**
- * The primary 3D village experience (spec §1-12): a live scene of the
- * player's active chickens, with a compact selection panel and an incubator
- * popover for the existing egg/hatch flow. Handles its own empty-coop and
- * "preparing your coop" states so the page component stays a thin data layer.
- */
-export function VillageView({
-  chickens,
-  eggs,
-  onHatch,
-  onAgeUp,
-  onRetire,
-  onGenerate,
-}: {
+export function VillageView({ chickens, eggs, onHatch, onAgeUp, onRetire, onGenerate }: {
   chickens: Chicken[];
   eggs: Egg[];
   onHatch: (eggId: string) => void;
@@ -35,11 +24,12 @@ export function VillageView({
   const [ready, setReady] = useState(false);
   const [page, setPage] = useState(0);
 
-  const activeChickens = chickens.filter((c) => c.status === "active");
-  const selected = activeChickens.find((c) => c.id === selectedId) ?? null;
-  // paginateVillage clamps into range every render, so a stale `page` after a
-  // retire/hatch is corrected on display without needing to sync it back.
+  // Recovering fighters remain physically present near the medical hut; only
+  // reserve-like terminal states are omitted from the living compound.
+  const activeChickens = chickens.filter((chicken) => chicken.status === "active" || chicken.status === "injured");
+  const selected = activeChickens.find((chicken) => chicken.id === selectedId) ?? null;
   const { page: currentPage, pageCount, items: visibleChickens } = paginateVillage(activeChickens, page);
+  const battleReady = activeChickens.filter((chicken) => !chicken.injured && chicken.energy >= 25).length;
 
   function goToPage(next: number) {
     setSelectedId(null);
@@ -48,96 +38,65 @@ export function VillageView({
 
   if (activeChickens.length === 0) {
     return (
-      <div className="flex min-h-[60vh] flex-col items-center justify-center gap-4 rounded-lg border border-dashed border-(--color-gold)/20 p-10 text-center">
-        <p className="text-5xl">⛺</p>
-        <p className="text-(--color-text-muted)">Your coop is empty.</p>
-        <p className="max-w-sm text-sm text-(--color-text-muted)">
-          Hatch an egg or generate your first chicken to start your village.
-        </p>
-        <button
-          onClick={onGenerate}
-          className="rounded-md bg-gradient-to-b from-(--color-gold-bright) to-(--color-gold) px-5 py-2.5 font-semibold text-(--color-ink) shadow-lg shadow-black/40 transition hover:brightness-110"
-        >
-          + Get Chicken
-        </button>
+      <div className={styles.empty}>
+        <div className={`${styles.panel} ${styles.emptyCard}`}>
+          <span className={styles.crest}><CoopIcon name="village" /></span>
+          <h2>Your stable awaits</h2>
+          <p>Hatch an egg or acquire your first fighter and bring this hillside coop to life.</p>
+          <button type="button" onClick={onGenerate} className={styles.actionButton}><CoopIcon name="plus" /> Acquire first fighter</button>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="relative h-[70vh] min-h-[420px] overflow-hidden rounded-lg border border-(--color-gold)/15">
-      {!ready && (
-        <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-(--color-ink)">
-          <p className="animate-bounce text-4xl">🐔</p>
-          <p className="text-sm text-(--color-text-muted)">Preparing your coop...</p>
-        </div>
-      )}
+    <section className={styles.villageStage} aria-label="3D coop village">
+      {!ready && <div className={styles.loading}><div><CoopIcon name="bird" /><p>Preparing your coop</p></div></div>}
 
-      <CoopWorld
-        chickens={visibleChickens}
-        selectedId={selectedId}
-        onSelect={(chicken) => setSelectedId(chicken?.id ?? null)}
-        onIncubatorClick={() => setShowIncubator(true)}
-        onReady={() => setReady(true)}
-      />
+      <div className={styles.sceneCanvas}>
+        <CoopWorld chickens={visibleChickens} eggCount={eggs.length} selectedId={selectedId} onSelect={(chicken) => setSelectedId(chicken?.id ?? null)} onIncubatorClick={() => setShowIncubator(true)} onReady={() => setReady(true)} />
+      </div>
 
-      {pageCount > 1 && (
-        <div className="pointer-events-none absolute inset-x-0 top-3 z-20 flex justify-center">
-          <div className="pointer-events-auto flex items-center gap-3 rounded-full border border-(--color-gold)/25 bg-(--color-ink)/80 px-3 py-1.5 text-sm backdrop-blur">
-            <button
-              onClick={() => goToPage(currentPage - 1)}
-              disabled={currentPage === 0}
-              className="rounded px-2 py-0.5 font-semibold text-(--color-gold-bright) transition hover:bg-black/30 disabled:opacity-30"
-              aria-label="Previous page"
-            >
-              ‹
-            </button>
-            <span className="tabular-nums text-(--color-text-muted)">
-              Coop {currentPage + 1} / {pageCount}
-            </span>
-            <button
-              onClick={() => goToPage(currentPage + 1)}
-              disabled={currentPage >= pageCount - 1}
-              className="rounded px-2 py-0.5 font-semibold text-(--color-gold-bright) transition hover:bg-black/30 disabled:opacity-30"
-              aria-label="Next page"
-            >
-              ›
-            </button>
+      <aside className={`${styles.sceneHud} ${styles.statusRail}`}>
+        <div className={styles.panel}>
+          <h2 className={styles.railTitle}>Stable grounds</h2>
+          <p className={styles.railCopy}>Your fighters roam their home grounds. Select one to inspect or prepare them.</p>
+          <div className={styles.railMetrics}>
+            <div className={styles.railMetric}><span>Residents</span><b>{activeChickens.length}</b></div>
+            <div className={styles.railMetric}><span>Battle ready</span><b>{battleReady}</b></div>
+            <button type="button" className={styles.railMetric} onClick={() => setShowIncubator(true)}><span>Incubating</span><b>{eggs.length}</b></button>
+            <div className={styles.railMetric}><span>Ground</span><b>{currentPage + 1}/{pageCount}</b></div>
           </div>
         </div>
+      </aside>
+
+      {pageCount > 1 && (
+        <div className={`${styles.sceneHud} ${styles.pager}`}>
+          <button type="button" onClick={() => goToPage(currentPage - 1)} disabled={currentPage === 0} aria-label="Previous coop">‹</button>
+          <span>Coop {currentPage + 1} of {pageCount}</span>
+          <button type="button" onClick={() => goToPage(currentPage + 1)} disabled={currentPage >= pageCount - 1} aria-label="Next coop">›</button>
+        </div>
       )}
 
+      <div className={`${styles.sceneHud} ${styles.sceneHint}`}><span>Drag to orbit</span><span>·</span><span>Scroll to zoom</span><span>·</span><span>Select a fighter</span></div>
+
       {selected && (
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center p-0 sm:inset-auto sm:right-4 sm:bottom-4 sm:justify-end sm:p-0">
-          <CoopSelectionPanel
-            chicken={selected}
-            onClose={() => setSelectedId(null)}
-            onAgeUp={() => onAgeUp(selected.id)}
-            onRetire={() => {
-              onRetire(selected.id);
-              setSelectedId(null);
-            }}
-          />
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center sm:inset-auto sm:right-4 sm:bottom-4 sm:justify-end">
+          <CoopSelectionPanel chicken={selected} onClose={() => setSelectedId(null)} onAgeUp={() => onAgeUp(selected.id)} onRetire={() => { onRetire(selected.id); setSelectedId(null); }} />
         </div>
       )}
 
       {showIncubator && (
-        <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/60 p-4">
-          <div className="panel-wood w-full max-w-lg rounded-lg p-5">
+        <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+          <div className={`${styles.panel} w-full max-w-2xl p-5`}>
             <div className="mb-3 flex items-center justify-between">
-              <h3 className="font-display text-lg font-semibold text-(--color-gold-bright)">🥚 Incubator</h3>
-              <button
-                onClick={() => setShowIncubator(false)}
-                className="text-(--color-text-muted) hover:text-(--foreground)"
-                aria-label="Close"
-              >
-                ✕
-              </button>
+              <h3 className="flex items-center gap-2 font-display text-lg text-(--color-gold-bright)"><CoopIcon name="egg" className="h-5 w-5" /> Incubator</h3>
+              <button type="button" onClick={() => setShowIncubator(false)} className="text-(--color-text-muted) hover:text-(--foreground)" aria-label="Close incubator"><CoopIcon name="close" className="h-5 w-5" /></button>
             </div>
             <EggGrid eggs={eggs} onHatch={onHatch} />
           </div>
         </div>
       )}
-    </div>
+    </section>
   );
 }

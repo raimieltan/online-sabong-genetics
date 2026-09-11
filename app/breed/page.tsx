@@ -6,18 +6,14 @@ import { useSearchParams } from "next/navigation";
 
 import { canBreed } from "@/lib/growth";
 import type { Chicken, Egg } from "@/lib/types";
-import { PageHeader } from "@/components/PageHeader";
 import { ParentCard } from "./ParentCard";
+import { ParentSelector } from "./ParentSelector";
 import { OffspringPreview } from "./OffspringPreview";
 
 const BREED_COST = 500;
 
 export default function BreedPage() {
-  return (
-    <Suspense fallback={null}>
-      <BreedPageContent />
-    </Suspense>
-  );
+  return <Suspense fallback={null}><BreedPageContent /></Suspense>;
 }
 
 function BreedPageContent() {
@@ -26,6 +22,7 @@ function BreedPageContent() {
   const [eggs, setEggs] = useState<Egg[]>([]);
   const [fatherId, setFatherId] = useState(searchParams.get("fatherId") ?? "");
   const [motherId, setMotherId] = useState(searchParams.get("motherId") ?? "");
+  const [selecting, setSelecting] = useState<"father" | "mother" | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [breeding, setBreeding] = useState(false);
 
@@ -34,10 +31,11 @@ function BreedPageContent() {
     fetch("/api/eggs").then((res) => res.json()).then(setEggs);
   }, []);
 
-  const roosters = chickens.filter((c) => c.sex === "rooster" && canBreed(c.growthStage));
-  const hens = chickens.filter((c) => c.sex === "hen" && canBreed(c.growthStage));
-  const father = roosters.find((r) => r.id === fatherId);
-  const mother = hens.find((h) => h.id === motherId);
+  const roosters = chickens.filter((chicken) => chicken.sex === "rooster" && canBreed(chicken.growthStage));
+  const hens = chickens.filter((chicken) => chicken.sex === "hen" && canBreed(chicken.growthStage));
+  const father = roosters.find((chicken) => chicken.id === fatherId);
+  const mother = hens.find((chicken) => chicken.id === motherId);
+  const ready = Boolean(father && mother);
 
   async function handleBreed() {
     setError(null);
@@ -48,15 +46,13 @@ function BreedPageContent() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ fatherId, motherId }),
       });
-
       if (!res.ok) {
         const data = await res.json();
         setError(data.error ?? "Breeding failed");
         return;
       }
-
       const egg: Egg = await res.json();
-      setEggs((prev) => [...prev, egg]);
+      setEggs((previous) => [...previous, egg]);
       setFatherId("");
       setMotherId("");
     } finally {
@@ -65,81 +61,74 @@ function BreedPageContent() {
   }
 
   return (
-    <main className="min-h-screen bg-(--color-ink) p-6">
-      <PageHeader
-        eyebrow="Bloodline Pairing"
-        title="🥚 Breeding"
-        description={<Link href="/coop" className="hover:underline">← Back to Coop</Link>}
-        right={<p className="text-sm text-(--color-text-muted)">
-          🐓 {roosters.length} eligible roosters · 🐔 {hens.length} eligible hens
-        </p>}
-      />
+    <main className="breeding-page min-h-screen px-3 py-4 sm:px-5 sm:py-5 lg:px-8">
+      <div className="relative z-10 mx-auto max-w-[1520px]">
+        <header className="smoked-glass mb-4 flex flex-col gap-4 rounded-xl px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+          <div className="flex items-center gap-4">
+            <Link href="/coop" className="breeding-back-button" aria-label="Back to coop">←</Link>
+            <div>
+              <p className="text-[9px] font-bold uppercase tracking-[0.28em] text-(--color-gold-bright)">Breeding · Bloodline pairing</p>
+              <h1 className="mt-1 font-display text-2xl font-semibold uppercase tracking-[0.06em] text-(--color-parchment) sm:text-3xl">Build the next champion</h1>
+              <p className="mt-1 text-xs text-(--color-text-muted)">Compare the parent lines, study the inheritance outlook, then commit the pairing.</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 self-end sm:self-auto">
+            <span className="breeding-status-pill"><b className="text-(--color-gold-bright)">{eggs.length}</b> active {eggs.length === 1 ? "clutch" : "clutches"}</span>
+            <span className="breeding-status-pill"><b className="text-(--color-gold-bright)">🪙 {BREED_COST}</b> pairing cost</span>
+          </div>
+        </header>
 
-      <div className="mx-auto mb-10 max-w-5xl">
-        <div className="grid grid-cols-1 items-start gap-6 sm:grid-cols-[1fr_auto_1fr]">
-          <ParentCard
-            role="father"
-            label="Father"
-            chicken={father}
-            options={roosters}
-            value={fatherId}
-            onChange={setFatherId}
-          />
+        <section className="breeding-console">
+          <ParentCard role="father" chicken={father} onChoose={() => setSelecting("father")} />
+          <OffspringPreview father={father} mother={mother} />
+          <ParentCard role="mother" chicken={mother} onChoose={() => setSelecting("mother")} />
 
-          <div className="flex flex-row items-center justify-center gap-4 py-2 sm:flex-col sm:gap-3 sm:pt-24">
-            <span className="text-4xl drop-shadow-[0_0_10px_rgba(240,198,116,0.6)]">💗</span>
-            <span className="text-3xl">🥚</span>
-            <button
-              onClick={handleBreed}
-              disabled={!fatherId || !motherId || breeding}
-              className="whitespace-nowrap rounded-md bg-gradient-to-b from-(--color-gold-bright) to-(--color-gold) px-6 py-2.5 font-display font-semibold text-(--color-ink) shadow-lg shadow-black/40 transition hover:brightness-110 disabled:cursor-not-allowed disabled:from-neutral-700 disabled:to-neutral-700 disabled:text-neutral-400 disabled:shadow-none"
-            >
-              {breeding ? "Breeding…" : "Breed"}
-              <span className="ml-2 text-xs font-normal opacity-80">🪙 {BREED_COST}</span>
-            </button>
+          <footer className="breeding-commit-bar">
+            <div className="hidden md:block">
+              <p className="text-[9px] font-bold uppercase tracking-[0.2em] text-(--color-gold-bright)">Pairing protocol</p>
+              <p className="mt-1 text-xs text-(--color-text-muted)">{ready ? `${father?.name} and ${mother?.name} are ready to establish a new generation.` : "Choose one sire and one dam to unlock the genetic forecast."}</p>
+            </div>
+            <div className="flex w-full flex-col items-stretch gap-2 md:w-auto md:items-end">
+              {error && <p className="rounded border border-red-300/20 bg-red-950/30 px-3 py-2 text-xs text-red-200">{error}</p>}
+              <button type="button" onClick={handleBreed} disabled={!ready || breeding} className="breeding-primary-button">
+                <span>{breeding ? "Securing bloodline…" : "Breed this pair"}</span><span className="h-4 w-px bg-black/20" /><span className="text-xs">🪙 {BREED_COST}</span>
+              </button>
+              <p className="text-center text-[8px] uppercase tracking-[0.13em] text-(--color-text-muted) md:text-right">Genetics lock when the egg is created</p>
+            </div>
+          </footer>
+        </section>
+
+        <section className="mt-5">
+          <div className="mb-3 flex items-end justify-between gap-4 px-1">
+            <div><p className="text-[9px] font-bold uppercase tracking-[0.22em] text-(--color-gold-bright)">Hatchery</p><h2 className="mt-1 font-display text-xl text-(--color-parchment)">Your nests</h2></div>
+            <p className="text-[10px] uppercase tracking-wider text-(--color-text-muted)">{eggs.length ? `${eggs.length} genetics secured` : "Ready for a first clutch"}</p>
           </div>
 
-          <ParentCard
-            role="mother"
-            label="Mother"
-            chicken={mother}
-            options={hens}
-            value={motherId}
-            onChange={setMotherId}
-          />
-        </div>
-
-        {error && <p className="mt-3 text-center text-sm text-red-400">{error}</p>}
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {eggs.map((egg) => {
+              const sire = chickens.find((chicken) => chicken.id === egg.fatherId);
+              const dam = chickens.find((chicken) => chicken.id === egg.motherId);
+              return (
+                <article key={egg.id} className="breeding-nest-card">
+                  <div className="breeding-nest-egg"><span aria-hidden>🥚</span></div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-start justify-between gap-3"><div><p className="text-[9px] font-bold uppercase tracking-[0.18em] text-emerald-300">● {egg.status}</p><h3 className="mt-1 font-display text-lg text-(--color-parchment)">Generation {egg.generation}</h3></div><span className="rounded-full border border-(--color-gold)/20 bg-black/25 px-2 py-1 text-[8px] uppercase tracking-wider text-(--color-text-muted)">{egg.breed ?? "Mixed line"}</span></div>
+                    <p className="mt-2 truncate text-[10px] text-(--color-text-muted)">{sire?.name ?? "Sire"} <span className="mx-1 text-(--color-gold)">×</span> {dam?.name ?? "Dam"}</p>
+                    <div className="mt-3 h-1 overflow-hidden rounded-full bg-black/45"><span className="block h-full w-full bg-gradient-to-r from-(--color-gold)/50 to-(--color-gold-bright)" /></div>
+                    <p className="mt-2 text-[8px] uppercase tracking-[0.13em] text-(--color-text-muted)">Conception complete · Ready to hatch from the coop</p>
+                  </div>
+                  <Link href="/coop" className="shrink-0 text-lg text-(--color-gold-bright)" aria-label="Open coop to hatch">→</Link>
+                </article>
+              );
+            })}
+            <button type="button" onClick={() => setSelecting("father")} className="breeding-empty-nest">
+              <span className="text-2xl opacity-50" aria-hidden>⌁</span><span className="font-display text-sm text-(--color-parchment)">Prepare a new nest</span><span className="text-[9px] uppercase tracking-[0.14em] text-(--color-text-muted)">Begin with a sire</span>
+            </button>
+          </div>
+        </section>
       </div>
 
-      <div className="mx-auto mb-10 max-w-4xl">
-        <OffspringPreview father={father} mother={mother} />
-      </div>
-
-      <h2 className="mb-3 flex items-center gap-2 font-display text-lg font-semibold text-(--foreground)">
-        <span className="rounded bg-black/30 px-2 py-0.5 text-base">🪺</span>
-        Nest
-        <span className="text-sm font-normal text-(--color-text-muted)">({eggs.length})</span>
-      </h2>
-      {eggs.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-(--color-gold)/20 p-8 text-center text-(--color-text-muted)">
-          No eggs yet — breed a pair to start a clutch.
-        </p>
-      ) : (
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
-          {eggs.map((egg) => (
-            <div key={egg.id} className="panel-wood rounded-lg p-4 text-center">
-              <p className="text-3xl">🥚</p>
-              <p className="mt-2 text-sm font-semibold text-(--foreground)">
-                {egg.sex === "rooster" ? "🐓" : "🐔"} {egg.sex}
-              </p>
-              <p className="text-xs text-(--color-text-muted)">
-                Gen {egg.generation} · {egg.status}
-              </p>
-            </div>
-          ))}
-        </div>
-      )}
+      {selecting && <ParentSelector role={selecting} options={selecting === "father" ? roosters : hens} selectedId={selecting === "father" ? fatherId : motherId} onSelect={selecting === "father" ? setFatherId : setMotherId} onClose={() => setSelecting(null)} />}
     </main>
   );
 }

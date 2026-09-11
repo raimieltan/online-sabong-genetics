@@ -1,0 +1,25 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { TRAINING_GYM_LEVELS, TRAINING_PROGRAMS } from "../facilities/config";
+import { calculateTrainingProjection, TRAINING_GAIN_MULTIPLIER } from "../training/calculation";
+import { trainingEffectiveness } from "../training/limits";
+import { previewTrainingSession } from "../training/preview";
+import { resolveTrainingSession } from "../training/resolver";
+import { defaultRoosterTrainingState } from "../training/state";
+import type { TrainingResolutionContext, TrainingSessionIntent } from "../training/types";
+import { defaultTrainingState } from "../training/limits";
+import { makeChicken, statBlock } from "./testHelpers";
+
+function context(overrides:Partial<TrainingResolutionContext>={}):TrainingResolutionContext{
+  const program=TRAINING_PROGRAMS.COUNTER_DRILLS;
+  const session:TrainingSessionIntent={id:"session-v3",chickenId:"test",programId:program.id,category:"technique",intensity:"normal",startedAt:new Date(0),durationMinutes:1,energyCost:program.energyCost,fatigueCost:program.fatigueCost,stressCost:program.stressCost,trainingPointCost:program.trainingPointCost};
+  return {chicken:makeChicken({ev:statBlock(20),experience:{offensive:0,defensive:0,evasion:0,counter:0,pressure:0,recovery:0,adaptation:0},behavior:{aggression:.5,caution:.5,patience:.5,riskTolerance:.5,pressurePreference:.5,counterPreference:.5,recoveryPreference:.5,persistence:.5},condition:100,stress:0,trainingState:defaultTrainingState()}),session,program,facility:TRAINING_GYM_LEVELS[3],trainingState:defaultTrainingState(),roosterTraining:defaultRoosterTrainingState(statBlock(100)),rng:()=>.999,completedAt:1000,...overrides};
+}
+
+test("V3 fatigue effectiveness is smooth and monotonically declining",()=>{let previous=1;for(let fatigue=0;fatigue<=100;fatigue++){const current=trainingEffectiveness(fatigue);assert.ok(current<=previous);assert.ok(previous-current<.03);previous=current;}assert.equal(trainingEffectiveness(0),1);assert.equal(trainingEffectiveness(100),.2);});
+test("counter drills produce multi-stat EV, combat XP, and soft behavioral adaptation without deleting EV",()=>{const ctx=context();const result=resolveTrainingSession(ctx);assert.ok(result.persistedResult.statChanges.accuracy!>0);assert.ok(result.persistedResult.statChanges.agility!>0);assert.ok(result.persistedResult.experienceChanges.counter!>result.persistedResult.experienceChanges.defensive!);assert.ok(result.persistedResult.behaviorChanges.counterPreference!>0);assert.equal(result.nextEv.power,ctx.chicken.ev.power);assert.equal(result.persistedResult.version,3);});
+test("training applies the modest global pacing lift to permanent gains",()=>{const ctx=context();const projection=calculateTrainingProjection(ctx);const potentialMultiplier=.85+ctx.roosterTraining.trainingPotential.accuracy*.003;assert.equal(TRAINING_GAIN_MULTIPLIER,1.15);assert.ok(Math.abs(projection.statGains.accuracy!-ctx.program.baseEvGain*.75*ctx.facility.efficiency*potentialMultiplier*TRAINING_GAIN_MULTIPLIER)<1e-10);assert.ok(Math.abs(projection.experienceGains.counter!-6*ctx.facility.experienceMultiplier*TRAINING_GAIN_MULTIPLIER)<1e-10);assert.ok(Math.abs(projection.behaviorGains.counterPreference!-.005*TRAINING_GAIN_MULTIPLIER)<1e-10);});
+test("preview and completion share deterministic reward and resource formulas",()=>{const ctx=context();const preview=previewTrainingSession(ctx);const result=resolveTrainingSession(ctx).persistedResult;for(const [stat,gain] of Object.entries(result.statChanges)){const range=preview.expectedEv[stat as keyof typeof preview.expectedEv]!;assert.ok(gain>=range.min&&gain<=range.max);}assert.equal(result.resourceChanges.trainingFatigue,preview.fatigueGain);assert.equal(result.resourceChanges.energy,-preview.energyCost);assert.equal(result.trainingEfficiency,preview.trainingEfficiency);});
+test("facility quality raises EV and XP while reducing fatigue and injury risk",()=>{const low=context({facility:TRAINING_GYM_LEVELS[1]}),high=context({facility:TRAINING_GYM_LEVELS[5]});const a=previewTrainingSession(low),b=previewTrainingSession(high);assert.ok(b.expectedEv.accuracy!.min>a.expectedEv.accuracy!.min);assert.ok(b.expectedExperience.counter!.min>a.expectedExperience.counter!.min);assert.ok(b.fatigueGain<a.fatigueGain);assert.ok(b.injuryRisk<a.injuryRisk);});
+test("capped stats stay capped and wasted gain is reported",()=>{const chicken=makeChicken({...context().chicken,ev:{...statBlock(20),accuracy:100,agility:100}});const ctx=context({chicken});const preview=previewTrainingSession(ctx);const result=resolveTrainingSession(ctx);assert.equal(result.nextEv.accuracy,100);assert.ok(preview.wastedEv.accuracy!>0);});
+test("behavior remains clamped and seeded RNG makes resolution deterministic",()=>{const base=context();base.chicken.behavior={...base.chicken.behavior!,counterPreference:.999,patience:.999};const one=resolveTrainingSession(base),two=resolveTrainingSession(base);assert.ok(one.nextBehavior.counterPreference<=1);assert.deepEqual(one.persistedResult,two.persistedResult);});

@@ -179,6 +179,7 @@ export default function TournamentPage({
    */
   const [liveOpponent, setLiveOpponent] =
     useState<Chicken | null>(null);
+  const [liveMatchSeed, setLiveMatchSeed] = useState<number>();
 
   /**
    * True while the existing server-side tournament fight is being resolved.
@@ -595,6 +596,7 @@ export default function TournamentPage({
       pendingChicken.current = resolved.chicken;
 
       pendingResult.current = resolved.result;
+      setLiveMatchSeed(resolved.result.matchSeed);
 
       pendingBattleReport.current =
         resolved.battleReport ?? null;
@@ -613,6 +615,7 @@ export default function TournamentPage({
       console.error(reason);
 
       setLiveOpponent(null);
+      setLiveMatchSeed(undefined);
 
       setError(
         reason instanceof Error
@@ -693,6 +696,7 @@ export default function TournamentPage({
     );
 
     setLiveOpponent(null);
+    setLiveMatchSeed(undefined);
 
     /**
      * Clear refs after committing.
@@ -1105,6 +1109,7 @@ export default function TournamentPage({
           <ContinuousBattle
             chickenA={chicken}
             chickenB={liveOpponent}
+            matchSeed={liveMatchSeed}
             autoStart
             audioEnabled={audioEnabled}
             onToggleAudio={toggleAudio}

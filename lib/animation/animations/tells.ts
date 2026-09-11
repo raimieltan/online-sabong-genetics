@@ -1,7 +1,7 @@
 /**
  * The 3 Phase A.5 tell animations — each maps to a coarse intent tier
  * (selectTell()'s TellKind), never the exact CombatAction that follows. All
- * 3 are short (350-450ms), hold the combat-ready base, and read as a distinct
+ * 3 use a deliberately extended playtest window, hold the combat-ready base, and read as a distinct
  * shape so a player can tell them apart at a glance: aggression = forward
  * weight shift + chest puff, patience = weight settles back + head levels,
  * risk = a sharp coiled crouch-and-hold.

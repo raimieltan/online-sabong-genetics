@@ -175,6 +175,8 @@ function buildTrainingState(
       discovered,
       traits: [],
       breakthroughs: [],
+      traitProgress: {},
+      specializationProgress: {},
     },
   };
 }

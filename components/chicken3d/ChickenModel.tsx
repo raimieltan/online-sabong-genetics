@@ -8,10 +8,11 @@ import { useGLTF } from "@react-three/drei";
 import { SkeletonUtils } from "three-stdlib";
 
 import { resolveVisualTraits } from "@/lib/physicalProfile";
+import { growthVisualScale } from "@/lib/growth";
 import { deriveAnimationGains } from "@/lib/animation/physicalGenetics";
 import { ProceduralAnimationController } from "@/lib/animation/ProceduralAnimationController";
 import type { AnimIntent } from "@/lib/animation/types";
-import type { Chicken, ChickenColorScheme, PhysicalBlock } from "@/lib/types";
+import type { Chicken, ChickenColorScheme, GrowthStage, PhysicalBlock } from "@/lib/types";
 
 // Both sexes share the single rigged mesh — there is no separate hen
 // geometry, so a hen is rendered as the same rig with a sex-specific pose
@@ -305,6 +306,27 @@ function applyProportions(bones: Record<string, THREE.Object3D>, physical: Physi
 }
 
 /**
+ * Juvenile sexual characteristics develop independently from overall body
+ * size. Roosters start with a small comb, reveal the hackle at young adult,
+ * and reach their final plumage/comb proportions at adult.
+ */
+function applyGrowthStageOverride(bones: Record<string, THREE.Object3D>, stage: GrowthStage) {
+  const maturity: Record<GrowthStage, { comb: number; hackle: number }> = {
+    chick: { comb: 0.22, hackle: 0 },
+    juvenile: { comb: 0.42, hackle: 0 },
+    young_adult: { comb: 0.7, hackle: 0.7 },
+    adult: { comb: 1, hackle: 1 },
+    prime: { comb: 1, hackle: 1 },
+    senior: { comb: 1, hackle: 1 },
+    retired: { comb: 1, hackle: 1 },
+  };
+  const visual = maturity[stage];
+  bones["Comb"]?.scale.multiplyScalar(visual.comb);
+  bones["Wattle"]?.scale.multiplyScalar(visual.comb);
+  bones["Hackle"]?.scale.multiplyScalar(visual.hackle);
+}
+
+/**
  * Hens share the rooster's mesh — there is no separate hen geometry — so sex
  * is expressed as a pose override applied after the genome scale: no crown
  * (Comb/Wattle scaled toward 0) and a shorter, flatter tail than a rooster's
@@ -407,6 +429,7 @@ export interface FighterAnim {
 export function ChickenModel({
   colorScheme,
   sex,
+  growthStage = "adult",
   physical,
   mutations,
   animate = true,
@@ -419,6 +442,7 @@ export function ChickenModel({
 }: {
   colorScheme: Chicken["colorScheme"];
   sex: Chicken["sex"];
+  growthStage?: Chicken["growthStage"];
   physical?: Chicken["physical"];
   mutations?: Chicken["mutations"];
   animate?: boolean;
@@ -488,12 +512,13 @@ export function ChickenModel({
     }
 
     applyProportions(bones, physical ?? DEFAULT_PHYSICAL_BLOCK);
+    applyGrowthStageOverride(bones, growthStage);
     if (sex === "hen") applyHenOverride(bones, physical ?? DEFAULT_PHYSICAL_BLOCK);
     applyVisualTraits(bones, mats, mutations ? resolveVisualTraits({ mutations }) : []);
     applyRuntimeNeutralPose(bones);
 
     return { scene: clone, bones };
-  }, [scene, colorScheme, physical, mutations, sex]);
+  }, [scene, colorScheme, physical, mutations, sex, growthStage]);
 
   // Procedural animation controller — rebuilt whenever the scene is re-cloned
   // (physical/mutation change) so it re-captures rest pose against the new bones.
@@ -626,7 +651,9 @@ export function ChickenModel({
   return (
     <>
       <group ref={group} position={basePosition} dispose={null}>
-        <primitive object={clonedScene.scene} />
+        <group scale={growthVisualScale(growthStage)}>
+          <primitive object={clonedScene.scene} />
+        </group>
       </group>
       {showWingTrajectory && <primitive object={wingTrails.left.line} />}
       {showWingTrajectory && <primitive object={wingTrails.right.line} />}

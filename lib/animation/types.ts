@@ -236,6 +236,8 @@ export interface AnimIntent {
   aerial?: import('../combat-v2/types').AerialRuntime & { tick: number; phaseProgress: number; actionId?: string; strikeProgress?: number };
   /** V2 presentation: authoritative normalized pose time; bypass clip-driven transitions. */
   simulationProgress?: number;
+  /** V2-only tactical silhouette layered over the authoritative action pose. */
+  tacticalMode?: import('../combat-v2/types').TacticalMode;
   state: AnimState;
   /** ms timestamp when this intent began. */
   startedAt: number;

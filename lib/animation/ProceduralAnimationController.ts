@@ -15,6 +15,7 @@ import * as THREE from "three";
 
 import { ANIMATIONS } from "./animations/index";
 import { aerialAttack } from './animations/aerial';
+import { applyTacticalPosture } from './animations/tacticalPosture';
 import { LayerRig } from "./layers";
 import { clamp, clamp01, smoothstep } from "./math";
 import { AnimationStateMachine } from "./stateMachine";
@@ -226,6 +227,9 @@ export class ProceduralAnimationController {
     resetPose(this.poseBase);
     if (simulation?.aerial && !simulation.fatal) aerialAttack(simulation.aerial, this.poseBase);
     else def.fn(ctx.t, ctx, this.poseBase);
+    if (simulation?.tacticalMode && !simulation.aerial && !simulation.fatal) {
+      applyTacticalPosture(simulation.tacticalMode, state, ctx, this.poseBase);
+    }
 
     if (this.sm.transitionT < 1) {
       lerpPose(this.poseBlendFrom, this.poseBase, smoothstep(this.sm.transitionT), this.poseOut);

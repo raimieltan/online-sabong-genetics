@@ -30,7 +30,7 @@ const COMMAND_CARDS: Record<TacticalMode, { title: string; subtitle: string; ico
 const bar = (value: number, max: number) => `${Math.max(0, Math.min(100, Math.round(value / max * 100)))}%`;
 
 /** Production presentation for the deterministic V2 combat session. */
-export default function ContinuousBattle({ chickenA, chickenB, autoStart = false, showControls = true, onComplete, audioEnabled = true, onToggleAudio }: { chickenA: Chicken; chickenB: Chicken; autoStart?: boolean; showControls?: boolean; onComplete?: (result: MatchResult) => void; audioEnabled?: boolean; onToggleAudio?: () => void }) {
+export default function ContinuousBattle({ chickenA, chickenB, matchSeed = 81726354, autoStart = false, showControls = true, onComplete, audioEnabled = true, onToggleAudio }: { chickenA: Chicken; chickenB: Chicken; matchSeed?: number; autoStart?: boolean; showControls?: boolean; onComplete?: (result: MatchResult) => void; audioEnabled?: boolean; onToggleAudio?: () => void }) {
   const [display, setDisplay] = useState({ tick: 0, phase: 'paused', result: '', fighters: [] as FighterDisplay[], cooldown: 0 });
   const [stats, setStats] = useState<MatchStats>({ hits: [0, 0], damage: [0, 0], lastDamage: null });
   const [bursts, setBursts] = useState<CommentaryBurst[]>([]);
@@ -59,19 +59,19 @@ export default function ContinuousBattle({ chickenA, chickenB, autoStart = false
   useEffect(() => { audioRef.current?.setEnabled(audioEnabled); }, [audioEnabled]);
 
   useEffect(() => {
-    const seed = 81726354;
+    const seed = matchSeed;
     const session = new CombatSession({ id: `arena-${seed}`, version: COMBAT_VERSION, seed, fighterA: toCombatV2Snapshot(chickenA, 'local-player', chickenB.id), fighterB: toCombatV2Snapshot(chickenB, 'local-ai', chickenA.id), arena: { radius: 8 }, maxTicks: 60 * 120 });
     if (!autoStart) session.stop();
     sessionRef.current = session; completedRef.current = false;
     const resetFrame = requestAnimationFrame(() => {
       setStats({ hits: [0, 0], damage: [0, 0], lastDamage: null });
       setBursts([]);
+      setHudVisibility('FULL');
       setCaption(autoStart ? `Sugod! ${chickenA.name} laban kay ${chickenB.name}!` : 'Piliin ang taktika at simulan ang laban.');
     });
     const effects = vfx.current; const damageTick = [-100, -100]; const dustTick = [-100, -100];
     directorRef.current.reset();
     hudVisibilityRef.current = 'FULL';
-    setHudVisibility('FULL');
     const burst = (text: string, side: CommentaryBurst['side'], kind: CommentaryBurst['kind']) => {
       const id = burstId.current++; setBursts(previous => [...previous.slice(-3), { id, text, side, kind }]);
       window.setTimeout(() => setBursts(previous => previous.filter(item => item.id !== id)), 1100);
@@ -149,7 +149,7 @@ export default function ContinuousBattle({ chickenA, chickenB, autoStart = false
         const runtime = fighter.currentAction, action = runtime && ACTIONS[runtime.id]; let progress = Math.min(1, (state.tick - fighter.stateEnteredTick) / 20);
         if (runtime && action) { const age = state.tick - runtime.startedTick; progress = runtime.phase === 'startup' ? age / action.startupTicks * .52 : runtime.phase === 'active' ? .52 + (age - action.startupTicks) / action.activeTicks * .2 : .72 + (age - action.startupTicks - action.activeTicks) / action.recoveryTicks * .28; }
         const aerial = fighter.aerial && (fighter.aerial.launchedTick < 0 || !fighter.grounded || fighter.aerial.phase === 'LAND') && fighter.groundedTicks <= 10 ? fighter.aerial : undefined;
-        const intent: AnimIntent = { state: animation[(aerial?.phase === 'LAND' ? undefined : runtime)?.id ?? fighter.state] ?? 'ready', startedAt: (runtime?.startedTick ?? fighter.stateEnteredTick) * 1000 / 60, speed: 1, facing: index === 0 ? 'right' : 'left', simulationProgress: progress, fatal: fighter.state === 'down' };
+        const intent: AnimIntent = { state: animation[(aerial?.phase === 'LAND' ? undefined : runtime)?.id ?? fighter.state] ?? 'ready', startedAt: (runtime?.startedTick ?? fighter.stateEnteredTick) * 1000 / 60, speed: 1, facing: index === 0 ? 'right' : 'left', simulationProgress: progress, tacticalMode: fighter.tacticalMode, fatal: fighter.state === 'down' };
         if (aerial && state.phase !== 'finished') intent.aerial = { ...aerial, tick: state.tick + alpha, actionId: runtime?.id, strikeProgress: runtime?.phase === 'active' && action ? (state.tick + alpha - runtime.startedTick - action.startupTicks) / action.activeTicks : undefined, phaseProgress: (state.tick + alpha - aerial.phaseTick) / (aerial.phase === 'PRELOAD' ? action?.aerial?.takeoffTick ?? 6 : aerial.phase === 'STRIKE_ACTIVE' ? action?.activeTicks ?? 6 : 8) };
         if (index === 0) intentA.current = intent; else intentB.current = intent;
         // Bounded, pooled dirt response: landings and fast grounded movement
@@ -168,7 +168,7 @@ export default function ContinuousBattle({ chickenA, chickenB, autoStart = false
     };
     frameId = requestAnimationFrame(draw);
     return () => { cancelAnimationFrame(resetFrame); cancelAnimationFrame(frameId); unsubscribe(); session.stop(); sessionRef.current = null; effects?.clear(); };
-  }, [chickenA, chickenB, autoStart, onComplete]);
+  }, [chickenA, chickenB, matchSeed, autoStart, onComplete]);
 
   function command(mode: TacticalMode) {
     try { sessionRef.current?.issueCommand(chickenA.id, mode); setCaption(mode === 'pressure' || mode === 'all_in' ? 'Sugod! I-pressure natin siya!' : mode === 'defensive' || mode === 'counter' ? 'Bantay muna — hintayin ang butas!' : mode === 'recover' ? 'Hinga muna — balik ang stamina!' : 'Timbang lang, coach. Basahin ang galaw niya.'); setError(''); }
@@ -178,7 +178,7 @@ export default function ContinuousBattle({ chickenA, chickenB, autoStart = false
   const [left, right] = display.fighters;
   const decisionWindow = left?.engagement === 'stalking' || left?.engagement === 'resetting';
   const commandStatus = display.phase !== 'active' ? 'Fight complete' : display.cooldown > 0 ? `Coach again in ${(display.cooldown / 60).toFixed(1)}s` : decisionWindow ? 'Decision window open' : 'Watching the clash — choose for the next read';
-  return <section className="mx-auto w-full max-w-[142.2vh] px-3 pb-6 pt-3 sm:px-5 lg:max-w-[calc(142.2vh+232px)]">
+  return <section className={`mx-auto w-full px-3 pb-6 pt-3 sm:px-5 ${showControls ? 'max-w-[142.2vh] lg:max-w-[calc(142.2vh+232px)]' : 'max-w-[142.2vh]'}`}>
     <PageHeader
       eyebrow="Sabong Championship"
       title="Arena Battle"
@@ -187,7 +187,7 @@ export default function ContinuousBattle({ chickenA, chickenB, autoStart = false
         {onToggleAudio ? <button type="button" onClick={onToggleAudio} aria-label={audioEnabled ? 'Mute arena audio' : 'Unmute arena audio'} className="rounded-full border border-(--color-gold)/30 bg-black/30 px-3 py-2 text-lg transition hover:bg-(--color-gold)/15">{audioEnabled ? '🔊' : '🔇'}</button> : <div className="w-10" />}
       </>}
     />
-    <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px] lg:items-start">
+    <div className={`grid gap-3 lg:items-start ${showControls ? 'lg:grid-cols-[minmax(0,1fr)_220px]' : ''}`}>
     <div className="relative aspect-video w-full self-start overflow-hidden rounded-2xl border-[3px] border-[#160d08] bg-[#090706] shadow-[0_0_0_2px_rgba(212,162,78,.45),0_18px_35px_rgba(0,0,0,.6)]">
       <div className="absolute inset-0"><BattleStage3D simulationDriven fighterA={chickenA} fighterB={chickenB} animA={animA} animB={animB} intentA={intentA} intentB={intentB} cameraCue={cameraCue} hitStopScaleRef={hitStopScale} vfxRef={vfx} collisionDebugFighters={collisionDebugFighters} /></div>
       {/* Cheap cinematic grading layer: it keeps distant scenery subdued and

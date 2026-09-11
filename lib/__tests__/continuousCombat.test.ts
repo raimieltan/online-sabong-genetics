@@ -4,7 +4,8 @@ import { ACTIONS, COMBAT_VERSION, CombatSession, createMatch, createCombatRng, q
 import type { CombatMatchState, MatchConfig } from '../combat-v2/types';
 import { toCombatV2Snapshot } from '../combatV2Snapshot';
 import { makeChicken } from './testHelpers';
-import { readTicks } from '../combat-v2/rhythm';
+import { readTicks, resetProfile } from '../combat-v2/rhythm';
+import { TEMPORARY_COMBAT_EXAGGERATION } from '../combat-v2/constants';
 
 const config = (seed = 1): MatchConfig => ({ id: 'test', version: COMBAT_VERSION, seed, fighterA: toCombatV2Snapshot(makeChicken({ id: 'a' }), 'player-a'), fighterB: toCombatV2Snapshot(makeChicken({ id: 'b', fightingStyle: 'counter' }), 'player-b'), arena: { radius: 3.4 }, maxTicks: 5400 });
 test('neutral occupies most fighter time and only first attacks wait for reading', () => {
@@ -61,6 +62,41 @@ test('patient, tired and injured fighters read longer; pressure shortens the wai
   f.tacticalMode = 'counter'; assert.ok(readTicks(f) > normal);
   f.tacticalMode = 'balanced'; f.stamina = 30; f.health *= .5;
   assert.ok(readTicks(f) > normal);
+});
+test('temporary tactics are deliberately far apart', () => {
+  const f = createMatch(config()).fighters[0];
+  f.coaching = { command: 'recover', compliance: 'obey', strength: 1, issuedTick: 0, exchangeTick: 0, successful: false };
+  f.tacticalMode = 'recover'; const recoverDistance = resetProfile(f).distance;
+  f.tacticalMode = 'defensive'; const guardDistance = resetProfile(f).distance;
+  f.tacticalMode = 'counter'; const counterDistance = resetProfile(f).distance;
+  f.tacticalMode = 'pressure'; const pressDistance = resetProfile(f).distance;
+  assert.ok(recoverDistance >= guardDistance + 3, `${recoverDistance} vs ${guardDistance}`);
+  assert.ok(guardDistance > counterDistance && counterDistance > pressDistance);
+  assert.equal(ACTIONS.peck_strike.startupTicks, 4 * TEMPORARY_COMBAT_EXAGGERATION);
+  assert.equal(ACTIONS.guard.activeTicks, 10 * TEMPORARY_COMBAT_EXAGGERATION);
+});
+test('PRESS commits while COUNTER, GUARD and RECOVER visibly refuse initiation', () => {
+  const utilities = (mode: 'pressure' | 'counter' | 'defensive' | 'recover') => {
+    const s = createMatch(config(9));
+    const f = s.fighters[0];
+    f.tacticalMode = mode;
+    f.coaching = { command: mode, compliance: 'obey', strength: 1, issuedTick: 0, exchangeTick: 0, successful: false };
+    f.engagement.enteredTick = -1000;
+    f.engagement.desiredRange = resetProfile(f).distance;
+    f.nextDecisionTick = 0;
+    s.fighters[1].nextDecisionTick = 1000;
+    stepCombat(s);
+    return f.utilities;
+  };
+  const press = utilities('pressure');
+  const counter = utilities('counter');
+  const guard = utilities('defensive');
+  const recover = utilities('recover');
+  assert.ok(press.advance > press.circle + press.retreat + press.guard);
+  assert.ok(counter.circle + counter.retreat + counter.guard > counter.advance + counter.flying_spur);
+  assert.ok(guard.guard > guard.advance + guard.flying_spur);
+  assert.equal(recover.advance + recover.peck_strike + recover.spur_lunge + recover.jump_kick + recover.flying_spur, 0);
+  assert.ok(recover.retreat + recover.recover > recover.guard);
 });
 test('ordinary autonomous fights produce overlapping clashes and mutual hits', (t) => {
   let fightsWithClashes = 0, mutualExchanges = 0;
@@ -126,8 +162,8 @@ test('active windows permit simultaneous hits and double KO', () => {
 test('startup cannot hit and heavy startup can be interrupted', () => {
   const s = createMatch(config()); pairedAttack(s, 'spur_lunge', 6); stepCombat(s);
   assert.equal(s.eventBuffer.filter(e => e.type === 'DAMAGE').length, 0);
-  s.fighters[0].currentAction = { id: 'peck_strike', startedTick: s.tick - 4, hit: false, phase: 'startup' };
-  s.fighters[1].currentAction = { id: 'spur_lunge', startedTick: s.tick - 5, hit: false, phase: 'startup' };
+  s.fighters[0].currentAction = { id: 'peck_strike', startedTick: s.tick - ACTIONS.peck_strike.startupTicks, hit: false, phase: 'startup' };
+  s.fighters[1].currentAction = { id: 'spur_lunge', startedTick: s.tick - (ACTIONS.spur_lunge.startupTicks - 2), hit: false, phase: 'startup' };
   stepCombat(s);
   assert.equal(s.fighters[1].state, 'staggered'); assert.equal(s.fighters[1].currentAction, undefined);
   assert.equal(s.fighters[0].health, s.fighters[0].snapshot.maxHealth);

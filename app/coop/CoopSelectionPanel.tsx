@@ -3,114 +3,45 @@
 import Link from "next/link";
 
 import type { Chicken } from "@/lib/types";
-import { canAgeUp, canRetire } from "@/lib/growth";
+import { ageUpRequirements, canAgeUp, canChickenAgeUp, canRetire } from "@/lib/growth";
 import { canFight, effectiveStat } from "@/lib/combat";
 import { isChampion } from "@/lib/coopVillage";
 
-const SEX_ICON: Record<Chicken["sex"], string> = { rooster: "🐓", hen: "🐔" };
+import { CoopIcon } from "./CoopIcons";
+import styles from "./coop.module.css";
 
-/**
- * Compact selected-chicken panel (spec §9-10): summary + shortcuts into the
- * existing View/Train/Battle/Breed/Age-Up/Retire flows. Never a second
- * ChickenCard — just enough context plus buttons. Desktop renders as a
- * floating panel; on mobile the parent positions this as a bottom sheet.
- */
-export function CoopSelectionPanel({
-  chicken,
-  onClose,
-  onAgeUp,
-  onRetire,
-}: {
+export function CoopSelectionPanel({ chicken, onClose, onAgeUp, onRetire }: {
   chicken: Chicken;
   onClose: () => void;
   onAgeUp: () => void;
   onRetire: () => void;
 }) {
   const breedParam = chicken.sex === "rooster" ? `fatherId=${chicken.id}` : `motherId=${chicken.id}`;
+  const readyToMature = canChickenAgeUp(chicken);
+  const unmetRequirements = ageUpRequirements(chicken).filter((requirement) => !requirement.met);
 
   return (
-    <div className="panel-wood pointer-events-auto w-full rounded-t-lg p-4 shadow-2xl shadow-black/50 sm:w-80 sm:rounded-lg">
-      <div className="mb-2 flex items-start justify-between gap-2">
-        <div>
-          <h3 className="flex items-center gap-1.5 font-display text-lg font-semibold text-(--color-gold-bright)">
-            {SEX_ICON[chicken.sex]} {chicken.name}
-          </h3>
-          <p className="text-xs text-(--color-text-muted)">
-            Gen {chicken.generation} · {chicken.growthStage.replace("_", " ")}
-            {isChampion(chicken) && <span className="ml-1.5 text-(--color-gold-bright)">⭐ Champion</span>}
-          </p>
-        </div>
-        <button onClick={onClose} className="text-(--color-text-muted) hover:text-(--foreground)" aria-label="Close">
-          ✕
-        </button>
+    <div className={`${styles.panel} pointer-events-auto w-full rounded-t-xl p-4 shadow-2xl shadow-black/50 sm:w-80 sm:rounded-xl`}>
+      <div className="mb-3 flex items-start justify-between gap-2 border-b border-(--color-gold)/20 pb-3">
+        <div><p className={styles.eyebrow}>{isChampion(chicken) ? "Champion resident" : "Stable resident"}</p><h3 className="font-display text-lg text-(--color-gold-bright)">{chicken.name}</h3><p className="text-xs capitalize text-(--color-text-muted)">{chicken.fightingStyle} · {chicken.growthStage.replace("_", " ")} · Gen {chicken.generation}</p></div>
+        <button type="button" onClick={onClose} className="text-(--color-text-muted) transition hover:text-(--foreground)" aria-label="Close"><CoopIcon name="close" className="h-5 w-5" /></button>
       </div>
-
-      <div className="mb-3 grid grid-cols-3 gap-2 text-center text-xs">
-        <div className="rounded bg-black/25 px-2 py-1.5">
-          <p className="text-(--color-text-muted)">⚔️ Power</p>
-          <p className="font-semibold text-(--foreground)">{Math.round(effectiveStat(chicken, "power"))}</p>
-        </div>
-        <div className="rounded bg-black/25 px-2 py-1.5">
-          <p className="text-(--color-text-muted)">💨 Speed</p>
-          <p className="font-semibold text-(--foreground)">{Math.round(effectiveStat(chicken, "speed"))}</p>
-        </div>
-        <div className="rounded bg-black/25 px-2 py-1.5">
-          <p className="text-(--color-text-muted)">❤️ Energy</p>
-          <p className="font-semibold text-(--foreground)">{chicken.energy}</p>
-        </div>
+      <div className={styles.selectedStats}>
+        <div className={styles.selectedStat}><CoopIcon name="sword" /><div><span>Power</span><b>{Math.round(effectiveStat(chicken, "power"))}</b></div></div>
+        <div className={styles.selectedStat}><CoopIcon name="bolt" /><div><span>Speed</span><b>{Math.round(effectiveStat(chicken, "speed"))}</b></div></div>
+        <div className={styles.selectedStat}><CoopIcon name="heart" /><div><span>Energy</span><b>{chicken.energy}</b></div></div>
+        <div className={styles.selectedStat}><CoopIcon name="trophy" /><div><span>Record</span><b>{chicken.record.wins}-{chicken.record.losses}</b></div></div>
       </div>
-
-      <div className="grid grid-cols-2 gap-2 text-sm">
-        <Link
-          href={`/chicken/${chicken.id}`}
-          className="rounded bg-black/30 px-3 py-2 text-center font-medium text-(--foreground) hover:bg-black/45"
-        >
-          View
-        </Link>
-        <Link
-          href={`/chicken/${chicken.id}?tab=Evolve`}
-          className="rounded bg-black/30 px-3 py-2 text-center font-medium text-(--foreground) hover:bg-black/45"
-        >
-          Train
-        </Link>
-        {canFight(chicken) ? (
-          <Link
-            href={`/battle/${chicken.id}`}
-            className="rounded bg-gradient-to-b from-(--color-gold-bright) to-(--color-gold) px-3 py-2 text-center font-semibold text-(--color-ink) hover:brightness-110"
-          >
-            Battle
-          </Link>
-        ) : (
-          <span className="cursor-not-allowed rounded bg-black/15 px-3 py-2 text-center text-(--color-text-muted)">Battle</span>
-        )}
-        <Link
-          href={`/breed?${breedParam}`}
-          className="rounded bg-black/30 px-3 py-2 text-center font-medium text-(--foreground) hover:bg-black/45"
-        >
-          Breed
-        </Link>
+      <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+        <Link href={`/chicken/${chicken.id}`} className={styles.secondaryButton}>View</Link>
+        <Link href={`/training?chickenId=${chicken.id}`} className={styles.secondaryButton}><CoopIcon name="training" /> Train</Link>
+        {canFight(chicken) ? <Link href={`/battle/${chicken.id}`} className={styles.actionButton}><CoopIcon name="sword" /> Fight</Link> : <span className={`${styles.secondaryButton} cursor-not-allowed opacity-40`}>Unavailable</span>}
+        <Link href={`/breed?${breedParam}`} className={styles.secondaryButton}><CoopIcon name="egg" /> Breed</Link>
       </div>
-
-      {(canAgeUp(chicken.growthStage) || canRetire(chicken.growthStage)) && (
-        <div className="mt-2 flex gap-2 text-sm">
-          {canAgeUp(chicken.growthStage) && (
-            <button
-              onClick={onAgeUp}
-              className="flex-1 rounded border border-(--color-gold)/40 px-3 py-1.5 font-medium text-(--color-gold-bright) hover:bg-black/25"
-            >
-              Age Up
-            </button>
-          )}
-          {canRetire(chicken.growthStage) && (
-            <button
-              onClick={onRetire}
-              className="flex-1 rounded border border-red-500/40 px-3 py-1.5 font-medium text-red-300 hover:bg-black/25"
-            >
-              Retire
-            </button>
-          )}
-        </div>
-      )}
+      {(canAgeUp(chicken.growthStage) || canRetire(chicken.growthStage)) && <div className="mt-2 flex gap-2 text-xs">
+        {canAgeUp(chicken.growthStage) && <button type="button" onClick={onAgeUp} disabled={!readyToMature} title={unmetRequirements.map((requirement) => requirement.label).join(" · ")} className={`${styles.secondaryButton} flex-1 disabled:cursor-not-allowed disabled:opacity-40`}>{readyToMature ? "Age up" : `${unmetRequirements.length} requirements`}</button>}
+        {canRetire(chicken.growthStage) && <button type="button" onClick={onRetire} className="flex-1 rounded-md border border-red-500/40 bg-red-950/40 px-3 py-2 font-semibold text-red-200">Retire</button>}
+      </div>}
     </div>
   );
 }

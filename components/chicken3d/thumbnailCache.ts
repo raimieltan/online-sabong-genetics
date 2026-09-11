@@ -1,7 +1,7 @@
 import type { Chicken } from "@/lib/types";
 
 /** The subset of a chicken's data that actually changes its 3D appearance. */
-export type ThumbnailSubject = Pick<Chicken, "sex" | "colorScheme" | "physical" | "mutations">;
+export type ThumbnailSubject = Pick<Chicken, "sex" | "colorScheme" | "physical" | "mutations" | "growthStage">;
 
 export interface ThumbnailJob {
   key: string;
@@ -33,6 +33,7 @@ export function thumbnailKey(subject: ThumbnailSubject): string {
     colorScheme: subject.colorScheme,
     physical: subject.physical,
     mutations: subject.mutations,
+    growthStage: subject.growthStage,
   });
 }
 

@@ -1,10 +1,12 @@
 "use client";
 
-import { PageHeader } from "@/components/PageHeader";
+import Link from "next/link";
+
+import { CoopIcon } from "./CoopIcons";
+import styles from "./coop.module.css";
 
 export type CoopMode = "village" | "manage";
 
-/** Top bar: identity, egg/chicken counts, Generate action, and the Village/Manage toggle (spec §19-20). */
 export function CoopHUD({
   eggCount,
   chickenCount,
@@ -19,37 +21,28 @@ export function CoopHUD({
   onGenerate: () => void;
 }) {
   return (
-    <PageHeader
-      eyebrow="Fighter Stable"
-      title="🐔 Coop"
-      description={`🥚 ${eggCount} incubating · 🐔 ${chickenCount} chickens`}
-      right={<div className="flex items-center gap-3">
-        <div className="flex overflow-hidden rounded-md border border-(--color-gold)/30">
-          <button
-            onClick={() => onModeChange("village")}
-            className={`px-3 py-1.5 text-sm font-semibold transition ${
-              mode === "village" ? "bg-(--color-gold) text-(--color-ink)" : "text-(--color-text-muted) hover:bg-black/20"
-            }`}
-          >
-            Village
+    <header className={styles.hud}>
+      <div className={styles.identity}>
+        <span className={styles.crest}><CoopIcon name="bird" /></span>
+        <div className="min-w-0">
+          <p className={styles.eyebrow}>Fighter Stable</p>
+          <h1 className={styles.title}>Coop</h1>
+          <p className={styles.subtitle}>{chickenCount} fighters <span aria-hidden="true">·</span> {eggCount} eggs incubating</p>
+        </div>
+      </div>
+
+      <div className={styles.hudActions}>
+        <div className={styles.modeSwitch} aria-label="Coop view">
+          <button type="button" onClick={() => onModeChange("village")} className={`${styles.modeButton} ${mode === "village" ? styles.modeActive : ""}`} aria-pressed={mode === "village"}>
+            <CoopIcon name="village" /> Village
           </button>
-          <button
-            onClick={() => onModeChange("manage")}
-            className={`px-3 py-1.5 text-sm font-semibold transition ${
-              mode === "manage" ? "bg-(--color-gold) text-(--color-ink)" : "text-(--color-text-muted) hover:bg-black/20"
-            }`}
-          >
-            Manage
+          <button type="button" onClick={() => onModeChange("manage")} className={`${styles.modeButton} ${mode === "manage" ? styles.modeActive : ""}`} aria-pressed={mode === "manage"}>
+            <CoopIcon name="manage" /> Manage
           </button>
         </div>
-
-        <button
-          onClick={onGenerate}
-          className="rounded-md bg-gradient-to-b from-(--color-gold-bright) to-(--color-gold) px-4 py-2 font-semibold text-(--color-ink) shadow-lg shadow-black/40 transition hover:brightness-110"
-        >
-          + Generate Chicken
-        </button>
-      </div>}
-    />
+        <Link href="/breed" className={styles.secondaryButton}><CoopIcon name="egg" /> Breed</Link>
+        <button type="button" onClick={onGenerate} className={styles.actionButton}><CoopIcon name="plus" /> Acquire</button>
+      </div>
+    </header>
   );
 }

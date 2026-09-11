@@ -1,9 +1,9 @@
 import { ACTIONS } from './actions';
 import { aerialImpact, aerialPhase } from './aerial';
 import { bodyRadius, separateFighters, strikeCollision } from './collision';
-import { beginBreak, beginClash, readTicks, setEngagement, updateEngagement } from './rhythm';
+import { beginBreak, beginClash, readTicks, resetProfile, setEngagement, updateEngagement } from './rhythm';
 import { canTransition } from './transitions';
-import { clamp, COMBAT_VERSION, COMMAND_COOLDOWN_TICKS, TACTICAL_MODES, quantize as q } from './constants';
+import { clamp, COMBAT_VERSION, COMMAND_COOLDOWN_TICKS, TACTICAL_MODES, TEMPORARY_COMBAT_EXAGGERATION, quantize as q } from './constants';
 import { createCombatRng } from './rng';
 import type { CombatMatchState, CombatCommand, CombatEvent, CommandCompliance, FighterRuntimeState as Fighter, FighterState, MatchConfig, TacticalMode } from './types';
 
@@ -91,6 +91,7 @@ function resolveCoaching(s: CombatMatchState, f: Fighter, command: CombatCommand
   const compliance: CommandCompliance = shifted < .08 ? 'commit' : shifted < .38 ? 'obey' : shifted < .7 ? 'partial' : shifted < .9 ? 'resist' : 'ignore';
   const strength = compliance === 'commit' ? 1.15 : compliance === 'obey' ? .9 : compliance === 'partial' ? .58 : compliance === 'resist' ? .28 : 0;
   f.tacticalMode = strength > 0 ? command.command : 'balanced';
+  f.engagement.desiredRange = resetProfile(f).distance;
   f.coaching = { command: command.command, compliance, strength, issuedTick: command.issuedTick, exchangeTick: s.tick, successful: false };
   f.lastCommandTick = s.tick; f.lastSequence = command.sequence;
   emit(s, f, 'COMMAND', { detail: command.command });
@@ -291,6 +292,36 @@ function decide(s: CombatMatchState, f: Fighter, other: Fighter, rng: ReturnType
   if (f.snapshot.evolution.signatures.includes('sky-counter')) scores.wing_counter *= 1.22;
   if (f.snapshot.evolution.signatures.includes('ghost-step')) { scores.sidestep = (scores.sidestep ?? 0) * 1.2; scores.circle *= 1.12; }
   if (f.snapshot.evolution.signatures.includes('second-wind') && f.stamina < 30) { scores.recover *= 1.2; scores.retreat *= .85; }
+  // Temporary legibility pass: amplify the command's silhouette until each
+  // mode is unmistakable in playtests. Personality still controls the raw
+  // utilities; this only widens the tactical separation between them.
+  const exaggeration = TEMPORARY_COMBAT_EXAGGERATION * Math.max(.35, coaching);
+  const initiatingAttacks = ['peck_strike', 'spur_lunge', 'jump_kick', 'flying_spur'];
+  if (mode === 'pressure' || mode === 'all_in') {
+    for (const id of initiatingAttacks) scores[id] *= 1 + exaggeration * 1.5;
+    scores.advance *= 1 + exaggeration * 2;
+    for (const id of ['guard', 'retreat', 'circle', 'recover']) scores[id] /= 1 + exaggeration * 3;
+  } else if (mode === 'counter') {
+    for (const id of initiatingAttacks) scores[id] /= 1 + exaggeration * 5;
+    scores.advance /= 1 + exaggeration * 5;
+    scores.wing_counter *= 1 + exaggeration * 2.5;
+    for (const id of ['guard', 'retreat', 'circle', 'feint']) scores[id] *= 1 + exaggeration * 1.5;
+    scores.sidestep = (scores.sidestep ?? .1) * (1 + exaggeration * 1.5);
+  } else if (mode === 'defensive') {
+    for (const id of [...initiatingAttacks, 'wing_counter']) scores[id] /= 1 + exaggeration * 8;
+    scores.advance /= 1 + exaggeration * 8;
+    scores.guard *= 1 + exaggeration * 5;
+    scores.retreat *= 1 + exaggeration * 3;
+    scores.circle *= 1 + exaggeration * 2;
+    scores.sidestep = (scores.sidestep ?? .1) * (1 + exaggeration * 3);
+  } else if (mode === 'recover') {
+    for (const id of [...initiatingAttacks, 'wing_counter']) scores[id] = 0;
+    scores.advance = 0;
+    scores.retreat *= 1 + exaggeration * 6;
+    scores.recover *= 1 + exaggeration * 5;
+    scores.circle *= 1 + exaggeration * 2;
+    scores.guard *= 1 + exaggeration;
+  }
   f.utilities = scores;
   let roll = rng.next() * Object.values(scores).reduce((sum, x) => sum + x, 0);
   let choice = 'advance';
@@ -363,6 +394,18 @@ function move(s: CombatMatchState) {
         forward = d < preferred - .7 ? -.9 : d > preferred + .8 ? .6 : 0;
         lateral = .72 * f.engagement.orbitDirection;
       } else if (forward > 0 && d < f.engagement.desiredRange - .35) forward = 0;
+    }
+    if (!action) {
+      if ((f.tacticalMode === 'pressure' || f.tacticalMode === 'all_in') && d > 1.05) {
+        forward = Math.max(forward, TEMPORARY_COMBAT_EXAGGERATION);
+      } else if (f.tacticalMode === 'counter' && forward > 0) {
+        forward /= 1 + TEMPORARY_COMBAT_EXAGGERATION * 2;
+      } else if (f.tacticalMode === 'defensive' && d < f.engagement.desiredRange) {
+        forward = Math.min(forward, -TEMPORARY_COMBAT_EXAGGERATION * .9);
+      } else if (f.tacticalMode === 'recover' && d < f.engagement.desiredRange) {
+        forward = -TEMPORARY_COMBAT_EXAGGERATION * 1.8;
+        lateral *= .5;
+      }
     }
     // A commitment is visibly different from neutral footwork: it accelerates
     // across medium/long range during the preload instead of walking into
@@ -445,7 +488,8 @@ export function stepCombat(s: CombatMatchState): CombatMatchState {
     if (!zone) return;
     rt.hit = true;
     const blocked = target.state === 'defending';
-    const damage = q(a.damage * (.6 + f.snapshot.stats.power / 100) * awakeningPower(f) * (zone === 'head' ? 1.15 * target.snapshot.physical.neck : 1) * (.65 + f.stamina / 285) * (.8 + f.snapshot.condition * .2) / (1 + target.snapshot.stats.defense / 120) / target.snapshot.physical.mass * (blocked ? .25 : 1));
+    const blockMultiplier = blocked ? target.tacticalMode === 'defensive' ? .25 / TEMPORARY_COMBAT_EXAGGERATION : .25 : 1;
+    const damage = q(a.damage * (.6 + f.snapshot.stats.power / 100) * awakeningPower(f) * (zone === 'head' ? 1.15 * target.snapshot.physical.neck : 1) * (.65 + f.stamina / 285) * (.8 + f.snapshot.condition * .2) / (1 + target.snapshot.stats.defense / 120) / target.snapshot.physical.mass * blockMultiplier);
     const resistance = target.currentAction ? ACTIONS[target.currentAction.id].interruptResistance : 0;
     // Balanced strikes and deliberate meet-in counters follow through so overlapping hits can trade.
     // Ordinary startup and off-balance attacks can still be stuffed; damage is never suppressed.

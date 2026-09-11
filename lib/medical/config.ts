@@ -1,5 +1,7 @@
 import type { InjurySeverity } from "../types";
 
+export type IllnessSeverity = "minor" | "moderate" | "severe";
+
 /** Rooster Clinic level configs (spec §38). Level gates the worst injury it can treat and how fast. */
 export type ClinicLevelConfig = {
   level: number;
@@ -15,6 +17,7 @@ export type ClinicLevelConfig = {
 };
 
 const SEVERITY_RANK: Record<InjurySeverity, number> = { minor: 0, serious: 1, career_altering: 2 };
+const ILLNESS_SEVERITY_RANK: Record<IllnessSeverity, number> = { minor: 0, moderate: 1, severe: 2 };
 
 export function severityRank(severity: InjurySeverity): number {
   return SEVERITY_RANK[severity];
@@ -70,4 +73,10 @@ export function clinicConfig(level: number): ClinicLevelConfig {
 /** True when a clinic of `level` may start a treatment for `severity` (spec §38). */
 export function canTreatSeverity(level: number, severity: InjurySeverity): boolean {
   return severityRank(severity) <= severityRank(clinicConfig(level).maxSeverityTreatable);
+}
+
+/** Illness care follows the same facility progression: minor at L1, moderate at L2, severe at L3+. */
+export function canTreatIllnessSeverity(level: number, severity: IllnessSeverity): boolean {
+  const maxRank = level >= 3 ? 2 : level >= 2 ? 1 : 0;
+  return ILLNESS_SEVERITY_RANK[severity] <= maxRank;
 }

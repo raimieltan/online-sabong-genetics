@@ -128,6 +128,7 @@ export function applyFightOutcome(chicken: Chicken, result: CombatResult): Fight
   const condition = Math.max(0, Math.min(100, (chicken.condition ?? 100) + conditionDelta));
   const newInjuries = result.newInjuries?.[chicken.id] ?? [];
   const injuries = [...(chicken.injuries ?? []), ...newInjuries];
+  const hasActiveInjury = wasInjured || injuries.some((injury) => !injury.permanent && injury.recoveryRemaining > 0);
   const aftermath = battleAftermath(chicken, result, chicken.id, wasInjured, newInjuries);
   const earnedTraits = evaluateBattleTraits(chicken, aftermath, injuries);
   const evolution = evolveCombatCareer(chicken, result.combatCareerGained?.[chicken.id]);
@@ -144,8 +145,8 @@ export function applyFightOutcome(chicken: Chicken, result: CombatResult): Fight
       decisions: record.decisions + (result.outcomeReason === "timeout" ? 1 : 0),
     },
     health: finalHealthPercent(result, chicken),
-    injured: wasInjured || injuries.some((i) => !i.permanent && i.recoveryRemaining > 0),
-    status: wasInjured ? "injured" : chicken.status,
+    injured: hasActiveInjury,
+    status: hasActiveInjury ? "injured" : chicken.status,
     behavior,
     experience,
     condition,

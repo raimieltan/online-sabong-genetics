@@ -7,6 +7,8 @@ import type { Chicken, Egg } from "@/lib/types";
 import { CoopHUD, type CoopMode } from "./CoopHUD";
 import { VillageView } from "./VillageView";
 import { ManageView } from "./ManageView";
+import { CoopIcon } from "./CoopIcons";
+import styles from "./coop.module.css";
 
 export default function CoopPage() {
   const [chickens, setChickens] = useState<Chicken[]>([]);
@@ -56,15 +58,17 @@ export default function CoopPage() {
 
   if (loading) {
     return (
-      <main className="flex min-h-screen items-center justify-center bg-(--color-ink)">
-        <p className="text-(--color-text-muted)">🐔 Loading coop...</p>
+      <main className={styles.shell}>
+        <div className={styles.loading}>
+          <div><CoopIcon name="bird" /><p>Opening the stable</p></div>
+        </div>
       </main>
     );
   }
 
   return (
-    <main className="min-h-screen bg-(--color-ink) p-6">
-      <div className="mb-6">
+    <main className={styles.shell}>
+      <div className={styles.content}>
         <CoopHUD
           eggCount={eggs.length}
           chickenCount={chickens.length}
@@ -72,26 +76,13 @@ export default function CoopPage() {
           onModeChange={setMode}
           onGenerate={handleGenerate}
         />
-      </div>
 
-      {mode === "village" ? (
-        <VillageView
-          chickens={chickens}
-          eggs={eggs}
-          onHatch={handleHatch}
-          onAgeUp={handleAgeUp}
-          onRetire={handleRetire}
-          onGenerate={handleGenerate}
-        />
-      ) : (
-        <ManageView
-          chickens={chickens}
-          eggs={eggs}
-          onHatch={handleHatch}
-          onAgeUp={handleAgeUp}
-          onRetire={handleRetire}
-        />
-      )}
+        {mode === "village" ? (
+          <VillageView chickens={chickens} eggs={eggs} onHatch={handleHatch} onAgeUp={handleAgeUp} onRetire={handleRetire} onGenerate={handleGenerate} />
+        ) : (
+          <ManageView chickens={chickens} eggs={eggs} onHatch={handleHatch} onAgeUp={handleAgeUp} onRetire={handleRetire} />
+        )}
+      </div>
     </main>
   );
 }

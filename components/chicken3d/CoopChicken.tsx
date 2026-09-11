@@ -90,6 +90,7 @@ export function CoopChicken({
         <ChickenModel
           colorScheme={chicken.colorScheme}
           sex={chicken.sex}
+          growthStage={chicken.growthStage}
           physical={chicken.physical}
           mutations={chicken.mutations}
           animate

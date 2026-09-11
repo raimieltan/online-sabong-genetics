@@ -8,56 +8,56 @@ datasource db {
 }
 
 model Player {
-  id               String    @id @default(uuid())
-  createdAt        DateTime  @default(now())
-  credits          Int       @default(1000)
-  tournamentTokens Int       @default(0)
-  chickens         Chicken[]
-  eggs             Egg[]
-  facilities       Facility[]
-  pveProgress      PveProgress[]
-  pveCampaignState PveCampaignState?
+  id                 String               @id @default(uuid())
+  createdAt          DateTime             @default(now())
+  credits            Int                  @default(1000)
+  tournamentTokens   Int                  @default(0)
+  chickens           Chicken[]
+  eggs               Egg[]
+  facilities         Facility[]
+  pveProgress        PveProgress[]
+  pveCampaignState   PveCampaignState?
   pveOpponentHistory PveOpponentHistory[]
-  tournaments      Tournament[]
+  tournaments        Tournament[]
 }
 
 model Chicken {
-  id          String   @id
-  playerId    String
-  player      Player   @relation(fields: [playerId], references: [id])
-  name        String
-  sex         String
-  generation  Int
-  fatherId    String?
-  motherId    String?
-  bloodlineId String
-  breed       String?
-  iv          Json
-  ev          Json
-  physical      Json    @default("{\"scale\":1,\"bodyGirth\":1,\"bodyLength\":1,\"chest\":1,\"neckLength\":1,\"neckThick\":1,\"headSize\":1,\"combSize\":1,\"wattleSize\":1,\"beakLength\":1,\"wingSpan\":1,\"wingSize\":1,\"legLength\":1,\"legThick\":1,\"footSize\":1,\"tailLength\":1,\"tailSpread\":1,\"tailArc\":1}")
-  mutations     Json    @default("{}")
-  traits      Json
-  age         Int
-  health      Int
-  energy      Int
-  record      Json
-  status      String
-  growthStage String
-  fightingStyle String @default("balanced")
-  colorScheme   Json   @default("{\"body\":\"#8b6f47\",\"hackle\":\"#c9a24f\",\"wings\":\"#4c1708\",\"tail\":\"#a0826d\",\"comb\":\"#b8100f\",\"beak\":\"#d9a83a\",\"shanks\":\"#cc9e33\",\"pattern\":\"SOLID\",\"patternColor\":\"#4a3521\"}")
-  injured       Boolean @default(false)
-  behavior      Json    @default("{\"aggression\":0.55,\"caution\":0.45,\"patience\":0.5,\"riskTolerance\":0.5,\"pressurePreference\":0.55,\"counterPreference\":0.4,\"recoveryPreference\":0.4,\"persistence\":0.5}")
-  experience    Json    @default("{\"offensive\":0,\"defensive\":0,\"evasion\":0,\"counter\":0,\"pressure\":0,\"recovery\":0,\"adaptation\":0}")
-  condition     Int     @default(100)
-  injuries      Json    @default("[]")
-  illnesses     Json    @default("[]")
-  stress        Int     @default(0)
-  morale        Int     @default(75)
-  confidence    Int     @default(50)
-  battleHardening Int   @default(0)
-  combatCareer   Json    @default("{\"version\":1,\"fightsProcessed\":0,\"telemetry\":{},\"evolutionTraits\":[],\"signatures\":[],\"rivalries\":[],\"awakenings\":[],\"recentDevelopment\":[]}")
-  trainingState Json    @default("{\"trainingPoints\":100,\"trainingFatigue\":0,\"history\":[]}")
-  createdAt   DateTime @default(now())
+  id              String   @id
+  playerId        String
+  player          Player   @relation(fields: [playerId], references: [id])
+  name            String
+  sex             String
+  generation      Int
+  fatherId        String?
+  motherId        String?
+  bloodlineId     String
+  breed           String?
+  iv              Json
+  ev              Json
+  physical        Json     @default("{\"scale\":1,\"bodyGirth\":1,\"bodyLength\":1,\"chest\":1,\"neckLength\":1,\"neckThick\":1,\"headSize\":1,\"combSize\":1,\"wattleSize\":1,\"beakLength\":1,\"wingSpan\":1,\"wingSize\":1,\"legLength\":1,\"legThick\":1,\"footSize\":1,\"tailLength\":1,\"tailSpread\":1,\"tailArc\":1}")
+  mutations       Json     @default("{}")
+  traits          Json
+  age             Int
+  health          Int
+  energy          Int
+  record          Json
+  status          String
+  growthStage     String
+  fightingStyle   String   @default("balanced")
+  colorScheme     Json     @default("{\"body\":\"#8b6f47\",\"hackle\":\"#c9a24f\",\"wings\":\"#4c1708\",\"tail\":\"#a0826d\",\"comb\":\"#b8100f\",\"beak\":\"#d9a83a\",\"shanks\":\"#cc9e33\",\"pattern\":\"SOLID\",\"patternColor\":\"#4a3521\"}")
+  injured         Boolean  @default(false)
+  behavior        Json     @default("{\"aggression\":0.55,\"caution\":0.45,\"patience\":0.5,\"riskTolerance\":0.5,\"pressurePreference\":0.55,\"counterPreference\":0.4,\"recoveryPreference\":0.4,\"persistence\":0.5}")
+  experience      Json     @default("{\"offensive\":0,\"defensive\":0,\"evasion\":0,\"counter\":0,\"pressure\":0,\"recovery\":0,\"adaptation\":0}")
+  condition       Int      @default(100)
+  injuries        Json     @default("[]")
+  illnesses       Json     @default("[]")
+  stress          Int      @default(0)
+  morale          Int      @default(75)
+  confidence      Int      @default(50)
+  battleHardening Int      @default(0)
+  combatCareer    Json     @default("{\"version\":1,\"fightsProcessed\":0,\"telemetry\":{},\"evolutionTraits\":[],\"signatures\":[],\"rivalries\":[],\"awakenings\":[],\"recentDevelopment\":[]}")
+  trainingState   Json     @default("{\"trainingPoints\":100,\"trainingFatigue\":0,\"history\":[]}")
+  createdAt       DateTime @default(now())
 }
 
 model MarketListing {
@@ -107,7 +107,7 @@ model Facility {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  sessions  TrainingSession[]
+  sessions TrainingSession[]
 
   @@unique([playerId, type])
 }
@@ -127,7 +127,9 @@ model PveProgress {
   @@unique([playerId, bossId])
 }
 
-/** Persistent career-layer data kept separate from individual boss clear rows. */
+/**
+ * Persistent career-layer data kept separate from individual boss clear rows.
+ */
 model PveCampaignState {
   id         String   @id @default(uuid())
   playerId   String   @unique
@@ -138,14 +140,14 @@ model PveCampaignState {
 }
 
 model PveOpponentHistory {
-  id        String   @id @default(uuid())
-  playerId  String
-  player    Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
-  bossId    String
-  wins      Int      @default(0)
-  losses    Int      @default(0)
-  kosFor    Int      @default(0)
-  kosAgainst Int     @default(0)
+  id          String   @id @default(uuid())
+  playerId    String
+  player      Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  bossId      String
+  wins        Int      @default(0)
+  losses      Int      @default(0)
+  kosFor      Int      @default(0)
+  kosAgainst  Int      @default(0)
   lastFightAt DateTime @default(now())
 
   @@unique([playerId, bossId])
@@ -153,70 +155,85 @@ model PveOpponentHistory {
 }
 
 model TrainingSession {
-  id               String    @id @default(uuid())
-  playerId         String
-  chickenId        String
-  facilityId       String
-  facility         Facility  @relation(fields: [facilityId], references: [id], onDelete: Cascade)
-  programId        String
-  category         String
-  status           String    @default("ACTIVE")
-  startedAt        DateTime  @default(now())
-  durationMinutes  Int
-  energyCost       Int
-  fatigueCost      Int
-  workload         Int       @default(1)
-  adaptationResult Json?
-  completedAt      DateTime?
-  createdAt        DateTime  @default(now())
+  id                String    @id @default(uuid())
+  playerId          String
+  chickenId         String
+  facilityId        String
+  facility          Facility  @relation(fields: [facilityId], references: [id], onDelete: Cascade)
+  programId         String
+  category          String
+  status            String    @default("ACTIVE")
+  startedAt         DateTime  @default(now())
+  durationMinutes   Int
+  energyCost        Int
+  fatigueCost       Int
+  stressCost        Int       @default(0)
+  trainingPointCost Int       @default(10)
+  intensity         String    @default("normal")
+  workload          Int       @default(1)
+  adaptationResult  Json?
+  completedAt       DateTime?
+  createdAt         DateTime  @default(now())
 }
 
 model RoosterTraining {
-  id                String   @id @default(uuid())
-  chickenId         String   @unique
-  physicalXP        Int      @default(0)
-  combatXP          Int      @default(0)
-  tacticalXP        Int      @default(0)
-  disciplineXP      Int      @default(0)
-  recoveryXP        Int      @default(0)
-  effortSpent       Json     @default("{\"power\":0,\"speed\":0,\"agility\":0,\"defense\":0,\"stamina\":0,\"accuracy\":0}")
-  trainingPotential Json
-  discovered        Json     @default("{}")
-  traits            Json     @default("[]")
-  breakthroughs     Json     @default("[]")
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  id                     String   @id @default(uuid())
+  chickenId              String   @unique
+  physicalXP             Int      @default(0)
+  combatXP               Int      @default(0)
+  tacticalXP             Int      @default(0)
+  disciplineXP           Int      @default(0)
+  recoveryXP             Int      @default(0)
+  effortSpent            Json     @default("{\"power\":0,\"speed\":0,\"agility\":0,\"defense\":0,\"stamina\":0,\"accuracy\":0}")
+  trainingPotential      Json
+  discovered             Json     @default("{}")
+  traits                 Json     @default("[]")
+  breakthroughs          Json     @default("[]")
+  traitProgress          Json     @default("{}")
+  specializationProgress Json     @default("{}")
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
 }
 
-/** A persisted single-elimination bracket run (spec §31) — resolved one round at a time so progress
- * survives a page reload and the player can step away to heal between rounds. */
+/**
+ * A persisted single-elimination bracket run (spec §31) — resolved one round at a time so progress
+ * survives a page reload and the player can step away to heal between rounds.
+ */
 model Tournament {
-  id            String    @id @default(uuid())
+  id            String   @id @default(uuid())
   playerId      String
-  player        Player    @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  player        Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
   chickenId     String
-  /** Circuit event selected at registration. Keeps a run tied to its rules on resume. */
-  definitionId  String    @default("barangay-open")
+  /**
+   * Circuit event selected at registration. Keeps a run tied to its rules on resume.
+   */
+  definitionId  String   @default("barangay-open")
   size          Int
   tier          String
-  status        String    @default("IN_PROGRESS")
-  currentRound  Int       @default(0)
+  status        String   @default("IN_PROGRESS")
+  currentRound  Int      @default(0)
   totalRounds   Int
-  /** BracketEntrant[] — every slot in the bracket, including eliminated ones (see lib/tournament.ts). */
+  /**
+   * BracketEntrant[] — every slot in the bracket, including eliminated ones (see lib/tournament.ts).
+   */
   entrants      Json
-  /** RoundMatch[][] — every match resolved so far, indexed by round. */
-  history       Json      @default("[]")
+  /**
+   * RoundMatch[][] — every match resolved so far, indexed by round.
+   */
+  history       Json     @default("[]")
   placement     Int?
-  tokensAwarded Int        @default(0)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  tokensAwarded Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   @@index([playerId, chickenId, status])
 }
 
-/** A pending or resolved pre-fight bet for the /live feed (spec: /live betting feature).
+/**
+ * A pending or resolved pre-fight bet for the /live feed (spec: /live betting feature).
  * chickenA/chickenB are snapshotted as Json rather than FKs because NPC opponents (and
- * exhibition-mode chickens) are generated in-memory and never persisted to Chicken rows. */
+ * exhibition-mode chickens) are generated in-memory and never persisted to Chicken rows.
+ */
 model LiveMatch {
   id        String   @id @default(uuid())
   playerId  String
@@ -235,20 +252,20 @@ model LiveMatch {
 }
 
 model MedicalTreatment {
-  id            String    @id @default(uuid())
-  playerId      String
-  chickenId     String
-  injuryId      String?
-  type          String
-  status        String    @default("ACTIVE")
-  effectiveness Float     @default(1)
-  clinicLevel   Int       @default(1)
-  cost          Int       @default(0)
-  startedAt     DateTime  @default(now())
+  id              String    @id @default(uuid())
+  playerId        String
+  chickenId       String
+  injuryId        String?
+  type            String
+  status          String    @default("ACTIVE")
+  effectiveness   Float     @default(1)
+  clinicLevel     Int       @default(1)
+  cost            Int       @default(0)
+  startedAt       DateTime  @default(now())
   durationMinutes Int
-  completedAt   DateTime?
-  result        Json?
-  createdAt     DateTime  @default(now())
+  completedAt     DateTime?
+  result          Json?
+  createdAt       DateTime  @default(now())
 
   @@index([chickenId, status])
 }

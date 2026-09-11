@@ -1,5 +1,21 @@
 import type { ActionDefinition } from './types';
-const define = (id: string, category: ActionDefinition['category'], startupTicks: number, activeTicks: number, recoveryTicks: number, staminaCost: number, range: number, damage: number, interruptPower: number, interruptResistance: number, tracking: number): ActionDefinition => Object.freeze({ id, category, startupTicks, activeTicks, recoveryTicks, staminaCost, range, damage, interruptPower, interruptResistance, tracking });
+import { TEMPORARY_COMBAT_EXAGGERATION } from './constants';
+
+const define = (id: string, category: ActionDefinition['category'], startupTicks: number, activeTicks: number, recoveryTicks: number, staminaCost: number, range: number, damage: number, interruptPower: number, interruptResistance: number, tracking: number): ActionDefinition => Object.freeze({
+  id,
+  category,
+  // Attack/counter/feint startup is the simulation tell window. Stretch it
+  // with the same temporary gain as the presentation tells.
+  startupTicks: ['attack', 'counter', 'feint'].includes(category) ? startupTicks * TEMPORARY_COMBAT_EXAGGERATION : startupTicks,
+  activeTicks,
+  recoveryTicks,
+  staminaCost,
+  range,
+  damage,
+  interruptPower,
+  interruptResistance,
+  tracking,
+});
 export const ACTIONS: Readonly<Record<string, ActionDefinition>> = Object.freeze({
   peck_strike: define('peck_strike', 'attack', 4, 7, 6, 7, .85, 8, 12, 4, .7),
   spur_lunge: define('spur_lunge', 'attack', 8, 10, 9, 16, 1.3, 17, 24, 9, .35),
@@ -10,7 +26,7 @@ export const ACTIONS: Readonly<Record<string, ActionDefinition>> = Object.freeze
   air_peck: define('air_peck', 'counter', 3, 5, 5, 5, .9, 7, 12, 10, .8),
   air_push: define('air_push', 'attack', 4, 5, 5, 6, 1.3, 5, 26, 18, .5),
   wing_counter: define('wing_counter', 'counter', 4, 8, 7, 11, 1.05, 12, 19, 5, .8),
-  guard: define('guard', 'defense', 3, 10, 5, 3, 0, 0, 0, 25, 1),
+  guard: define('guard', 'defense', 3, 10 * TEMPORARY_COMBAT_EXAGGERATION, 5, 3, 0, 0, 0, 25, 1),
   sidestep: define('sidestep', 'evade', 3, 7, 6, 8, 0, 0, 0, 0, 1),
   feint: define('feint', 'feint', 5, 2, 5, 4, 0, 0, 0, 0, 1),
 });

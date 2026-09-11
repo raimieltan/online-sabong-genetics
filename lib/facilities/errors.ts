@@ -15,7 +15,9 @@ export type FacilityErrorCode =
   | "INSUFFICIENT_RESOURCES"
   | "SESSION_NOT_FOUND"
   | "SESSION_NOT_ACTIVE"
-  | "INVALID_CATEGORY";
+  | "INVALID_CATEGORY"
+  | "INVALID_INTENSITY"
+  | "CONDITION_TOO_LOW";
 
 const STATUS_BY_CODE: Record<FacilityErrorCode, number> = {
   FACILITY_NOT_FOUND: 404,
@@ -35,6 +37,8 @@ const STATUS_BY_CODE: Record<FacilityErrorCode, number> = {
   SESSION_NOT_FOUND: 404,
   SESSION_NOT_ACTIVE: 400,
   INVALID_CATEGORY: 400,
+  INVALID_INTENSITY: 400,
+  CONDITION_TOO_LOW: 400,
 };
 
 export class FacilityError extends Error {

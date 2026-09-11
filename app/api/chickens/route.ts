@@ -10,7 +10,29 @@ export async function GET() {
     where: { playerId: player.id },
     orderBy: { createdAt: "asc" },
   });
-  return NextResponse.json(chickens);
+  const developmentRows = await prisma.roosterTraining.findMany({
+    where: { chickenId: { in: chickens.map((chicken) => chicken.id) } },
+  });
+  const developmentByChicken = new Map(
+    developmentRows.map((row) => [row.chickenId, {
+      physicalXP: row.physicalXP,
+      combatXP: row.combatXP,
+      tacticalXP: row.tacticalXP,
+      disciplineXP: row.disciplineXP,
+      recoveryXP: row.recoveryXP,
+      effortSpent: row.effortSpent,
+      trainingPotential: row.trainingPotential,
+      discovered: row.discovered,
+      traits: row.traits,
+      breakthroughs: row.breakthroughs,
+      traitProgress: row.traitProgress,
+      specializationProgress: row.specializationProgress,
+    }]),
+  );
+  return NextResponse.json(chickens.map((chicken) => ({
+    ...chicken,
+    trainingDevelopment: developmentByChicken.get(chicken.id) ?? null,
+  })));
 }
 
 export async function POST() {

@@ -1,0 +1,14 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
+import { prisma } from "../db";
+import { claimExpiredSessions, startTrainingSession } from "../facilities/service";
+import { getOrCreatePlayer } from "../player";
+import { statBlock } from "./testHelpers";
+import { FacilityError } from "../facilities/errors";
+
+test.beforeEach(async()=>{await prisma.trainingSession.deleteMany();await prisma.facility.deleteMany();await prisma.roosterTraining.deleteMany();await prisma.egg.deleteMany();await prisma.chicken.deleteMany();await prisma.player.deleteMany();});
+async function seed(){const player=await getOrCreatePlayer(),id=randomUUID();await prisma.chicken.create({data:{id,playerId:player.id,name:"V3 Test",sex:"rooster",generation:0,bloodlineId:id,iv:statBlock(80),ev:statBlock(0),traits:[],age:1,health:100,energy:100,record:{wins:0,losses:0,championships:0,koTko:0,decisions:0},status:"active",growthStage:"adult"}});return{player,id};}
+test("timed Gym completion persists one complete V3 result and cannot reward twice",async()=>{const {player,id}=await seed();const session=await startTrainingSession(player.id,id,"STRENGTH",undefined,"normal");await prisma.trainingSession.update({where:{id:session.id},data:{startedAt:new Date(0)}});await claimExpiredSessions(player.id);const once=await prisma.chicken.findUniqueOrThrow({where:{id}}),completed=await prisma.trainingSession.findUniqueOrThrow({where:{id:session.id}});assert.equal(completed.status,"COMPLETED");assert.equal((completed.adaptationResult as {version:number}).version,3);assert.ok((once.ev as ReturnType<typeof statBlock>).power>0);assert.ok((once.experience as {offensive:number}).offensive>0);await claimExpiredSessions(player.id);const twice=await prisma.chicken.findUniqueOrThrow({where:{id}});assert.deepEqual(twice.ev,once.ev);assert.deepEqual(twice.experience,once.experience);});
+test("start snapshots intensity-scaled costs",async()=>{const {player,id}=await seed();const session=await startTrainingSession(player.id,id,"STRENGTH",undefined,"hard");assert.equal(session.intensity,"hard");assert.ok(session.energyCost>18);assert.equal(session.trainingPointCost,10);});
+test("start rejects insufficient energy and program-specific training points",async()=>{const {player,id}=await seed();await prisma.chicken.update({where:{id},data:{energy:1}});await assert.rejects(()=>startTrainingSession(player.id,id,"STRENGTH"),(e:unknown)=>e instanceof FacilityError&&e.code==="INSUFFICIENT_ENERGY");await prisma.chicken.update({where:{id},data:{energy:100,trainingState:{trainingPoints:5,trainingFatigue:0,history:[]}}});await assert.rejects(()=>startTrainingSession(player.id,id,"STRENGTH"),(e:unknown)=>e instanceof FacilityError&&e.code==="TRAINING_LIMIT_REACHED");});

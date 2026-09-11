@@ -13,7 +13,7 @@ export const CATEGORY_PRIMARY_STAT: Record<TrainingCategory, GeneticStatKey> = {
   discipline: "accuracy",
 };
 
-/** A small opposite-direction EV nudge — training one thing costs another (spec §24 tradeoffs). */
+/** Legacy mapping retained for callers; V3 uses opportunity cost and temporary readiness load. */
 export const CATEGORY_TRADEOFF_STAT: Partial<Record<TrainingCategory, GeneticStatKey>> = {
   strength: "stamina",
   speed: "power",
@@ -25,8 +25,7 @@ const MAX_EV = 100;
 
 /**
  * Applies one training session's EV gain, run through the diminishing-
- * returns curve and the category's tradeoff cost (spec §24-25) — never a
- * flat +N across every stat with no downside.
+ * returns curve. Ordinary training never deletes permanent EV.
  */
 export function applyDevelopment(params: {
   ev: StatBlock;
@@ -39,12 +38,8 @@ export function applyDevelopment(params: {
   const { ev, category, baseGain, trainingFatigue, lifeStageMultiplier = 1 } = params;
   const effectiveness = trainingEffectiveness(trainingFatigue) * lifeStageMultiplier;
   const primary = CATEGORY_PRIMARY_STAT[category];
-  const tradeoff = CATEGORY_TRADEOFF_STAT[category];
 
   const next: StatBlock = { ...ev };
   next[primary] = Math.min(MAX_EV, next[primary] + baseGain * effectiveness);
-  if (tradeoff) {
-    next[tradeoff] = Math.max(0, next[tradeoff] - baseGain * effectiveness * 0.2);
-  }
   return next;
 }

@@ -617,19 +617,21 @@ export type TrainingState = {
   trainingPoints: number;
   /** Accumulated overtraining load, 0-100 — pushes effectiveness down the diminishing-returns curve. */
   trainingFatigue: number;
-  history: { category: TrainingCategory; programId?: string; at: number }[];
+  history: TrainingHistoryEntry[];
 };
 
-export type TrainingIntensity = "light" | "moderate" | "hard" | "extreme";
+/** `moderate` is accepted as a legacy API alias and normalized to `normal` for V3 sessions. */
+export type TrainingIntensity = "light" | "normal" | "moderate" | "hard" | "extreme";
 
 export const TRAINING_INTENSITIES: readonly TrainingIntensity[] = [
   "light",
+  "normal",
   "moderate",
   "hard",
   "extreme",
 ];
 
-export type TrainingTraitId = "iron_body" | "fast_learner" | "overtrained";
+export type TrainingTraitId = "iron_body" | "fast_learner" | "overtrained" | "counter_specialist" | "pressure_fighter" | "iron_conditioning" | "sharp_eyes" | "disciplined_fighter" | "elusive_fighter" | "heavy_hitter" | "patient_reader";
 
 export type TrainingTrait = {
   id: TrainingTraitId;
@@ -666,6 +668,28 @@ export type RoosterTrainingState = {
   discovered: Partial<Record<GeneticStatKey, boolean>>;
   traits: TrainingTrait[];
   breakthroughs: BreakthroughLogEntry[];
+  traitProgress: Record<string, number>;
+  specializationProgress: Record<string, number>;
+};
+
+export type TrainingHistoryEntry = {
+  sessionId?: string;
+  category: TrainingCategory;
+  programId?: string;
+  intensity?: TrainingIntensity;
+  at: number;
+  startedAt?: number;
+  completedAt?: number;
+  evChanges?: Partial<Record<GeneticStatKey, number>>;
+  experienceChanges?: Partial<Record<CombatExperienceCategory, number>>;
+  behaviorChanges?: Partial<Record<keyof BehavioralProfile, number>>;
+  fatigueChange?: number;
+  energyChange?: number;
+  stressChange?: number;
+  conditionChange?: number;
+  breakthroughId?: string;
+  traitProgress?: Record<string, number>;
+  injuryId?: string;
 };
 
 /** Derived, never stored directly — emerges from growthStage + condition + experience + training (V2 spec §30). */
@@ -786,6 +810,10 @@ export type CombatResult = {
   /** Raw per-fight behavioral evidence. Persistence applies opponent-quality
    * weighting and anti-farming before merging it into the career. */
   combatCareerGained?: Record<string, CombatCareerFightDelta>;
+  /** Seed used by the authoritative continuous simulation. Presentation replays must use this exact seed. */
+  matchSeed?: number;
+  /** Authoritative final HP snapshot, including each fighter's differently-sized health pool. */
+  finalHealth?: Record<string, { current: number; max: number; percent: number }>;
 };
 
 export type EggStatus = "incubating";

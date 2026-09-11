@@ -10,5 +10,5 @@ export async function GET() {
   const clinic = await getOrCreateClinic(player.id);
   const roster = await rosterMedicalOverview(player.id);
 
-  return NextResponse.json({ clinic: clinicView(clinic), roster });
+  return NextResponse.json({ clinic: clinicView(clinic), roster, credits: player.credits });
 }

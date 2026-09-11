@@ -2,12 +2,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { ANIMATIONS } from "../animation/animations/index";
 import { PRIORITY } from "../animation/stateMachine";
+import { TEMPORARY_COMBAT_EXAGGERATION } from "../combat-v2/constants";
 
-test("all 3 tell AnimStates are registered with duration in the 300-500ms readable window", () => {
-  for (const state of ["tell_aggression", "tell_patience", "tell_risk"] as const) {
+test("all 3 tell AnimStates use the temporary 2x readable window", () => {
+  const base = { tell_aggression: 1.2, tell_patience: 1.4, tell_risk: 1.6 } as const;
+  for (const state of Object.keys(base) as (keyof typeof base)[]) {
     const def = ANIMATIONS[state];
     assert.ok(def, `${state} missing from ANIMATIONS`);
-    assert.ok(def.duration >= 0.3 && def.duration <= 0.5, `${state} duration ${def.duration}s outside 300-500ms`);
+    assert.equal(def.duration, base[state] * TEMPORARY_COMBAT_EXAGGERATION);
     assert.equal(def.loop, false);
   }
 });

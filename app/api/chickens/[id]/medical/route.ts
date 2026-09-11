@@ -3,12 +3,19 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { getOrCreatePlayer } from "@/lib/player";
 import { MedicalError } from "@/lib/medical/errors";
-import { claimExpiredTreatments, medicalRest, startHealthTreatment, startInjuryTreatment } from "@/lib/medical/service";
+import {
+  claimExpiredTreatments,
+  medicalRest,
+  startHealthTreatment,
+  startIllnessTreatment,
+  startInjuryTreatment,
+} from "@/lib/medical/service";
 
 type Body =
   | { action: "treat"; injuryId: string }
   | { action: "medical_rest" }
-  | { action: "treat_health" };
+  | { action: "treat_health" }
+  | { action: "treat_illness"; illnessId: string };
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -29,6 +36,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
 
     if (body.action === "treat_health") {
       const treatment = await startHealthTreatment(player.id, id);
+      return NextResponse.json({ treatment });
+    }
+
+    if (body.action === "treat_illness") {
+      if (!body.illnessId) return NextResponse.json({ error: "ILLNESS_NOT_FOUND" }, { status: 404 });
+      const treatment = await startIllnessTreatment(player.id, id, body.illnessId);
       return NextResponse.json({ treatment });
     }
 

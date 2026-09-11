@@ -122,6 +122,7 @@ type FightSim = ReturnType<LiveCombatV2Session["finalize"]>;
 
 export type StartBossFightResult = {
   sessionId: string;
+  matchSeed: number;
   chicken: Chicken;
   bossFighter: Chicken;
   boss: ReturnType<typeof bossPreview>;
@@ -180,6 +181,7 @@ export async function startBossFight(
 
   return {
     sessionId,
+    matchSeed: session.matchSeed,
     chicken,
     bossFighter,
     boss: bossPreview(boss),

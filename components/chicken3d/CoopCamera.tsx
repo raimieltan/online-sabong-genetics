@@ -7,14 +7,13 @@ import { useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 
-const IDLE_POS = new THREE.Vector3(0, 8.5, 10.5);
-const IDLE_TARGET = new THREE.Vector3(0, 0, 0);
+const IDLE_POS = new THREE.Vector3(0.4, 8.2, 12.8);
+const IDLE_TARGET = new THREE.Vector3(0, 0, -0.6);
 
 /**
- * Dragon-City-style elevated 3/4 camera: OrbitControls gives simple
- * pan/rotate/zoom, constrained so the player can't dip below the ground plane
- * or spin into a top-down view. Selecting a chicken smoothly re-targets the
- * controls at its position instead of snapping (spec §6).
+ * Elevated management-game camera with a narrow orbit and zoom range. Players
+ * can inspect the compound without spinning below the ground or losing the
+ * authored composition; selection still eases toward a resident or facility.
  */
 export function CoopCamera({ focusTarget }: { focusTarget: RefObject<THREE.Vector3 | null> }) {
   const controlsRef = useRef<OrbitControlsImpl | null>(null);
@@ -37,12 +36,13 @@ export function CoopCamera({ focusTarget }: { focusTarget: RefObject<THREE.Vecto
     <OrbitControls
       ref={controlsRef}
       target={[0, 0, 0]}
-      enablePan
-      panSpeed={0.6}
-      minDistance={5}
-      maxDistance={18}
-      minPolarAngle={0.35}
-      maxPolarAngle={1.15}
+      enablePan={false}
+      minDistance={7}
+      maxDistance={17}
+      minPolarAngle={0.72}
+      maxPolarAngle={1.08}
+      minAzimuthAngle={-0.48}
+      maxAzimuthAngle={0.48}
       enableDamping
       dampingFactor={0.08}
     />

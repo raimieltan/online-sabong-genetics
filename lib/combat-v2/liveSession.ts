@@ -5,6 +5,8 @@ import type { PlayerCommand } from '../combat/command';
 import type { Chicken, CombatLogEntry, CombatResult } from '../types';
 import { emptyExperience, gainExperience } from '../combat/experience';
 import { fighterStrength } from '../combat/evolution';
+import { createInjuryRecord, rollCriticalInjury, rollInjurySeverity } from '../combat/injuries';
+import { createCombatRng } from './rng';
 import type { CombatCareerFightDelta, CombatCareerTelemetry, SignatureTechnique } from '../types';
 import type { TacticalMode } from './types';
 
@@ -24,6 +26,7 @@ function commandMode(command: PlayerCommand | null | undefined): TacticalMode | 
 export class LiveCombatV2Session {
   readonly chickenA: Chicken;
   readonly chickenB: Chicken;
+  readonly matchSeed: number;
   readonly state;
   turn = 0;
   fightOver = false;
@@ -42,13 +45,15 @@ export class LiveCombatV2Session {
   private signatureSuccesses = new Map<string, Partial<Record<SignatureTechnique['id'], number>>>();
   private activeSignature = new Map<string, { id: SignatureTechnique['id']; tick: number }>();
   private countedCommandSuccesses = new Set<string>();
+  private finalizedResult: CombatResult | null = null;
 
   constructor(chickenA: Chicken, chickenB: Chicken, matchSeed = Math.floor(Math.random() * 0x1_0000_0000) >>> 0) {
     this.chickenA = chickenA;
     this.chickenB = chickenB;
+    this.matchSeed = matchSeed >>> 0;
     this.state = createMatch({ id: `live-${matchSeed.toString(36)}`, version: COMBAT_VERSION, seed: matchSeed,
       fighterA: toCombatV2Snapshot(chickenA, 'player-a', chickenB.id), fighterB: toCombatV2Snapshot(chickenB, 'player-b', chickenA.id),
-      arena: { radius: 8 }, maxTicks: 60 * 90 });
+      arena: { radius: 8 }, maxTicks: 60 * 120 });
   }
 
   snapshotA() { return this.snapshot(0); }
@@ -63,6 +68,7 @@ export class LiveCombatV2Session {
   }
 
   step(command?: PlayerCommand | null, _autoCoach?: unknown) {
+    void _autoCoach;
     const logStart = this.log.length;
     const mode = commandMode(command);
     if (mode && this.state.phase === 'active') {
@@ -168,14 +174,17 @@ export class LiveCombatV2Session {
         this.signatureSuccesses.set(attackerId, successes);
         this.activeSignature.delete(attackerId);
       }
+      const hitZone = event.detail as CombatLogEntry['hitZone'];
+      const isCrit = event.type === 'COUNTER_LANDED' || (event.value ?? 0) >= 9;
       this.log.push({ turn: Math.ceil(event.tick / TICKS_PER_STEP), attackerId: event.fighterId, defenderId: event.targetId,
-        damage: event.value ?? 0, hitZone: null, isMiss: false, isCrit: false, isCounter: event.type === 'COUNTER_LANDED',
-        isCritical: false, defenderHp: defender.health, stagger: event.type === 'BLOCK' ? 'light' : (event.value ?? 0) > 10 ? 'heavy' : 'medium',
+        damage: event.value ?? 0, hitZone, isMiss: false, isCrit, isCounter: event.type === 'COUNTER_LANDED',
+        isCritical: isCrit && (hitZone === 'head' || hitZone === 'neck'), defenderHp: defender.health, stagger: event.type === 'BLOCK' ? 'light' : (event.value ?? 0) > 10 ? 'heavy' : 'medium',
         timestamp: event.tick * (1000 / 60), durationMs: 1000 / 60 });
     }
   }
 
   finalize(): CombatResult {
+    if (this.finalizedResult) return this.finalizedResult;
     const [a, b] = this.state.fighters;
     const engineResult = this.state.result;
     const winnerId = engineResult?.winnerId ?? (a.health >= b.health ? this.chickenA.id : this.chickenB.id);
@@ -219,8 +228,50 @@ export class LiveCombatV2Session {
       return { telemetry, opponentId: opponent.id, opponentName: opponent.name, opponentStrength: fighterStrength(opponent), ownStrength: fighterStrength(chicken), won, finalHealthRatio, opponentFinalHealthRatio,
         signatureAttempts, signatureSuccesses, awakeningTriggered: fighter.awakening?.type };
     };
-    return { winnerId, loserId, log: this.log, totalTurns: this.turn,
-      outcomeReason: engineResult?.finishReason === 'KO' ? 'ko' : 'timeout', injuredChickenId: null,
+    const injuryRng = createCombatRng(this.state.rngState);
+    const loser = winnerId === this.chickenA.id ? b : a;
+    const loserChicken = winnerId === this.chickenA.id ? this.chickenB : this.chickenA;
+    const finalImpact = [...this.log].reverse().find((entry) => entry.defenderId === loserId && !entry.isMiss && entry.damage > 0);
+    const wasCriticalInjury = engineResult?.finishReason === 'KO' && Boolean(finalImpact?.isCritical) && rollCriticalInjury({
+      rng: injuryRng.next,
+      isCrit: true,
+      hitZone: finalImpact?.hitZone ?? null,
+      hasSurvivorTrait: loserChicken.traits.some((trait) => trait.id === 'survivor'),
+      defenderFatigue: 100 - loser.stamina,
+    });
+    const outcomeReason = wasCriticalInjury ? 'critical_injury' : engineResult?.finishReason === 'KO' ? 'ko' : 'timeout';
+    const severity = rollInjurySeverity({
+      rng: injuryRng.next,
+      wasCriticalInjury,
+      wasKo: outcomeReason === 'ko',
+      hasSurvivorTrait: loserChicken.traits.some((trait) => trait.id === 'survivor'),
+    });
+    const newInjuries = {
+      [this.chickenA.id]: [],
+      [this.chickenB.id]: [],
+    } as Record<string, ReturnType<typeof createInjuryRecord>[]>;
+    if (severity) {
+      const zone = finalImpact?.hitZone;
+      const location = zone === 'left_wing' || zone === 'right_wing' ? 'wing'
+        : zone === 'left_leg' || zone === 'right_leg' ? 'leg'
+        : zone === 'body' ? 'chest' : zone ?? undefined;
+      newInjuries[loserId] = [{ ...createInjuryRecord(injuryRng.next, severity), location }];
+    }
+
+    const damageTaken = (fighter: typeof a) => fighter.snapshot.maxHealth - fighter.health;
+    const winner = winnerId === this.chickenA.id ? a : b;
+    const conditionDelta = {
+      [winnerId]: -Math.min(15, damageTaken(winner) / winner.snapshot.maxHealth * 20),
+      [loserId]: -Math.min(30, 8 + damageTaken(loser) / loser.snapshot.maxHealth * 25),
+    };
+    const finalHealth = Object.fromEntries(this.state.fighters.map((fighter) => [fighter.snapshot.fighterId, {
+      current: fighter.health,
+      max: fighter.snapshot.maxHealth,
+      percent: Math.round(Math.max(0, Math.min(100, fighter.health / fighter.snapshot.maxHealth * 100))),
+    }]));
+
+    this.finalizedResult = { winnerId, loserId, log: this.log, totalTurns: this.turn,
+      outcomeReason, injuredChickenId: wasCriticalInjury ? loserId : null, newInjuries, conditionDelta, matchSeed: this.matchSeed, finalHealth,
       experienceGained: {
         [this.chickenA.id]: ensureExperience(this.chickenA.id),
         [this.chickenB.id]: ensureExperience(this.chickenB.id),
@@ -229,5 +280,6 @@ export class LiveCombatV2Session {
         [this.chickenA.id]: careerDelta(this.chickenA, this.chickenB, 0),
         [this.chickenB.id]: careerDelta(this.chickenB, this.chickenA, 1),
       } };
+    return this.finalizedResult;
   }
 }

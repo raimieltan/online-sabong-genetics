@@ -51,49 +51,49 @@ export interface VillageSlot {
   home: [number, number, number];
   /** Center of this chicken's small personal wander area. */
   personalArea: [number, number, number];
-  /** Facing the hut should be built to face (toward the central roost). */
+  /** Orientation of the resident's pen toward the shared yard. */
   facingY: number;
 }
 
-const CENTER: [number, number] = [0, 0];
-/** Huts per concentric ring, innermost first. Rings beyond the last repeat the last count at a wider radius. */
-const RING_SIZES = [8, 12, 16];
-const RING_BASE_RADIUS = 4.5;
-const RING_SPACING = 3;
+export type VillageZone = "fighter" | "young" | "recovery";
+
+/** Hand-composed, deliberately irregular compound slots. The center stays open as the shared yard. */
+const COMPOUND_SLOTS: Record<VillageZone, Array<Omit<VillageSlot, "facingY">>> = {
+  fighter: [
+    { home: [-5.3, 0, -1.9], personalArea: [-3.8, 0, -1.2] },
+    { home: [-5.7, 0, 1.2], personalArea: [-3.8, 0, .8] },
+    { home: [-3.6, 0, 3.8], personalArea: [-2.5, 0, 2.3] },
+    { home: [.4, 0, 4.4], personalArea: [.25, 0, 2.6] },
+    { home: [3.6, 0, 3.7], personalArea: [2.5, 0, 2.2] },
+    { home: [5.7, 0, 1.1], personalArea: [3.8, 0, .7] },
+    { home: [5.2, 0, -1.7], personalArea: [3.6, 0, -1] },
+    { home: [-3.5, 0, -.1], personalArea: [-2.5, 0, .1] },
+    { home: [3.3, 0, .1], personalArea: [2.4, 0, .1] },
+    { home: [-2.1, 0, 2.2], personalArea: [-1.3, 0, 1.35] },
+    { home: [2, 0, 2.35], personalArea: [1.3, 0, 1.45] },
+    { home: [.1, 0, 3.9], personalArea: [.1, 0, 2.45] },
+  ],
+  young: [
+    { home: [-2.9, 0, 5], personalArea: [-1.9, 0, 3.4] },
+    { home: [-.9, 0, 5.2], personalArea: [-.7, 0, 3.5] },
+    { home: [1.25, 0, 5], personalArea: [.9, 0, 3.4] },
+  ],
+  recovery: [
+    { home: [6, 0, -2.8], personalArea: [4.7, 0, -2.4] },
+    { home: [6.1, 0, -.7], personalArea: [4.7, 0, -1] },
+  ],
+};
 
 /**
- * Fixed, deterministic diorama layout — concentric rings of huts around a
- * central roost, positioned by slot index (not chicken id) so occupied slots
- * stay stable as the roster changes: hatching a new chicken fills the next
- * empty slot rather than reshuffling everyone else's home. Any index resolves
- * to a unique, non-overlapping slot — rings grow outward without bound.
+ * Returns a fixed compound location within a semantic village zone. Slots are
+ * deliberately uneven so the coop reads as a working rural stable rather than
+ * a radial game board.
  */
-export function getVillageSlot(index: number): VillageSlot {
-  let ring = 0;
-  let ringIndex = Math.max(0, Math.floor(index));
-  while (ring < RING_SIZES.length - 1 && ringIndex >= RING_SIZES[ring]) {
-    ringIndex -= RING_SIZES[ring];
-    ring++;
-  }
-  const perRing = RING_SIZES[ring];
-  // Slots past the defined rings keep wrapping the outermost ring, each lap pushed
-  // further out so they never land on an already-occupied position.
-  const lap = ring === RING_SIZES.length - 1 ? Math.floor(ringIndex / perRing) : 0;
-  ringIndex %= perRing;
-  const angleOffset = (ring % 2 === 1 ? Math.PI / perRing : 0) + lap * (Math.PI / perRing);
-  const angle = (ringIndex / perRing) * Math.PI * 2 + angleOffset;
-  const radius = RING_BASE_RADIUS + (ring + lap) * RING_SPACING;
-  const x = CENTER[0] + Math.cos(angle) * radius;
-  const z = CENTER[1] + Math.sin(angle) * radius;
-  const facingY = Math.atan2(CENTER[0] - x, CENTER[1] - z);
-  // Personal wander area sits slightly toward the center from the hut.
-  const personalX = x * 0.72;
-  const personalZ = z * 0.72;
-  return {
-    home: [x, 0, z],
-    personalArea: [personalX, 0, personalZ],
-    facingY,
-  };
+export function getVillageSlot(index: number, zone: VillageZone = "fighter"): VillageSlot {
+  const slots = COMPOUND_SLOTS[zone];
+  const slot = slots[Math.max(0, Math.floor(index)) % slots.length];
+  const facingY = Math.atan2(-slot.home[0], -slot.home[2]);
+  return { ...slot, facingY };
 }
 
 export interface VillagePage<T> {

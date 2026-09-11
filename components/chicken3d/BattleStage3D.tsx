@@ -319,8 +319,8 @@ export function BattleStage3D({
   showCollisionDebug = false,
   collisionDebugFighters,
 }: {
-  fighterA: Pick<Chicken, "colorScheme" | "sex" | "physical" | "mutations">;
-  fighterB: Pick<Chicken, "colorScheme" | "sex" | "physical" | "mutations">;
+  fighterA: Pick<Chicken, "colorScheme" | "sex" | "physical" | "mutations" | "growthStage">;
+  fighterB: Pick<Chicken, "colorScheme" | "sex" | "physical" | "mutations" | "growthStage">;
   animA: RefObject<FighterAnim | null>;
   animB: RefObject<FighterAnim | null>;
   /** Procedural-animation intent per fighter, written by BattleCanvas per turn. */
@@ -424,6 +424,7 @@ export function BattleStage3D({
             ref={physicsA}
             colorScheme={fighterA.colorScheme}
             sex={fighterA.sex}
+            growthStage={fighterA.growthStage}
             physical={fighterA.physical}
             mutations={fighterA.mutations}
             combatAnim={animA}
@@ -437,6 +438,7 @@ export function BattleStage3D({
             ref={physicsB}
             colorScheme={fighterB.colorScheme}
             sex={fighterB.sex}
+            growthStage={fighterB.growthStage}
             physical={fighterB.physical}
             mutations={fighterB.mutations}
             combatAnim={animB}

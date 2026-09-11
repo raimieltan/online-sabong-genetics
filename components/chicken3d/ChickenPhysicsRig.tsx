@@ -6,6 +6,7 @@ import * as THREE from "three";
 import { RigidBody, CapsuleCollider, BallCollider, type RapierRigidBody } from "@react-three/rapier";
 
 import { resolvePhysicalProfile } from "@/lib/physicalProfile";
+import { growthVisualScale } from "@/lib/growth";
 import type { Chicken, HitZone, StaggerLevel } from "@/lib/types";
 import { HIT_ZONES } from "@/lib/types";
 import { ChickenModel, type FighterAnim } from "./ChickenModel";
@@ -64,6 +65,7 @@ export interface ChickenPhysicsHandle {
 interface ChickenPhysicsRigProps {
   colorScheme: Chicken["colorScheme"];
   sex: Chicken["sex"];
+  growthStage: Chicken["growthStage"];
   physical: Chicken["physical"];
   mutations: Chicken["mutations"];
   combatAnim: RefObject<FighterAnim | null>;
@@ -85,7 +87,7 @@ function scaleSpec<T extends { position: [number, number, number] }>(spec: T, sc
 
 export const ChickenPhysicsRig = forwardRef<ChickenPhysicsHandle, ChickenPhysicsRigProps>(
   function ChickenPhysicsRig(
-    { colorScheme, sex, physical, mutations, combatAnim, animIntent, opponentPos, facing, position, worldScale },
+    { colorScheme, sex, growthStage, physical, mutations, combatAnim, animIntent, opponentPos, facing, position, worldScale },
     ref
   ) {
     const bodyRef = useRef<RapierRigidBody>(null);
@@ -104,7 +106,8 @@ export const ChickenPhysicsRig = forwardRef<ChickenPhysicsHandle, ChickenPhysics
     }, []);
 
     const profile = resolvePhysicalProfile({ physical });
-    const bodyCapsule = scaleSpec(getBodyCapsule(physical), worldScale);
+    const ageAdjustedWorldScale = worldScale * growthVisualScale(growthStage);
+    const bodyCapsule = scaleSpec(getBodyCapsule(physical), ageAdjustedWorldScale);
     const zoneColliders = getZoneColliders(physical);
     const bodyMass = BASE_MASS * profile.mass;
 
@@ -193,7 +196,7 @@ export const ChickenPhysicsRig = forwardRef<ChickenPhysicsHandle, ChickenPhysics
           mass={bodyMass}
         /> */}
         {HIT_ZONES.map((zone) => {
-          const spec = scaleSpec(zoneColliders[zone], worldScale);
+          const spec = scaleSpec(zoneColliders[zone], ageAdjustedWorldScale);
           return (
             <group
               key={zone}
@@ -214,6 +217,7 @@ export const ChickenPhysicsRig = forwardRef<ChickenPhysicsHandle, ChickenPhysics
           <ChickenModel
             colorScheme={colorScheme}
             sex={sex}
+            growthStage={growthStage}
             physical={physical}
             mutations={mutations}
             combatAnim={combatAnim}

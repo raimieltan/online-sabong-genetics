@@ -16,6 +16,8 @@ function toState(row: {
   discovered: unknown;
   traits: unknown;
   breakthroughs: unknown;
+  traitProgress?: unknown;
+  specializationProgress?: unknown;
 }): RoosterTrainingState {
   return {
     physicalXP: row.physicalXP,
@@ -28,6 +30,8 @@ function toState(row: {
     discovered: row.discovered as RoosterTrainingState["discovered"],
     traits: row.traits as RoosterTrainingState["traits"],
     breakthroughs: row.breakthroughs as RoosterTrainingState["breakthroughs"],
+    traitProgress: (row.traitProgress as Record<string, number>) ?? {},
+    specializationProgress: (row.specializationProgress as Record<string, number>) ?? {},
   };
 }
 
@@ -54,6 +58,8 @@ export async function getOrCreateRoosterTraining(
       discovered: fresh.discovered as object,
       traits: fresh.traits as object,
       breakthroughs: fresh.breakthroughs as object,
+      traitProgress: fresh.traitProgress as object,
+      specializationProgress: fresh.specializationProgress as object,
     },
   });
   return { id: created.id, ...toState(created) };

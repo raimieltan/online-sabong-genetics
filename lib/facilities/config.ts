@@ -1,132 +1,56 @@
+import type { BehavioralProfile, CombatExperienceCategory, GeneticStatKey, TrainingCategory } from "../types";
 import type { FacilityLevelConfig, ProgramDefinition, ProgramId } from "./types";
 
-export const TRAINING_PROGRAMS: Record<ProgramId, ProgramDefinition> = {
-  STRENGTH: {
-    id: "STRENGTH", name: "Strength Training", description: "Develop physical strength.",
-    category: "strength", requiredFacilityType: "TRAINING_GYM", requiredFacilityLevel: 1,
-    durationMinutes: 1, energyCost: 18, fatigueCost: 14, workload: 1, baseGain: 2.0,
-  },
-  SPEED: {
-    id: "SPEED", name: "Speed Training", description: "Develop movement speed.",
-    category: "speed", requiredFacilityType: "TRAINING_GYM", requiredFacilityLevel: 1,
-    durationMinutes: 1, energyCost: 17, fatigueCost: 13, workload: 1, baseGain: 2.0,
-  },
-  ENDURANCE: {
-    id: "ENDURANCE", name: "Endurance Training", description: "Improve sustained performance.",
-    category: "stamina", requiredFacilityType: "TRAINING_GYM", requiredFacilityLevel: 1,
-    durationMinutes: 1, energyCost: 24, fatigueCost: 18, workload: 1, baseGain: 2.5,
-  },
-  AGILITY: {
-    id: "AGILITY", name: "Agility Training", description: "Improve movement and directional changes.",
-    category: "agility", requiredFacilityType: "TRAINING_GYM", requiredFacilityLevel: 1,
-    durationMinutes: 1, energyCost: 16, fatigueCost: 12, workload: 1, baseGain: 2.0,
-  },
-  REACTION: {
-    id: "REACTION", name: "Reaction Training", description: "Improve reaction-oriented physical development.",
-    category: "technique", requiredFacilityType: "TRAINING_GYM", requiredFacilityLevel: 1,
-    durationMinutes: 1, energyCost: 15, fatigueCost: 10, workload: 1, baseGain: 2.0,
-  },
-  BALANCE: {
-    id: "BALANCE", name: "Balance Training", description: "Improve stability and physical control.",
-    category: "discipline", requiredFacilityType: "TRAINING_GYM", requiredFacilityLevel: 1,
-    durationMinutes: 1, energyCost: 14, fatigueCost: 9, workload: 1, baseGain: 1.75,
-  },
-  POWER_CONDITIONING: {
-    id: "POWER_CONDITIONING", name: "Power Conditioning", description: "High-output strength/power development.",
-    category: "strength", requiredFacilityType: "TRAINING_GYM", requiredFacilityLevel: 2,
-    durationMinutes: 1, energyCost: 25, fatigueCost: 20, workload: 1, baseGain: 3.0,
-  },
-  SPRINT: {
-    id: "SPRINT", name: "Sprint Training", description: "Stronger than basic speed work, more taxing.",
-    category: "speed", requiredFacilityType: "TRAINING_GYM", requiredFacilityLevel: 2,
-    durationMinutes: 1, energyCost: 23, fatigueCost: 18, workload: 1, baseGain: 2.75,
-  },
-  ADVANCED_REACTION: {
-    id: "ADVANCED_REACTION", name: "Advanced Reaction Drills", description: "Gateway toward Phase 2 behavioral development.",
-    category: "technique", requiredFacilityType: "TRAINING_GYM", requiredFacilityLevel: 2,
-    durationMinutes: 1, energyCost: 22, fatigueCost: 16, workload: 1, baseGain: 3.0,
-  },
-  EXPLOSIVE_CONDITIONING: {
-    id: "EXPLOSIVE_CONDITIONING", name: "Explosive Conditioning", description: "Maximum physical development, expensive.",
-    category: "strength", requiredFacilityType: "TRAINING_GYM", requiredFacilityLevel: 3,
-    durationMinutes: 1, energyCost: 30, fatigueCost: 24, workload: 1, baseGain: 3.5,
-  },
-  ADVANCED_AGILITY: {
-    id: "ADVANCED_AGILITY", name: "Advanced Agility", description: "Deeper agility/balance/movement work.",
-    category: "agility", requiredFacilityType: "TRAINING_GYM", requiredFacilityLevel: 3,
-    durationMinutes: 1, energyCost: 22, fatigueCost: 16, workload: 1, baseGain: 3.0,
-  },
-  ADVANCED_ENDURANCE: {
-    id: "ADVANCED_ENDURANCE", name: "Advanced Endurance", description: "The longest basic conditioning session.",
-    category: "stamina", requiredFacilityType: "TRAINING_GYM", requiredFacilityLevel: 3,
-    durationMinutes: 1, energyCost: 32, fatigueCost: 25, workload: 1, baseGain: 3.5,
-  },
-  RECOVERY_TRAINING: {
-    id: "RECOVERY_TRAINING", name: "Recovery Training",
-    description: "Low-intensity training that assists normal recovery. Not medical treatment — cannot heal injuries.",
-    category: "recovery", requiredFacilityType: "TRAINING_GYM", requiredFacilityLevel: 3,
-    durationMinutes: 1, energyCost: 8, fatigueCost: 3, workload: 1, baseGain: 1.0,
-  },
-  PRECISION_STRENGTH: {
-    id: "PRECISION_STRENGTH", name: "Precision Strength", description: "Efficiency over raw output.",
-    category: "strength", requiredFacilityType: "TRAINING_GYM", requiredFacilityLevel: 4,
-    durationMinutes: 1, energyCost: 22, fatigueCost: 16, workload: 1, baseGain: 3.0,
-  },
-  PRECISION_SPEED: {
-    id: "PRECISION_SPEED", name: "Precision Speed", description: "Efficiency over raw output.",
-    category: "speed", requiredFacilityType: "TRAINING_GYM", requiredFacilityLevel: 4,
-    durationMinutes: 1, energyCost: 21, fatigueCost: 15, workload: 1, baseGain: 3.0,
-  },
-  PRECISION_REACTION: {
-    id: "PRECISION_REACTION", name: "Precision Reaction", description: "Efficiency over raw output.",
-    category: "technique", requiredFacilityType: "TRAINING_GYM", requiredFacilityLevel: 4,
-    durationMinutes: 1, energyCost: 19, fatigueCost: 13, workload: 1, baseGain: 3.25,
-  },
-  ADVANCED_CONDITIONING: {
-    id: "ADVANCED_CONDITIONING", name: "Advanced Conditioning", description: "Endurance-led all-round conditioning.",
-    category: "stamina", requiredFacilityType: "TRAINING_GYM", requiredFacilityLevel: 4,
-    durationMinutes: 1, energyCost: 28, fatigueCost: 21, workload: 1, baseGain: 2.5,
-  },
-  CUSTOM_TRAINING: {
-    id: "CUSTOM_TRAINING", name: "Custom Training", description: "Player-directed specialization.",
-    category: "custom", requiredFacilityType: "TRAINING_GYM", requiredFacilityLevel: 5,
-    durationMinutes: 1, energyCost: 24, fatigueCost: 17, workload: 1, baseGain: 3.25,
-  },
-  SPECIALIZED_CONDITIONING: {
-    id: "SPECIALIZED_CONDITIONING", name: "Specialized Conditioning", description: "Powerful and expensive; caps still apply.",
-    category: "custom", requiredFacilityType: "TRAINING_GYM", requiredFacilityLevel: 5,
-    durationMinutes: 1, energyCost: 34, fatigueCost: 25, workload: 1, baseGain: 4.0,
-  },
-  ADVANCED_ADAPTATION: {
-    id: "ADVANCED_ADAPTATION", name: "Advanced Adaptation Program", description: "One of the strongest Phase 1 programs; heavily diminished near potential.",
-    category: "custom", requiredFacilityType: "TRAINING_GYM", requiredFacilityLevel: 5,
-    durationMinutes: 1, energyCost: 40, fatigueCost: 30, workload: 1, baseGain: 4.5,
-  },
-};
+type ProgramInput = Pick<ProgramDefinition, "id" | "name" | "description" | "category" | "requiredFacilityLevel" | "energyCost" | "fatigueCost" | "baseEvGain"> & Partial<Omit<ProgramDefinition, "id" | "name" | "description" | "category" | "requiredFacilityLevel" | "energyCost" | "fatigueCost" | "baseEvGain" | "requiredFacilityType" | "baseGain">>;
+const PRIMARY: Record<TrainingCategory, GeneticStatKey> = { strength:"power", speed:"speed", agility:"agility", defense:"defense", stamina:"stamina", technique:"accuracy", recovery:"stamina", discipline:"accuracy" };
+const XP: Record<TrainingCategory, Partial<Record<CombatExperienceCategory, number>>> = { strength:{offensive:2,pressure:2}, speed:{offensive:2,pressure:1}, agility:{evasion:3,adaptation:1}, defense:{defensive:3,recovery:1}, stamina:{recovery:3,pressure:1}, technique:{offensive:2,counter:2}, recovery:{recovery:4,adaptation:1}, discipline:{adaptation:3,defensive:2} };
+const BEHAVIOR: Record<TrainingCategory, Partial<Record<keyof BehavioralProfile, number>>> = { strength:{aggression:.002,persistence:.002}, speed:{aggression:.001,pressurePreference:.002}, agility:{caution:.002,patience:.002}, defense:{caution:.003,riskTolerance:-.002}, stamina:{persistence:.003,recoveryPreference:.001}, technique:{counterPreference:.002,patience:.001}, recovery:{recoveryPreference:.004,patience:.001}, discipline:{patience:.004,riskTolerance:-.002} };
 
-function programsUpTo(level: number): ProgramId[] {
-  return (Object.values(TRAINING_PROGRAMS) as ProgramDefinition[])
-    .filter((p) => p.requiredFacilityLevel <= level)
-    .map((p) => p.id);
+function define(input: ProgramInput): ProgramDefinition {
+  const fallback = input.category === "custom" ? "discipline" : input.category;
+  return { requiredFacilityType:"TRAINING_GYM", durationMinutes:1, stressCost:3, trainingPointCost:10, workload:1, baseGain:input.baseEvGain, primaryStats:{[PRIMARY[fallback]]:1}, experienceGain:XP[fallback], behaviorEffects:BEHAVIOR[fallback], tags:[fallback], baseBreakthroughChance:.02, baseInjuryRisk:.008, ...input };
 }
 
+const programs = [
+  define({id:"STRENGTH",name:"Strength Work",description:"Develop striking power and pressure.",category:"strength",requiredFacilityLevel:1,energyCost:18,fatigueCost:14,baseEvGain:3.2,primaryStats:{power:.85},secondaryStats:{defense:.15},temporaryLoad:{stamina:-4},traitTags:["heavy-hitter"],tags:["power","pressure"]}),
+  define({id:"SPEED",name:"Speed Training",description:"Develop explosive engagement speed.",category:"speed",requiredFacilityLevel:1,energyCost:17,fatigueCost:13,baseEvGain:3,primaryStats:{speed:.85},secondaryStats:{stamina:.15},tags:["speed","offensive"]}),
+  define({id:"SPRINT",name:"Sprint Drills",description:"High-output explosive movement work.",category:"speed",requiredFacilityLevel:1,energyCost:23,fatigueCost:18,baseEvGain:3.6,primaryStats:{speed:.8},secondaryStats:{stamina:.2},trainingPointCost:12,stressCost:4,baseInjuryRisk:.012,tags:["speed","pressure"]}),
+  define({id:"AGILITY",name:"Agility Training",description:"Movement and directional control.",category:"agility",requiredFacilityLevel:1,energyCost:16,fatigueCost:12,baseEvGain:3,primaryStats:{agility:.8},secondaryStats:{speed:.2},tags:["agility","evasion"]}),
+  define({id:"FOOTWORK_CIRCUIT",name:"Footwork Circuit",description:"Spacing, positioning, and disengagement.",category:"agility",requiredFacilityLevel:1,energyCost:16,fatigueCost:11,baseEvGain:3.2,primaryStats:{agility:.75},secondaryStats:{speed:.25},experienceGain:{evasion:3,adaptation:2},behaviorEffects:{caution:.002,patience:.003},traitTags:["elusive-fighter","patient-reader"],tags:["counter","evasion","adaptation"]}),
+  define({id:"ENDURANCE",name:"Endurance Conditioning",description:"Long-fight stamina and conditioning.",category:"stamina",requiredFacilityLevel:1,energyCost:24,fatigueCost:17,baseEvGain:3.2,primaryStats:{stamina:.85},secondaryStats:{defense:.15},recoveryModifier:.08,traitTags:["iron-conditioning"],tags:["stamina","recovery"]}),
+  define({id:"REACTION",name:"Target Drills",description:"Strike placement and offensive precision.",category:"technique",requiredFacilityLevel:1,energyCost:15,fatigueCost:10,baseEvGain:3,primaryStats:{accuracy:.8},secondaryStats:{agility:.2},tags:["accuracy","offensive"]}),
+  define({id:"TARGET_DRILLS",name:"Target Drills",description:"Strike placement and offensive precision.",category:"technique",requiredFacilityLevel:1,energyCost:15,fatigueCost:10,baseEvGain:3.1,primaryStats:{accuracy:.8},secondaryStats:{agility:.2},tags:["accuracy","offensive"]}),
+  define({id:"BALANCE",name:"Balance Training",description:"Stability, composure, and physical control.",category:"discipline",requiredFacilityLevel:1,energyCost:14,fatigueCost:9,baseEvGain:2.8,primaryStats:{accuracy:.7},secondaryStats:{defense:.3},tags:["discipline","balance"]}),
+  define({id:"COUNTER_DRILLS",name:"Counter Drills",description:"Read commitment and punish openings.",category:"technique",requiredFacilityLevel:2,energyCost:19,fatigueCost:12,baseEvGain:3.7,primaryStats:{accuracy:.75},secondaryStats:{agility:.25},experienceGain:{counter:6,defensive:2,adaptation:3},behaviorEffects:{counterPreference:.005,patience:.003,caution:.001},trainingPointCost:12,traitTags:["counter-specialist","patient-reader","sharp-eyes"],breakthroughTags:["counter","adaptive"],tags:["counter","technical","accuracy","adaptation"]}),
+  define({id:"DEFENSIVE_DRILLS",name:"Defensive Drills",description:"Guard timing and safe disengagement.",category:"defense",requiredFacilityLevel:2,energyCost:18,fatigueCost:12,baseEvGain:3.6,primaryStats:{defense:.8},secondaryStats:{stamina:.2},experienceGain:{defensive:5,recovery:2},behaviorEffects:{caution:.004,riskTolerance:-.003},traitTags:["disciplined-fighter"],tags:["defense","recovery"]}),
+  define({id:"PRESSURE_DRILLS",name:"Pressure Drills",description:"Maintain pursuit and offensive tempo.",category:"strength",requiredFacilityLevel:2,energyCost:23,fatigueCost:17,baseEvGain:3.8,primaryStats:{power:.75},secondaryStats:{stamina:.25},experienceGain:{pressure:6,offensive:3},behaviorEffects:{pressurePreference:.005,persistence:.004,aggression:.003},traitTags:["pressure-fighter","heavy-hitter"],tags:["pressure","offensive"]}),
+  define({id:"DISCIPLINE_TRAINING",name:"Discipline Training",description:"Composure, patience, and command execution.",category:"discipline",requiredFacilityLevel:2,energyCost:13,fatigueCost:8,stressCost:1,baseEvGain:2.9,primaryStats:{accuracy:.7},secondaryStats:{defense:.3},experienceGain:{adaptation:5,defensive:2},behaviorEffects:{patience:.006,riskTolerance:-.003,caution:.001},traitTags:["disciplined-fighter","patient-reader"],tags:["discipline","compliance","adaptation"]}),
+  define({id:"POWER_CONDITIONING",name:"Power Conditioning",description:"High-output strength development.",category:"strength",requiredFacilityLevel:2,energyCost:25,fatigueCost:20,stressCost:5,trainingPointCost:12,baseEvGain:3.9,primaryStats:{power:.9},secondaryStats:{defense:.1},baseInjuryRisk:.015,tags:["power","advanced"]}),
+  define({id:"ADVANCED_REACTION",name:"Advanced Reaction Drills",description:"Advanced reads and reaction selection.",category:"technique",requiredFacilityLevel:2,energyCost:22,fatigueCost:16,trainingPointCost:12,baseEvGain:4,primaryStats:{accuracy:.7},secondaryStats:{agility:.3},experienceGain:{counter:5,adaptation:4},tags:["counter","advanced"]}),
+  define({id:"RECOVERY_TRAINING",name:"Recovery Conditioning",description:"Develop recovery efficiency; does not heal injuries.",category:"recovery",requiredFacilityLevel:3,energyCost:8,fatigueCost:5,stressCost:-2,trainingPointCost:6,baseEvGain:2.8,primaryStats:{stamina:.8},secondaryStats:{defense:.2},recoveryModifier:.15,baseInjuryRisk:.001,tags:["recovery","low-impact"]}),
+  define({id:"CONTROLLED_SPARRING",name:"Controlled Sparring",description:"Low-risk applied combat practice.",category:"technique",requiredFacilityLevel:3,energyCost:24,fatigueCost:16,stressCost:5,trainingPointCost:15,baseEvGain:2,primaryStats:{accuracy:.35,agility:.25,defense:.2,stamina:.2},experienceGain:{offensive:5,defensive:5,evasion:5,counter:6,pressure:4,recovery:4,adaptation:7},behaviorEffects:{patience:.002,counterPreference:.002,persistence:.002},baseBreakthroughChance:.04,baseInjuryRisk:.012,battleHardeningGain:1,traitTags:["counter-specialist","pressure-fighter","disciplined-fighter"],breakthroughTags:["sparring","adaptive"],tags:["sparring","combat","adaptation"]}),
+  define({id:"EXPLOSIVE_CONDITIONING",name:"Explosive Conditioning",description:"Elite-output physical development.",category:"strength",requiredFacilityLevel:3,energyCost:30,fatigueCost:24,stressCost:7,trainingPointCost:15,baseEvGain:4.5,primaryStats:{power:.7,speed:.2},secondaryStats:{stamina:.1},baseInjuryRisk:.025,tags:["power","elite"]}),
+  define({id:"ADVANCED_AGILITY",name:"Advanced Agility",description:"Deep movement and balance work.",category:"agility",requiredFacilityLevel:3,energyCost:22,fatigueCost:16,trainingPointCost:12,baseEvGain:4.2,primaryStats:{agility:.75},secondaryStats:{speed:.25},tags:["agility","advanced"]}),
+  define({id:"ADVANCED_ENDURANCE",name:"Advanced Endurance",description:"High-capacity conditioning.",category:"stamina",requiredFacilityLevel:3,energyCost:32,fatigueCost:25,stressCost:5,trainingPointCost:15,baseEvGain:4.5,primaryStats:{stamina:.8},secondaryStats:{defense:.2},recoveryModifier:.12,tags:["stamina","advanced"]}),
+  define({id:"HARD_SPARRING",name:"Hard Sparring",description:"High-risk applied combat development.",category:"technique",requiredFacilityLevel:4,durationMinutes:2,energyCost:34,fatigueCost:24,stressCost:10,trainingPointCost:20,baseEvGain:2.7,primaryStats:{accuracy:.25,agility:.2,defense:.2,power:.2,stamina:.15},experienceGain:{offensive:9,defensive:9,evasion:8,counter:10,pressure:9,recovery:7,adaptation:12},behaviorEffects:{counterPreference:.003,pressurePreference:.003,persistence:.003,riskTolerance:.001},baseBreakthroughChance:.055,baseInjuryRisk:.045,battleHardeningGain:3,traitTags:["counter-specialist","pressure-fighter","iron-conditioning"],breakthroughTags:["hard-sparring","battle-hardening"],tags:["sparring","combat","high-impact"]}),
+  define({id:"PRECISION_STRENGTH",name:"Precision Strength",description:"Technical power development.",category:"strength",requiredFacilityLevel:4,energyCost:22,fatigueCost:16,trainingPointCost:12,baseEvGain:4.2,primaryStats:{power:.75},secondaryStats:{accuracy:.25},tags:["power","precision"]}),
+  define({id:"PRECISION_SPEED",name:"Precision Speed",description:"Efficient speed and foot placement.",category:"speed",requiredFacilityLevel:4,energyCost:21,fatigueCost:15,trainingPointCost:12,baseEvGain:4.2,primaryStats:{speed:.75},secondaryStats:{agility:.25},tags:["speed","precision"]}),
+  define({id:"PRECISION_REACTION",name:"Precision Reaction",description:"Elite counter timing and accuracy.",category:"technique",requiredFacilityLevel:4,energyCost:19,fatigueCost:13,trainingPointCost:12,baseEvGain:4.4,primaryStats:{accuracy:.7},secondaryStats:{agility:.3},experienceGain:{counter:6,adaptation:4},tags:["counter","precision"]}),
+  define({id:"ADVANCED_CONDITIONING",name:"Advanced Conditioning",description:"All-round endurance-led conditioning.",category:"stamina",requiredFacilityLevel:4,energyCost:28,fatigueCost:21,trainingPointCost:15,baseEvGain:4.4,primaryStats:{stamina:.6,defense:.2},secondaryStats:{power:.1,speed:.1},tags:["conditioning","advanced"]}),
+  define({id:"CUSTOM_TRAINING",name:"Custom Training",description:"Player-directed specialization.",category:"custom",requiredFacilityLevel:5,energyCost:24,fatigueCost:17,trainingPointCost:12,baseEvGain:4.6,tags:["custom","specialization"]}),
+  define({id:"SPECIALIZED_CONDITIONING",name:"Specialized Conditioning",description:"Powerful fighter-specific development.",category:"custom",requiredFacilityLevel:5,energyCost:34,fatigueCost:25,stressCost:6,trainingPointCost:18,baseEvGain:5,tags:["custom","elite"]}),
+  define({id:"ADVANCED_ADAPTATION",name:"Advanced Adaptation",description:"Elite tactical and adaptive development.",category:"custom",requiredFacilityLevel:5,energyCost:40,fatigueCost:30,stressCost:8,trainingPointCost:20,baseEvGain:5.3,experienceGain:{adaptation:8,counter:5,defensive:4},behaviorEffects:{patience:.004,counterPreference:.003},baseBreakthroughChance:.05,tags:["custom","adaptation","elite"]}),
+] satisfies ProgramDefinition[];
+
+export const TRAINING_PROGRAMS = Object.fromEntries(programs.map((p) => [p.id, p])) as Record<ProgramId, ProgramDefinition>;
+function programsUpTo(level:number): ProgramId[] { return programs.filter((p)=>p.requiredFacilityLevel<=level).map((p)=>p.id); }
 export const TRAINING_GYM_LEVELS: Record<number, FacilityLevelConfig> = {
-  1: { capacity: 2, efficiency: 1.0, programs: programsUpTo(1) },
-  2: { capacity: 3, efficiency: 1.05, programs: programsUpTo(2) },
-  3: { capacity: 4, efficiency: 1.1, programs: programsUpTo(3) },
-  4: { capacity: 5, efficiency: 1.15, programs: programsUpTo(4) },
-  5: { capacity: 6, efficiency: 1.2, programs: programsUpTo(5) },
+  1:{capacity:2,efficiency:1,fatigueMultiplier:1,injuryMultiplier:1,experienceMultiplier:1,breakthroughMultiplier:1,potentialDiscoveryMultiplier:1,programs:programsUpTo(1)},
+  2:{capacity:3,efficiency:1.05,fatigueMultiplier:.95,injuryMultiplier:1,experienceMultiplier:1,breakthroughMultiplier:1,potentialDiscoveryMultiplier:1,programs:programsUpTo(2)},
+  3:{capacity:4,efficiency:1.1,fatigueMultiplier:.92,injuryMultiplier:.95,experienceMultiplier:1.1,breakthroughMultiplier:1.1,potentialDiscoveryMultiplier:1.15,programs:programsUpTo(3)},
+  4:{capacity:5,efficiency:1.15,fatigueMultiplier:.9,injuryMultiplier:.85,experienceMultiplier:1.15,breakthroughMultiplier:1.15,potentialDiscoveryMultiplier:1.25,programs:programsUpTo(4)},
+  5:{capacity:6,efficiency:1.2,fatigueMultiplier:.85,injuryMultiplier:.8,experienceMultiplier:1.2,breakthroughMultiplier:1.2,potentialDiscoveryMultiplier:1.4,programs:programsUpTo(5)},
 };
-
-export const TRAINING_GYM_MAX_LEVEL = 5;
-
-export const TRAINING_GYM_UPGRADES: Record<number, { cost: number }> = {
-  2: { cost: 1000 },
-  3: { cost: 2500 },
-  4: { cost: 5000 },
-  5: { cost: 10000 },
-};
-
-export function isProgramUnlocked(programId: ProgramId, level: number): boolean {
-  return TRAINING_GYM_LEVELS[level]?.programs.includes(programId) ?? false;
-}
+export const TRAINING_GYM_MAX_LEVEL=5;
+export const TRAINING_GYM_UPGRADES: Record<number,{cost:number}>={2:{cost:1000},3:{cost:2500},4:{cost:5000},5:{cost:10000}};
+export function isProgramUnlocked(programId:ProgramId,level:number):boolean{return TRAINING_GYM_LEVELS[level]?.programs.includes(programId)??false;}

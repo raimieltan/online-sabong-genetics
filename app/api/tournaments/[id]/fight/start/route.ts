@@ -24,7 +24,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     if (!opponent) throw new TournamentError("TOURNAMENT_FIGHT_INVALID");
     const session = new LiveCombatV2Session(chicken, opponent.chicken);
     const sessionId = createTournamentBattleSession(session, id, player.id);
-    return NextResponse.json({ sessionId, chickenA: chicken, chickenB: opponent.chicken, snapshotA: session.snapshotA(), snapshotB: session.snapshotB(), maxTurns: MAX_TURNS });
+    return NextResponse.json({ sessionId, matchSeed: session.matchSeed, chickenA: chicken, chickenB: opponent.chicken, snapshotA: session.snapshotA(), snapshotB: session.snapshotB(), maxTurns: MAX_TURNS });
   } catch (error) {
     if (error instanceof TournamentError) return NextResponse.json({ error: error.code }, { status: error.status });
     throw error;

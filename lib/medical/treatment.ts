@@ -1,5 +1,5 @@
 import type { InjuryRecord, InjurySeverity } from "../types";
-import { clinicConfig } from "./config";
+import { clinicConfig, type IllnessSeverity } from "./config";
 
 /** Credits per missing HP point, before the clinic's level discount. */
 const HEALTH_COST_PER_POINT = 8;
@@ -18,6 +18,18 @@ const BASE_DURATION_MIN: Record<InjurySeverity, number> = {
   minor: 2,
   serious: 6,
   career_altering: 12,
+};
+
+const ILLNESS_BASE_COST: Record<IllnessSeverity, number> = {
+  minor: 180,
+  moderate: 520,
+  severe: 950,
+};
+
+const ILLNESS_BASE_DURATION_MIN: Record<IllnessSeverity, number> = {
+  minor: 4,
+  moderate: 9,
+  severe: 14,
 };
 
 export type TreatmentPlan = {
@@ -42,6 +54,16 @@ export function healthTreatmentPlan(missingHealth: number, clinicLevel: number):
   const cost = Math.round(missingHealth * HEALTH_COST_PER_POINT * (1 - config.costDiscount));
   const durationMinutes = Math.max(1, Math.round((missingHealth * HEALTH_DURATION_PER_POINT_MIN) / config.treatmentSpeed));
   return { cost, durationMinutes, effectiveness: config.treatmentSpeed };
+}
+
+/** Credits and time required to clear an illness. Facility discounts and speed apply normally. */
+export function illnessTreatmentPlan(severity: IllnessSeverity, clinicLevel: number): TreatmentPlan {
+  const config = clinicConfig(clinicLevel);
+  return {
+    cost: Math.round(ILLNESS_BASE_COST[severity] * (1 - config.costDiscount)),
+    durationMinutes: Math.max(1, Math.round(ILLNESS_BASE_DURATION_MIN[severity] / config.treatmentSpeed)),
+    effectiveness: config.treatmentSpeed,
+  };
 }
 
 /**

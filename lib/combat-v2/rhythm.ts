@@ -1,4 +1,4 @@
-import { clamp } from './constants';
+import { clamp, TEMPORARY_COMBAT_EXAGGERATION } from './constants';
 import type { CombatMatchState, EngagementPhase, FighterRuntimeState } from './types';
 
 /** Each fighter owns its rhythm. There is no global exchange or initiative winner. */
@@ -11,24 +11,31 @@ export function setEngagement(s: CombatMatchState, f: FighterRuntimeState, phase
 export function resetProfile(f: FighterRuntimeState) {
   const b = f.snapshot.behavior;
   const influence = f.coaching?.strength ?? (f.tacticalMode === 'balanced' ? 0 : 1);
-  const pressure = f.tacticalMode === 'pressure' || f.tacticalMode === 'all_in' ? .55 * influence : 0;
-  const safety = f.tacticalMode === 'recover' ? .8 * influence : f.tacticalMode === 'defensive' || f.tacticalMode === 'counter' ? .35 * influence : 0;
+  const pressure = f.tacticalMode === 'pressure' || f.tacticalMode === 'all_in' ? .55 * influence * TEMPORARY_COMBAT_EXAGGERATION : 0;
+  const safety = f.tacticalMode === 'recover' ? .8 * influence * TEMPORARY_COMBAT_EXAGGERATION : f.tacticalMode === 'defensive' || f.tacticalMode === 'counter' ? .35 * influence * TEMPORARY_COMBAT_EXAGGERATION : 0;
   const fatigue = 1 - f.stamina / 100;
   const urgency = clamp(b.aggression * .5 + b.pressurePreference * .5 + pressure);
+  const ordinaryDistance = 5.1 + b.counterPreference * 1.15 + b.caution * .8 + b.patience * .55 + fatigue * .65 + safety - urgency * .9;
+  const modeDistance = f.tacticalMode === 'pressure' || f.tacticalMode === 'all_in' ? ordinaryDistance - 1.2 * influence * TEMPORARY_COMBAT_EXAGGERATION
+    : f.tacticalMode === 'counter' ? ordinaryDistance + .6 * influence * TEMPORARY_COMBAT_EXAGGERATION
+    : f.tacticalMode === 'defensive' ? ordinaryDistance + 1.0 * influence * TEMPORARY_COMBAT_EXAGGERATION
+    : ordinaryDistance;
   return {
     breakTicks: Math.round(clamp((48 + fatigue * 30 + b.caution * 18 - urgency * 24) / f.snapshot.physical.mobility, 30, 90)),
     resetTicks: Math.round(clamp(75 + b.patience * 45 + fatigue * 45 - urgency * 45, 60, 180)),
     // A break deliberately exceeds ordinary neutral range.  The old 2–3m
     // reset was the source of the perpetual close orbit in V2.
-    distance: clamp(5.1 + b.counterPreference * 1.15 + b.caution * .8 + b.patience * .55 + fatigue * .65 + safety - urgency * .9, 3.8, 7.4),
+    distance: f.tacticalMode === 'recover'
+      ? clamp(modeDistance * TEMPORARY_COMBAT_EXAGGERATION, 8, 13.5)
+      : clamp(modeDistance, 2.8, 9),
   };
 }
 /** Readiness changes with temperament and current condition, not a fixed attack clock. */
 export function readTicks(f: FighterRuntimeState) {
   const b = f.snapshot.behavior;
   const influence = f.coaching?.strength ?? (f.tacticalMode === 'balanced' ? 0 : 1);
-  const pressure = f.tacticalMode === 'pressure' || f.tacticalMode === 'all_in' ? 75 * influence : 0;
-  const patientMode = f.tacticalMode === 'counter' || f.tacticalMode === 'defensive' ? 70 * influence : f.tacticalMode === 'recover' ? 110 * influence : 0;
+  const pressure = f.tacticalMode === 'pressure' || f.tacticalMode === 'all_in' ? 75 * influence * TEMPORARY_COMBAT_EXAGGERATION : 0;
+  const patientMode = f.tacticalMode === 'counter' || f.tacticalMode === 'defensive' ? 70 * influence * TEMPORARY_COMBAT_EXAGGERATION : f.tacticalMode === 'recover' ? 110 * influence * TEMPORARY_COMBAT_EXAGGERATION : 0;
   return Math.round(clamp(180 + b.patience * 100 + b.caution * 50 + b.counterPreference * 50
     - b.aggression * 90 - b.pressurePreference * 45 - pressure + patientMode
     + (1 - f.stamina / 100) * 90 + (1 - f.health / f.snapshot.maxHealth) * 60, 60, 480));
@@ -38,8 +45,8 @@ export function readTicks(f: FighterRuntimeState) {
 export function clashTicks(f: FighterRuntimeState) {
   const b = f.snapshot.behavior;
   const influence = f.coaching?.strength ?? (f.tacticalMode === 'balanced' ? 0 : 1);
-  const pressure = f.tacticalMode === 'pressure' || f.tacticalMode === 'all_in' ? .35 * influence : 0;
-  const restraint = f.tacticalMode === 'defensive' || f.tacticalMode === 'recover' ? .25 * influence : 0;
+  const pressure = f.tacticalMode === 'pressure' || f.tacticalMode === 'all_in' ? .35 * influence * TEMPORARY_COMBAT_EXAGGERATION : 0;
+  const restraint = f.tacticalMode === 'defensive' || f.tacticalMode === 'recover' ? .25 * influence * TEMPORARY_COMBAT_EXAGGERATION : 0;
   const fatigue = 1 - f.stamina / 100;
   return Math.round(clamp(30 + b.persistence * 55 + b.aggression * 20 + pressure * 28 - restraint * 35 - b.caution * 12 - fatigue * 28, 24, 120));
 }

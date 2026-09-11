@@ -16,5 +16,7 @@ export function defaultRoosterTrainingState(trainingPotential: StatBlock): Roost
     discovered: {},
     traits: [],
     breakthroughs: [],
+    traitProgress: {},
+    specializationProgress: {},
   };
 }

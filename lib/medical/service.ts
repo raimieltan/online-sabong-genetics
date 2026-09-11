@@ -8,12 +8,14 @@ import {
   CLINIC_LEVELS,
   CLINIC_MAX_LEVEL,
   CLINIC_UPGRADE_COST,
+  canTreatIllnessSeverity,
   canTreatSeverity,
   clinicConfig,
 } from "./config";
 import { MedicalError } from "./errors";
+import { battleEligibility } from "./eligibility";
 import { medicalStatus } from "./status";
-import { healthTreatmentPlan, markInTreatment, resolveTreatment, treatmentPlan } from "./treatment";
+import { healthTreatmentPlan, illnessTreatmentPlan, markInTreatment, resolveTreatment, treatmentPlan } from "./treatment";
 
 const CLINIC = "ROOSTER_CLINIC" as const;
 
@@ -196,6 +198,49 @@ export async function startHealthTreatment(playerId: string, chickenId: string) 
   });
 }
 
+/** Starts a timed treatment that clears one illness when it matures. */
+export async function startIllnessTreatment(playerId: string, chickenId: string, illnessId: string) {
+  const clinic = await getOrCreateClinic(playerId);
+  await claimExpiredTreatments(playerId);
+
+  return prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM "Facility" WHERE id = ${clinic.id} FOR UPDATE`;
+
+    const chicken = await tx.chicken.findUnique({ where: { id: chickenId } });
+    if (!chicken) throw new MedicalError("CHICKEN_NOT_FOUND");
+    if (chicken.playerId !== playerId) throw new MedicalError("CHICKEN_NOT_OWNED");
+
+    const illnesses = (chicken.illnesses as unknown as IllnessRecord[]) ?? [];
+    const illness = illnesses.find((item) => item.id === illnessId);
+    if (!illness) throw new MedicalError("ILLNESS_NOT_FOUND");
+    if (!canTreatIllnessSeverity(clinic.level, illness.severity)) throw new MedicalError("SEVERITY_NOT_TREATABLE");
+
+    const existing = await tx.medicalTreatment.findFirst({
+      where: { chickenId, injuryId: illnessId, type: "TREAT_ILLNESS", status: "ACTIVE" },
+    });
+    if (existing) throw new MedicalError("ILLNESS_ALREADY_IN_TREATMENT");
+
+    const plan = illnessTreatmentPlan(illness.severity, clinic.level);
+    const player = await tx.player.findUnique({ where: { id: playerId } });
+    if (!player || player.credits < plan.cost) throw new MedicalError("INSUFFICIENT_CREDITS");
+
+    await tx.player.update({ where: { id: playerId }, data: { credits: player.credits - plan.cost } });
+    return tx.medicalTreatment.create({
+      data: {
+        playerId,
+        chickenId,
+        injuryId: illnessId,
+        type: "TREAT_ILLNESS",
+        status: "ACTIVE",
+        effectiveness: plan.effectiveness,
+        clinicLevel: clinic.level,
+        cost: plan.cost,
+        durationMinutes: plan.durationMinutes,
+      },
+    });
+  });
+}
+
 /** A supervised medical rest cycle at the clinic (spec §24 "medical rest") — no credit cost, uses the recovery engine. */
 export async function medicalRest(playerId: string, chickenId: string) {
   const clinic = await getOrCreateClinic(playerId);
@@ -249,8 +294,17 @@ export async function rosterMedicalOverview(playerId: string) {
 
   return chickens.map((c) => {
     const chicken = c as unknown as Chicken;
-    const activeTreatment = treatments.find((t) => t.chickenId === c.id && t.type !== "TREAT_HEALTH") ?? null;
-    const activeHealthTreatment = treatments.find((t) => t.chickenId === c.id && t.type === "TREAT_HEALTH") ?? null;
+    const activeTreatments = treatments
+      .filter((t) => t.chickenId === c.id)
+      .map((t) => ({
+        id: t.id,
+        targetId: t.injuryId,
+        type: t.type,
+        startedAt: t.startedAt,
+        durationMinutes: t.durationMinutes,
+        cost: t.cost,
+      }));
+    const eligibility = battleEligibility(chicken);
     return {
       id: c.id,
       name: c.name,
@@ -261,21 +315,19 @@ export async function rosterMedicalOverview(playerId: string) {
       morale: chicken.morale ?? 75,
       injuries: chicken.injuries ?? [],
       illnesses: chicken.illnesses ?? [],
-      activeTreatment: activeTreatment
-        ? {
-            id: activeTreatment.id,
-            injuryId: activeTreatment.injuryId,
-            startedAt: activeTreatment.startedAt,
-            durationMinutes: activeTreatment.durationMinutes,
-          }
-        : null,
-      activeHealthTreatment: activeHealthTreatment
-        ? {
-            id: activeHealthTreatment.id,
-            startedAt: activeHealthTreatment.startedAt,
-            durationMinutes: activeHealthTreatment.durationMinutes,
-          }
-        : null,
+      readiness: eligibility.eligible
+        ? { state: "ready" as const, reasons: [] }
+        : {
+            state: medicalStatus(chicken) === "critical" ? ("unfit" as const) : ("restricted" as const),
+            reasons: eligibility.reasons,
+          },
+      activeTreatments,
+      visual: {
+        sex: chicken.sex,
+        colorScheme: chicken.colorScheme,
+        physical: chicken.physical,
+        mutations: chicken.mutations,
+      },
     };
   });
 }

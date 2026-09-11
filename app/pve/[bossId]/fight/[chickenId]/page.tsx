@@ -12,7 +12,7 @@ import type { BossFightResult } from "@/lib/pve/service";
 import { campaignConsequence } from "@/lib/pve/presentation";
 
 type Phase = "loading" | "tape" | "intro" | "battle" | "result" | "error";
-type Start = { sessionId: string; chicken: Chicken; bossFighter: Chicken };
+type Start = { sessionId: string; matchSeed: number; chicken: Chicken; bossFighter: Chicken };
 
 export default function BossFightPage({ params }: { params: Promise<{ bossId: string; chickenId: string }> }) {
   const { bossId, chickenId } = use(params);
@@ -28,7 +28,7 @@ export default function BossFightPage({ params }: { params: Promise<{ bossId: st
   if (!start) return null;
   if (phase === "intro") return <ArenaIntro player={start.chicken} boss={start.bossFighter} entry={entry} />;
   const consequence = outcome ? campaignConsequence(outcome.won, entry.boss, outcome.rewards.firstClear) : null;
-  return <main className="min-h-screen bg-(--color-ink)"><div className="relative"><ContinuousBattle chickenA={start.chicken} chickenB={start.bossFighter} autoStart onComplete={() => { setPresentationComplete(true); setPhase("result"); }} />{phase === "result" && presentationComplete && outcome && consequence && <PostFightOverlay result={outcome.result} playerChicken={outcome.chicken as Chicken} creditsEarned={outcome.rewards.credits} battleReport={outcome.battleReport} actionLabel="Return to Road" onContinue={() => router.push("/pve")} campaign={{ ...consequence, bossName: entry.boss.name, unlocked: outcome.won && outcome.rewards.firstClear ? `Next fight: ${nextBossName(entry.boss.order)}` : undefined }} />}</div></main>;
+  return <main className="min-h-screen bg-(--color-ink)"><div className="relative"><ContinuousBattle chickenA={start.chicken} chickenB={start.bossFighter} matchSeed={start.matchSeed} autoStart onComplete={() => { setPresentationComplete(true); setPhase("result"); }} />{phase === "result" && presentationComplete && outcome && consequence && <PostFightOverlay result={outcome.result} playerChicken={outcome.chicken as Chicken} creditsEarned={outcome.rewards.credits} battleReport={outcome.battleReport} actionLabel="Return to Road" onContinue={() => router.push("/pve")} campaign={{ ...consequence, bossName: entry.boss.name, unlocked: outcome.won && outcome.rewards.firstClear ? `Next fight: ${nextBossName(entry.boss.order)}` : undefined }} />}</div></main>;
 }
 
 function ArenaIntro({ player, boss, entry }: { player: Chicken; boss: Chicken; entry: BossListEntry }) {

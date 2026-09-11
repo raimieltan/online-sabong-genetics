@@ -198,7 +198,18 @@ export function scoreAction(profile: BehavioralProfile, action: CombatAction, ct
   // StylePolicy is what decides intent (spec Phase A pipeline): scales only
   // the base per-action term above, not the contextual bonuses below.
   score += base * styleWeight(ctx.style, action, ctx.opponentContextState);
-  score += base * commandActionModifier(ctx.pendingCommand, deriveCombatIdentity(profile), action);
+  const learnedCompliance = Math.min(0.18, ctx.experience.adaptation / 1000);
+  const fatigueCompliance = Math.min(0.15, ctx.fatigue / 500);
+  score += base * commandActionModifier(ctx.pendingCommand, deriveCombatIdentity(profile), action) * (1 + learnedCompliance - fatigueCompliance);
+
+  // Experience improves selection quality in its matching decision family; it
+  // never becomes a direct damage/stat multiplier.
+  const learnedDecisionBonus = (value:number) => Math.min(.35, value / 500);
+  if (action === "LIGHT_ATTACK" || action === "HEAVY_ATTACK") score += learnedDecisionBonus(ctx.experience.offensive);
+  if (action === "GUARD") score += learnedDecisionBonus(ctx.experience.defensive);
+  if (action === "EVADE" || action === "REPOSITION") score += learnedDecisionBonus(ctx.experience.evasion);
+  if (action === "PRESSURE") score += learnedDecisionBonus(ctx.experience.pressure);
+  if (action === "RECOVER") score += learnedDecisionBonus(ctx.experience.recovery);
 
   const fatigueRatio = ctx.fatigue / 100;
   if (action === "HEAVY_ATTACK" || action === "PRESSURE") score -= fatigueRatio * 0.8;

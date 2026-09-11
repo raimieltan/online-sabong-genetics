@@ -16,19 +16,18 @@ export function defaultTrainingState(): TrainingState {
  * progression from just grinding sessions back-to-back.
  */
 export function trainingEffectiveness(trainingFatigue: number): number {
-  if (trainingFatigue >= 85) return 0.15;
-  if (trainingFatigue >= 60) return 0.4;
-  if (trainingFatigue >= 30) return 0.75;
-  return 1.0;
+  const normalized = Math.min(100, Math.max(0, trainingFatigue)) / 100;
+  return Math.max(0.2, 1 - Math.pow(normalized, 1.6) * 0.8);
 }
 
-export function canAffordTrainingPoints(state: TrainingState): boolean {
-  return state.trainingPoints >= TRAINING_POINT_COST;
+export function canAffordTrainingPoints(state: TrainingState, cost = TRAINING_POINT_COST): boolean {
+  return state.trainingPoints >= cost;
 }
 
 /** Overtraining carries real injury risk once fatigue crosses into the top band (spec §23). */
 export function overtrainingInjuryChance(trainingFatigue: number): number {
-  return trainingFatigue < 85 ? 0 : (trainingFatigue - 85) / 100;
+  const normalized = Math.min(100, Math.max(0, trainingFatigue)) / 100;
+  return Math.pow(normalized, 3) * 0.08;
 }
 
 /** One rest cycle: full training-point refill, partial fatigue recovery (spec §23, §28). */
