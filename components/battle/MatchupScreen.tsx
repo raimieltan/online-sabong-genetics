@@ -31,42 +31,13 @@ export function rankTitle(wins: number): string {
   return RANK_TITLE.find((tier) => wins >= tier.minWins)?.title ?? "Rookie";
 }
 
-/** Deterministic string hash → seeded RNG, so a given chicken's mocked record stays
- *  stable across re-renders instead of jittering on every paint. */
-function seededRng(seed: string): () => number {
-  let h = 1779033703 ^ seed.length;
-  for (let i = 0; i < seed.length; i++) {
-    h = Math.imul(h ^ seed.charCodeAt(i), 3432918353);
-    h = (h << 13) | (h >>> 19);
-  }
-  return () => {
-    h = Math.imul(h ^ (h >>> 16), 2246822507);
-    h = Math.imul(h ^ (h >>> 13), 3266489909);
-    h ^= h >>> 16;
-    return (h >>> 0) / 4294967296;
-  };
-}
-
 /**
- * NPC opponents are generated fresh per matchup and never persisted, so their real
- * `record` is always 0-0. The UI still needs a rival with a history, so this fabricates
- * one — seeded by the opponent's id (stable per matchup) and its stat total (stronger
- * opponents read as more battle-tested), per the design brief's "mock the AI data" ask.
+ * Kept as a compatibility export for callers that previously requested a
+ * presentation record. It now returns only server-provided facts; unknown
+ * opponents stay 0-0/Unscouted rather than receiving invented history.
  */
 export function mockOpponentRecord(opponent: Chicken): CombatRecord {
-  const rng = seededRng(opponent.id);
-  const statTotal = GENETIC_STAT_KEYS.reduce((sum, key) => sum + effectiveStat(opponent, key), 0);
-  const strength = Math.min(1, Math.max(0, (statTotal - 250) / 350));
-  const wins = Math.round(3 + strength * 34 + rng() * 6);
-  const losses = Math.round(1 + (1 - strength) * 10 + rng() * 4);
-  const koTko = Math.round(wins * (0.2 + strength * 0.35 + rng() * 0.1));
-  return {
-    wins,
-    losses,
-    championships: strength > 0.75 ? Math.round(1 + rng() * 3) : 0,
-    koTko,
-    decisions: Math.max(0, wins - koTko),
-  };
+  return { ...opponent.record };
 }
 
 export function StatCompareRow({
@@ -150,7 +121,7 @@ export function FighterPlate({
   );
 }
 
-function FighterHud({ fighter, corner, record, align }: { fighter: Chicken; corner: string; record: CombatRecord; align: "left" | "right" }) {
+function FighterHud({ fighter, corner, record, align, recordKnown = true }: { fighter: Chicken; corner: string; record: CombatRecord; align: "left" | "right"; recordKnown?: boolean }) {
   const rarity = topRarity(fighter.traits);
   const career = normalizeCombatCareer(fighter.combatCareer);
   const knownTraits = career.evolutionTraits.filter(entry => entry.active).slice(0, 2);
@@ -170,9 +141,9 @@ function FighterHud({ fighter, corner, record, align }: { fighter: Chicken; corn
       </p>
       <p className="mt-1 text-xs font-semibold uppercase tracking-[0.16em] text-(--color-text-muted)">{fighter.fightingStyle} bloodline · Gen {fighter.generation}</p>
       <div className={`mt-3 flex flex-wrap gap-1.5 ${align === "right" ? "justify-end" : ""}`}>
-        <span className="matchup-badge">{rankTitle(record.wins)}</span>
+        <span className="matchup-badge">{recordKnown ? rankTitle(record.wins) : "Unscouted"}</span>
         <span className="matchup-badge">{fighter.fightingStyle}</span>
-        <span className="matchup-badge">{record.wins}W · {record.losses}L</span>
+        <span className="matchup-badge">{recordKnown ? `${record.wins}W · ${record.losses}L` : "Record unknown"}</span>
         {knownTraits.map(trait => <span key={trait.id} className="matchup-badge">{trait.name} {trait.level > 1 ? trait.level : ''}</span>)}
         {signature && <span className="matchup-badge">Signature · {signature.name}</span>}
         {unlockedAwakenings.map(awakening => <span key={awakening.id} className="matchup-badge">Awakening · {awakening.name}</span>)}
@@ -201,6 +172,8 @@ export function MatchupScreen({
   title,
   subtitle,
   matchInfo,
+  combatConfig,
+  onCombatConfigChange,
 }: {
   chicken: Chicken;
   opponent: Chicken;
@@ -211,6 +184,8 @@ export function MatchupScreen({
   title?: string;
   subtitle?: string;
   matchInfo?: string;
+  combatConfig?: { coachingMode: "MANUAL" | "AUTO"; openingCommand: "PRESS" | "WAIT" | "COUNTER" | "RECOVER"; disconnectPolicy: "KEEP_INSTRUCTION" | "AUTO_COACH" };
+  onCombatConfigChange?: (config: { coachingMode: "MANUAL" | "AUTO"; openingCommand: "PRESS" | "WAIT" | "COUNTER" | "RECOVER"; disconnectPolicy: "KEEP_INSTRUCTION" | "AUTO_COACH" }) => void;
 }) {
   const opponentRecord = mockOpponentRecord(opponent);
 
@@ -222,13 +197,18 @@ export function MatchupScreen({
     </div>
     <div className="matchup-corner matchup-corner-left" /> <div className="matchup-corner matchup-corner-right" />
     <FighterHud fighter={chicken} corner="var(--color-azure)" record={chicken.record} align="left" />
-    <FighterHud fighter={opponent} corner="var(--color-blood)" record={opponentRecord} align="right" />
+    <FighterHud fighter={opponent} corner="var(--color-blood)" record={opponentRecord} align="right" recordKnown={false} />
     <div className="matchup-model matchup-model-left"><ChickenViewer chicken={chicken} interactive={false} cameraDistance={3.1} className="h-full w-full" /></div>
     <div className="matchup-model matchup-model-right"><ChickenViewer chicken={opponent} interactive={false} cameraDistance={3.1} className="h-full w-full" /></div>
     <div className="matchup-center">
       <div className="relative"><div className="vs-burst" /><span className="vs-mark font-display text-6xl sm:text-8xl">VS</span></div>
       <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-(--color-gold-bright)">{matchInfo ?? "Exhibition match"}</p>
       <div className="matchup-comparison mt-3">{GENETIC_STAT_KEYS.map((key) => <StatCompareRow key={key} statKey={key} a={chicken} b={opponent} />)}</div>
+      {combatConfig && onCombatConfigChange && <div className="mt-4 grid gap-2 text-left text-[10px] uppercase tracking-wider sm:grid-cols-3">
+        <label>Coach<select value={combatConfig.coachingMode} onChange={event => onCombatConfigChange({ ...combatConfig, coachingMode: event.target.value as "MANUAL" | "AUTO" })} className="mt-1 block w-full rounded bg-black/60 p-2"><option value="MANUAL">Manual</option><option value="AUTO">Auto-Coach</option></select></label>
+        <label>Opening<select value={combatConfig.openingCommand} onChange={event => onCombatConfigChange({ ...combatConfig, openingCommand: event.target.value as typeof combatConfig.openingCommand })} className="mt-1 block w-full rounded bg-black/60 p-2">{["PRESS", "WAIT", "COUNTER", "RECOVER"].map(command => <option key={command}>{command}</option>)}</select></label>
+        <label>Disconnect<select value={combatConfig.disconnectPolicy} onChange={event => onCombatConfigChange({ ...combatConfig, disconnectPolicy: event.target.value as "KEEP_INSTRUCTION" | "AUTO_COACH" })} className="mt-1 block w-full rounded bg-black/60 p-2"><option value="KEEP_INSTRUCTION">Keep instruction</option><option value="AUTO_COACH">Auto-Coach</option></select></label>
+      </div>}
       <button onClick={onFight} disabled={fighting} className="matchup-fight-button mt-4">{fighting ? "Entering arena..." : "Enter arena"}<span>Let the bloodlines speak.</span></button>
     </div>
   </div>;

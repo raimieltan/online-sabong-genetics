@@ -178,7 +178,7 @@ function evaluateTraits(telemetry: CombatCareerTelemetry, previous: readonly Com
     if (!level) return [];
     if (!prior || level > prior.level) notices.push({ kind: prior ? "trait_level" : "trait", id: rule.id, title: `${rule.name}${level > 1 ? ` ${level}` : ""}`, detail: rule.stages[level - 1] });
     const lower = LEVEL_THRESHOLDS[level - 1];
-    const upper = LEVEL_THRESHOLDS[level] ?? lower + 50;
+    const upper = (LEVEL_THRESHOLDS as readonly number[])[level] ?? lower + 50;
     return [{ id: rule.id, name: rule.name, level, stage: rule.stages[level - 1], progress: clamp((score - lower) / (upper - lower) * 100), active: true, advantages: [...rule.advantages], tradeoffs: [...rule.tradeoffs] }];
   });
   const suppress = (a: string, b: string) => {

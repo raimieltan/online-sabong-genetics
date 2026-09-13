@@ -11,6 +11,7 @@ import {
   type PhysicalBlock,
   type StatBlock,
 } from "../types";
+import { physicalBlock } from "./testHelpers";
 
 function queueRng(values: number[]): () => number {
   const queue = [...values];
@@ -76,8 +77,8 @@ test("inheritPhysicalTrait clamps to the range min", () => {
 });
 
 test("inheritPhysicalBlock fills every physical trait key within its rig-supported range", () => {
-  const father: PhysicalBlock = { body: 1.3, neck: 1.8, legs: 1.5, tail: 1.9, wings: 1.6 };
-  const mother: PhysicalBlock = { body: 0.9, neck: 0.9, legs: 0.8, tail: 0.6, wings: 0.7 };
+  const father: PhysicalBlock = { ...physicalBlock(1), body: 1.3, neck: 1.8, legs: 1.5, tail: 1.9, wings: 1.6 };
+  const mother: PhysicalBlock = { ...physicalBlock(1), body: 0.9, neck: 0.9, legs: 0.8, tail: 0.6, wings: 0.7 };
   for (let i = 0; i < 200; i++) {
     const child = inheritPhysicalBlock(father, mother);
     for (const key of PHYSICAL_TRAIT_KEYS) {

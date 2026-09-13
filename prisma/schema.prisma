@@ -23,42 +23,44 @@ model Player {
 }
 
 model Chicken {
-  id              String   @id
-  playerId        String
-  player          Player   @relation(fields: [playerId], references: [id])
-  name            String
-  sex             String
-  generation      Int
-  fatherId        String?
-  motherId        String?
-  bloodlineId     String
-  breed           String?
-  iv              Json
-  ev              Json
-  physical        Json     @default("{\"scale\":1,\"bodyGirth\":1,\"bodyLength\":1,\"chest\":1,\"neckLength\":1,\"neckThick\":1,\"headSize\":1,\"combSize\":1,\"wattleSize\":1,\"beakLength\":1,\"wingSpan\":1,\"wingSize\":1,\"legLength\":1,\"legThick\":1,\"footSize\":1,\"tailLength\":1,\"tailSpread\":1,\"tailArc\":1}")
-  mutations       Json     @default("{}")
-  traits          Json
-  age             Int
-  health          Int
-  energy          Int
-  record          Json
-  status          String
-  growthStage     String
-  fightingStyle   String   @default("balanced")
-  colorScheme     Json     @default("{\"body\":\"#8b6f47\",\"hackle\":\"#c9a24f\",\"wings\":\"#4c1708\",\"tail\":\"#a0826d\",\"comb\":\"#b8100f\",\"beak\":\"#d9a83a\",\"shanks\":\"#cc9e33\",\"pattern\":\"SOLID\",\"patternColor\":\"#4a3521\"}")
-  injured         Boolean  @default(false)
-  behavior        Json     @default("{\"aggression\":0.55,\"caution\":0.45,\"patience\":0.5,\"riskTolerance\":0.5,\"pressurePreference\":0.55,\"counterPreference\":0.4,\"recoveryPreference\":0.4,\"persistence\":0.5}")
-  experience      Json     @default("{\"offensive\":0,\"defensive\":0,\"evasion\":0,\"counter\":0,\"pressure\":0,\"recovery\":0,\"adaptation\":0}")
-  condition       Int      @default(100)
-  injuries        Json     @default("[]")
-  illnesses       Json     @default("[]")
-  stress          Int      @default(0)
-  morale          Int      @default(75)
-  confidence      Int      @default(50)
-  battleHardening Int      @default(0)
-  combatCareer    Json     @default("{\"version\":1,\"fightsProcessed\":0,\"telemetry\":{},\"evolutionTraits\":[],\"signatures\":[],\"rivalries\":[],\"awakenings\":[],\"recentDevelopment\":[]}")
-  trainingState   Json     @default("{\"trainingPoints\":100,\"trainingFatigue\":0,\"history\":[]}")
-  createdAt       DateTime @default(now())
+  id                    String   @id
+  playerId              String
+  player                Player   @relation(fields: [playerId], references: [id])
+  name                  String
+  sex                   String
+  generation            Int
+  fatherId              String?
+  motherId              String?
+  bloodlineId           String
+  breed                 String?
+  iv                    Json
+  ev                    Json
+  physical              Json     @default("{\"scale\":1,\"bodyGirth\":1,\"bodyLength\":1,\"chest\":1,\"neckLength\":1,\"neckThick\":1,\"headSize\":1,\"combSize\":1,\"wattleSize\":1,\"beakLength\":1,\"wingSpan\":1,\"wingSize\":1,\"legLength\":1,\"legThick\":1,\"footSize\":1,\"tailLength\":1,\"tailSpread\":1,\"tailArc\":1}")
+  mutations             Json     @default("{}")
+  traits                Json
+  age                   Int
+  health                Int
+  energy                Int
+  record                Json
+  status                String
+  /// Unique nullable lease held while an authoritative combat is settleable.
+  activeCombatSessionId String?  @unique
+  growthStage           String
+  fightingStyle         String   @default("balanced")
+  colorScheme           Json     @default("{\"body\":\"#8b6f47\",\"hackle\":\"#c9a24f\",\"wings\":\"#4c1708\",\"tail\":\"#a0826d\",\"comb\":\"#b8100f\",\"beak\":\"#d9a83a\",\"shanks\":\"#cc9e33\",\"pattern\":\"SOLID\",\"patternColor\":\"#4a3521\"}")
+  injured               Boolean  @default(false)
+  behavior              Json     @default("{\"aggression\":0.55,\"caution\":0.45,\"patience\":0.5,\"riskTolerance\":0.5,\"pressurePreference\":0.55,\"counterPreference\":0.4,\"recoveryPreference\":0.4,\"persistence\":0.5}")
+  experience            Json     @default("{\"offensive\":0,\"defensive\":0,\"evasion\":0,\"counter\":0,\"pressure\":0,\"recovery\":0,\"adaptation\":0}")
+  condition             Int      @default(100)
+  injuries              Json     @default("[]")
+  illnesses             Json     @default("[]")
+  stress                Int      @default(0)
+  morale                Int      @default(75)
+  confidence            Int      @default(50)
+  battleHardening       Int      @default(0)
+  combatCareer          Json     @default("{\"version\":1,\"fightsProcessed\":0,\"telemetry\":{},\"evolutionTraits\":[],\"signatures\":[],\"rivalries\":[],\"awakenings\":[],\"recentDevelopment\":[]}")
+  trainingState         Json     @default("{\"trainingPoints\":100,\"trainingFatigue\":0,\"history\":[]}")
+  createdAt             DateTime @default(now())
 }
 
 model MarketListing {
@@ -155,10 +157,12 @@ model PveOpponentHistory {
   @@index([playerId, lastFightAt])
 }
 
-/** Phase 3 "Dynamic Stories" campaign feed — callouts, rivalry deciders, and
+/**
+ * Phase 3 "Dynamic Stories" campaign feed — callouts, rivalry deciders, and
  * unlock announcements. Purely a read-side event log; nothing here feeds
  * combat or is treated as a second progression store (see PveOpponentHistory,
- * PveProgress). */
+ * PveProgress).
+ */
 model PveEncounterEvent {
   id        String   @id @default(uuid())
   playerId  String
@@ -287,4 +291,94 @@ model MedicalTreatment {
   createdAt       DateTime  @default(now())
 
   @@index([chickenId, status])
+}
+
+/// Server-owned offer binding a player fighter to an immutable opponent.
+model CombatEncounter {
+  id                  String   @id @default(uuid())
+  ownerPlayerId       String
+  fighterId           String
+  mode                String
+  modeContextId       String?
+  opponentSnapshot    Json
+  ruleset             Json
+  consumedBySessionId String?  @unique
+  expiresAt           DateTime
+  createdAt           DateTime @default(now())
+
+  @@index([ownerPlayerId, fighterId, expiresAt])
+}
+
+/// Durable authoritative V2 checkpoint and immutable replay inputs.
+model CombatSessionRecord {
+  id                    String    @id @default(uuid())
+  ownerPlayerId         String
+  fighterId             String
+  encounterId           String    @unique
+  createIdempotencyKey  String
+  mode                  String
+  modeContextId         String?
+  engineVersion         String
+  rulesetVersion        String
+  snapshotSchemaVersion String
+  seed                  String
+  fighterASnapshot      Json
+  fighterBSnapshot      Json
+  coachingMode          String
+  disconnectPolicy      String
+  activeCommand         String
+  status                String
+  phase                 String?
+  exchangeIndex         Int       @default(0)
+  logicalTick           Int       @default(0)
+  revision              Int       @default(0)
+  latestEventCursor     Int       @default(0)
+  engineCheckpoint      Json
+  terminalResult        Json?
+  postFightPayload      Json?
+  settlementKey         String    @unique
+  voidReason            String?
+  createdAt             DateTime  @default(now())
+  startedAt             DateTime?
+  lastAdvancedAt        DateTime?
+  expiresAt             DateTime
+  terminalAt            DateTime?
+  settledAt             DateTime?
+
+  @@unique([ownerPlayerId, createIdempotencyKey])
+  @@index([ownerPlayerId, status])
+  @@index([fighterId, status])
+}
+
+model CombatEventRecord {
+  id            String @id
+  sessionId     String
+  cursor        Int
+  logicalTick   Int
+  exchangeIndex Int
+  type          String
+  payload       Json
+
+  @@unique([sessionId, cursor])
+  @@index([sessionId, cursor])
+}
+
+model CombatCommandRecord {
+  id        String   @id @default(uuid())
+  sessionId String
+  commandId String
+  command   String
+  receipt   Json
+  createdAt DateTime @default(now())
+
+  @@unique([sessionId, commandId])
+}
+
+model CombatSettlementRecord {
+  id            String   @id @default(uuid())
+  sessionId     String   @unique
+  settlementKey String   @unique
+  resultDigest  String
+  payload       Json
+  createdAt     DateTime @default(now())
 }

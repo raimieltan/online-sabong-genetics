@@ -1,5 +1,5 @@
 // Application adapter lives outside the standalone engine. No persistent entity is mutated.
-import { effectiveStat, maxHealth } from './combat/stats';
+import { effectiveCombatStat, maxHealth } from './combat/stats';
 import { deriveBehaviorProfile } from './combat/behavior';
 import { resolvePhysicalProfile } from './physicalProfile';
 import { clamp } from './combat-v2/constants';
@@ -13,7 +13,7 @@ export function toCombatV2Snapshot(chicken: Chicken, playerId: string, opponentI
   const legInjury = (chicken.injuries ?? []).some(i => i.location === 'leg' || i.location === 'foot' || i.location === 'joint');
   return {
     fighterId: chicken.id, playerId, name: chicken.name,
-    stats: { power: effectiveStat(chicken, 'power'), speed: effectiveStat(chicken, 'speed'), agility: effectiveStat(chicken, 'agility'), accuracy: effectiveStat(chicken, 'accuracy'), defense: effectiveStat(chicken, 'defense'), stamina: effectiveStat(chicken, 'stamina') },
+    stats: { power: effectiveCombatStat(chicken, 'power'), speed: effectiveCombatStat(chicken, 'speed'), agility: effectiveCombatStat(chicken, 'agility'), accuracy: effectiveCombatStat(chicken, 'accuracy'), defense: effectiveCombatStat(chicken, 'defense'), stamina: effectiveCombatStat(chicken, 'stamina') },
     physical: { ...physical, mobility: physical.mobility * (legInjury ? .85 : 1), neck: clamp(chicken.physical.neckLength, .85, 1.15) },
     behavior: { ...(chicken.behavior ?? deriveBehaviorProfile(chicken.fightingStyle, chicken.traits)) },
     experience: clamp(Object.values(chicken.experience ?? {}).reduce((sum, n) => sum + n, 0) / 700),

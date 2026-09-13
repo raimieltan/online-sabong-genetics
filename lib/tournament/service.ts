@@ -19,7 +19,7 @@ import {
 import type { Chicken, CombatResult } from "../types";
 import { TournamentError } from "./errors";
 
-function stateFromRow(row: TournamentRow): TournamentState {
+export function stateFromRow(row: TournamentRow): TournamentState {
   return {
     size: row.size as TournamentSize,
     tier: row.tier as TournamentTier,
@@ -35,7 +35,7 @@ function stateFromRow(row: TournamentRow): TournamentState {
 
 export type TournamentView = TournamentState & { id: string; chickenId: string; definitionId: string };
 
-function toView(row: TournamentRow): TournamentView {
+export function toView(row: TournamentRow): TournamentView {
   return {
     ...stateFromRow(row),
     id: row.id,

@@ -11,11 +11,12 @@ import { prisma } from "../db";
 import type { BehavioralProfile, Chicken, CombatExperience } from "../types";
 import { PVE_BOSSES, PVE_BOSS_LIST, bossPreview, getBoss, previousBossId } from "./bosses";
 import { PVE_CIRCUITS } from "./campaign";
-import { createBossFightSession, endBossFightSession, getBossFightSession } from "./bossFightSessions";
+import { endBossFightSession, getBossFightSession } from "./bossFightSessions";
 import { PveError } from "./errors";
 import { escalateBoss, type PveOpponentHistorySummary } from "./escalation";
 import { rivalryStatus } from "./rivalry";
 import { deriveCampaignEvents } from "./events";
+import { createCombatEncounter, createSession, type CombatView } from "../combat/service";
 import { PVE_SIDE_ENCOUNTERS, isSideEncounterUnlocked, type SideEncounterUnlockContext } from "./sideEncounters";
 import {
   PVE_BOSS_ORDER,
@@ -207,8 +208,9 @@ export type StartBossFightResult = {
   bossFighter: Chicken;
   boss: ReturnType<typeof bossPreview>;
   maxTurns: number;
-  snapshotA: ReturnType<LiveCombatV2Session["snapshotA"]>;
-  snapshotB: ReturnType<LiveCombatV2Session["snapshotB"]>;
+  snapshotA: { hp: number; maxHp: number };
+  snapshotB: { hp: number; maxHp: number };
+  combatView: CombatView;
   rivalry: import("./rivalry").RivalryStatus;
   escalationDeltas: import("./escalation").EscalationDelta[];
 };
@@ -273,18 +275,19 @@ export async function startBossFight(
 
   const history = historySummary(historyRows.get(boss.id));
   const bossFighter = buildBossFighter(boss, history);
-  const session = new LiveCombatV2Session(chicken, bossFighter);
-  const sessionId = createBossFightSession({ session, playerId, chickenId, chicken, bossId: boss.id, bossFighter });
+  const encounter = await createCombatEncounter({ ownerPlayerId: playerId, fighterId: chickenId, opponent: bossFighter, mode: sideEncounter ? "SIDE_ENCOUNTER" : "BOSS", modeContextId: boss.id });
+  const combatView = await createSession({ fighterId: chickenId, encounterId: encounter.id, coachingMode: "MANUAL", openingCommand: "WAIT", disconnectPolicy: "KEEP_INSTRUCTION", idempotencyKey: encounter.id }, playerId);
 
   return {
-    sessionId,
-    matchSeed: session.matchSeed,
+    sessionId: combatView.sessionId,
+    matchSeed: 0,
     chicken,
     bossFighter,
     boss: bossPreview(boss),
     maxTurns: MAX_TURNS,
-    snapshotA: session.snapshotA(),
-    snapshotB: session.snapshotB(),
+    snapshotA: { hp: combatView.projection[0].health, maxHp: combatView.projection[0].maxHealth },
+    snapshotB: { hp: combatView.projection[1].health, maxHp: combatView.projection[1].maxHealth },
+    combatView,
     rivalry: rivalryStatus(history),
     escalationDeltas: escalateBoss(boss, history).deltas,
   };

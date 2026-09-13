@@ -58,9 +58,9 @@ test("createChicken assigns a persistent fighting style, a color scheme, and sta
   });
 
   assert.ok(FIGHTING_STYLES.includes(chicken.fightingStyle));
-  assert.ok(chicken.colorScheme.feathers.startsWith("#"));
-  assert.ok(chicken.colorScheme.details.startsWith("#"));
-  assert.ok(chicken.colorScheme.eyes.startsWith("#"));
+  assert.ok(chicken.colorScheme.body.startsWith("#"));
+  assert.ok(chicken.colorScheme.hackle.startsWith("#"));
+  assert.ok(chicken.colorScheme.comb.startsWith("#"));
   assert.ok(chicken.colorScheme.tail.startsWith("#"));
   assert.ok(chicken.colorScheme.patternColor.startsWith("#"));
   assert.equal(chicken.injured, false);

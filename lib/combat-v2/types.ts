@@ -9,6 +9,7 @@ export interface AerialRuntime {
 }
 export type TacticalMode = 'balanced' | 'pressure' | 'defensive' | 'counter' | 'recover' | 'all_in';
 export type CommandCompliance = 'ignore' | 'resist' | 'partial' | 'obey' | 'commit';
+export type CanonicalMentalState = 'CALM' | 'CONFIDENT' | 'NERVOUS' | 'FRUSTRATED' | 'DESPERATE' | 'EXHAUSTED';
 export type AwakeningType = 'unbreakable' | 'berserker' | 'flow-state' | 'second-wind' | 'apex';
 export type FighterState = 'neutral' | 'advancing' | 'retreating' | 'circling' | 'feinting' | 'winding_up' | 'attacking' | 'defending' | 'evading' | 'countering' | 'recovering' | 'staggered' | 'down' | 'finished';
 export type EngagementPhase = 'stalking' | 'committing' | 'clashing' | 'breaking' | 'resetting';
@@ -71,7 +72,10 @@ export interface FighterRuntimeState {
   currentAction?: ActionRuntime;
   aerial?: AerialRuntime;
   tacticalMode: TacticalMode;
-  coaching?: { command: TacticalMode; compliance: CommandCompliance; strength: number; issuedTick: number; exchangeTick: number; successful: boolean };
+  coaching?: { command: TacticalMode; compliance: CommandCompliance; strength: number; issuedTick: number; exchangeTick: number; successful: boolean; reasons?: string[] };
+  combatMomentum: number;
+  mentalState: CanonicalMentalState;
+  mentalStateEnteredTick: number;
   awakening?: { type: AwakeningType; startedTick: number };
   /** Tick of the most recent Flow State phase-dodge; presentation uses it as a one-shot afterimage key. */
   lastMirageEvadeTick?: number;
@@ -92,7 +96,7 @@ export interface FighterRuntimeState {
   readTells: ActiveReadTell[];
 }
 export interface CombatCommand { playerId: string; fighterId: string; command: TacticalMode; issuedTick: number; effectiveTick: number; sequence: number }
-export interface CombatEvent { type: 'ENGAGEMENT_CHANGED' | 'CLASH_STARTED' | 'CLASH_ENDED' | 'COLLISION' | 'STATE_CHANGED' | 'INTENT_CHANGED' | 'TELL_STARTED' | 'TELL_DETECTED' | 'READ_TELL_STARTED' | 'READ_TELL_UPDATED' | 'READ_TELL_ENDED' | 'ATTACK_STARTED' | 'ATTACK_ACTIVE' | 'ATTACK_MISSED' | 'ATTACK_LANDED' | 'BLOCK' | 'EVADE' | 'COUNTER_LANDED' | 'DAMAGE' | 'STAGGER' | 'COMMAND' | 'COMMAND_RESPONSE' | 'SIGNATURE_TECHNIQUE' | 'AWAKENING_STARTED' | 'AWAKENING_ENDED' | 'MATCH_FINISHED'; tick: number; fighterId: string; targetId?: string; actionId?: string; value?: number; detail?: string }
+export interface CombatEvent { type: 'ENGAGEMENT_CHANGED' | 'CLASH_STARTED' | 'CLASH_ENDED' | 'COLLISION' | 'STATE_CHANGED' | 'MENTAL_STATE_CHANGED' | 'FORCE_ENGAGEMENT_WARNING' | 'FORCED_ENGAGEMENT' | 'INTENT_CHANGED' | 'TELL_STARTED' | 'TELL_DETECTED' | 'READ_TELL_STARTED' | 'READ_TELL_UPDATED' | 'READ_TELL_ENDED' | 'ATTACK_STARTED' | 'ATTACK_ACTIVE' | 'ATTACK_MISSED' | 'ATTACK_LANDED' | 'BLOCK' | 'EVADE' | 'COUNTER_LANDED' | 'DAMAGE' | 'INJURY_SUSTAINED' | 'MEDICAL_STOPPAGE' | 'STAGGER' | 'COMMAND' | 'COMMAND_RESPONSE' | 'SIGNATURE_TECHNIQUE' | 'AWAKENING_STARTED' | 'AWAKENING_ENDED' | 'MATCH_FINISHED'; tick: number; fighterId: string; targetId?: string; actionId?: string; value?: number; detail?: string }
 export interface MatchConfig { id: string; version: string; seed: number; fighterA: FighterCombatSnapshot; fighterB: FighterCombatSnapshot; arena: { radius: number }; maxTicks: number; commands?: CombatCommand[] }
-export interface MatchResult { winnerId: string | null; finishReason: 'KO' | 'double_KO' | 'time_limit'; durationTicks: number }
+export interface MatchResult { winnerId: string | null; finishReason: 'KO' | 'double_KO' | 'medical_stoppage' | 'double_medical_stoppage' | 'time_limit'; durationTicks: number }
 export interface CombatMatchState { config: MatchConfig; tick: number; phase: 'active' | 'paused' | 'finished'; rngState: number; fighters: [FighterRuntimeState, FighterRuntimeState]; commands: CombatCommand[]; eventBuffer: CombatEvent[]; lastContactTick: number; result?: MatchResult }

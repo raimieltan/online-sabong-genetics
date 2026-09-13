@@ -31,6 +31,10 @@ export type ChickenColorScheme = {
   shanks: string; // M_Legs
   pattern: FeatherPattern;
   patternColor: string;
+  /** Legacy palette aliases retained for imported fixtures. */
+  feathers?: string;
+  details?: string;
+  eyes?: string;
 };
 
 export type Rooster = {
@@ -175,7 +179,7 @@ export const PHYSICAL_TRAIT_RANGE: Record<PhysicalTraitKey, { min: number; max: 
   tailArc: { min: 0.6, max: 1.8 },
 };
 
-export type PhysicalBlock = Record<PhysicalTraitKey, number>;
+export type PhysicalBlock = Record<PhysicalTraitKey, number> & { body?: number; neck?: number; legs?: number; tail?: number; wings?: number };
 
 /** How a mutation gene resolves between two alleles into an offspring's expressed trait. */
 export type MutationInheritance = "dominant" | "recessive" | "codominant" | "random";
@@ -797,6 +801,8 @@ export type CombatLogEntry = {
 export type CombatResult = {
   winnerId: string;
   loserId: string;
+  isDraw?: boolean;
+  finishReason?: "KNOCKOUT" | "DOUBLE_KO" | "MEDICAL_STOPPAGE" | "DOUBLE_MEDICAL_STOPPAGE" | "TIME_LIMIT_DECISION" | "TIME_LIMIT_DRAW" | "FORFEIT";
   log: CombatLogEntry[];
   totalTurns: number;
   outcomeReason: "ko" | "timeout" | "critical_injury";

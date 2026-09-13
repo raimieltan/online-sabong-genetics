@@ -40,6 +40,8 @@ export function healChicken(): { injured: false; health: number } {
 
 /** The chicken's remaining HP at the end of a fight, scaled to the 0–100 `Chicken.health` range. */
 export function finalHealthPercent(result: CombatResult, chicken: Chicken): number {
+  const authoritative = result.finalHealth?.[chicken.id];
+  if (authoritative) return Math.round(Math.max(0, Math.min(100, authoritative.percent)));
   const max = maxHealth(chicken);
   for (let i = result.log.length - 1; i >= 0; i--) {
     const entry = result.log[i];
@@ -98,6 +100,7 @@ export type FightOutcomeUpdate = {
  */
 export function applyFightOutcome(chicken: Chicken, result: CombatResult): FightOutcomeUpdate {
   const won = result.winnerId === chicken.id;
+  const drew = result.isDraw === true || result.winnerId === null;
   const wasInjured = result.injuredChickenId === chicken.id;
   const record = chicken.record;
 
@@ -140,7 +143,7 @@ export function applyFightOutcome(chicken: Chicken, result: CombatResult): Fight
     record: {
       ...record,
       wins: record.wins + (won ? 1 : 0),
-      losses: record.losses + (won ? 0 : 1),
+      losses: record.losses + (won || drew ? 0 : 1),
       koTko: record.koTko + (won && result.outcomeReason !== "timeout" ? 1 : 0),
       decisions: record.decisions + (result.outcomeReason === "timeout" ? 1 : 0),
     },

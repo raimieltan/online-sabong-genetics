@@ -8,10 +8,9 @@ import type { BattleReport } from "@/lib/combat/battleReport";
 import ContinuousBattle from "@/components/combat-v2/ContinuousBattle";
 import { PostFightOverlay } from "@/components/battle/postfight/PostFightOverlay";
 import { MatchupScreen } from "@/components/battle/MatchupScreen";
-import { setPlayerCredits } from "@/lib/playerStore";
 
 type Phase = "loading" | "ready" | "fighting" | "result" | "error";
-type FightResponse = { result?: CombatResult; chicken?: Chicken; battleReport?: BattleReport; creditsEarned?: number; credits?: number };
+type CanonicalStart = { sessionId: string; fighters: [Chicken, Chicken]; [key: string]: unknown };
 const AUDIO_STORAGE_KEY = "rooster-arena-audio-enabled";
 
 export default function BattlePage({ params }: { params: Promise<{ chickenId: string }> }) {
@@ -25,17 +24,25 @@ export default function BattlePage({ params }: { params: Promise<{ chickenId: st
   const [updatedChicken, setUpdatedChicken] = useState<Chicken | null>(null);
   const [creditsEarned, setCreditsEarned] = useState(0);
   const [battleReport, setBattleReport] = useState<BattleReport | null>(null);
+  const [combatEncounterId, setCombatEncounterId] = useState<string | null>(null);
+  const [session, setSession] = useState<CanonicalStart | null>(null);
+  const [combatConfig, setCombatConfig] = useState<{ coachingMode: "MANUAL" | "AUTO"; openingCommand: "PRESS" | "WAIT" | "COUNTER" | "RECOVER"; disconnectPolicy: "KEEP_INSTRUCTION" | "AUTO_COACH" }>({ coachingMode: "MANUAL", openingCommand: "WAIT", disconnectPolicy: "KEEP_INSTRUCTION" });
   const [audioEnabled, setAudioEnabled] = useState(() => typeof window === "undefined" ? true : window.localStorage.getItem(AUDIO_STORAGE_KEY) !== "false");
 
   function toggleAudio() {
     setAudioEnabled(previous => { const next = !previous; window.localStorage.setItem(AUDIO_STORAGE_KEY, String(next)); return next; });
   }
 
-  const completePresentation = useCallback(() => setPhase("result"), []);
+  const completePresentation = useCallback((_result: unknown, settlement?: Record<string, unknown> | null) => {
+    const payload = settlement as ({ legacyResult?: CombatResult; battleReport?: BattleReport; creditsEarned?: number; chicken?: Chicken } | null | undefined);
+    if (payload?.legacyResult) setResult(payload.legacyResult);
+    if (payload?.battleReport) setBattleReport(payload.battleReport);
+    if (payload?.chicken) setUpdatedChicken(payload.chicken);
+    if (typeof payload?.creditsEarned === "number") setCreditsEarned(payload.creditsEarned);
+    setPhase("result");
+  }, []);
   const fightAgain = useCallback(() => {
-    setResult(null);
-    setBattleReport(null);
-    setPhase("ready");
+    window.location.reload();
   }, []);
 
   useEffect(() => {
@@ -46,26 +53,26 @@ export default function BattlePage({ params }: { params: Promise<{ chickenId: st
       const loadedChicken: Chicken = await chickenRes.json();
       const opponentRes = await fetch(`/api/chickens/${chickenId}/opponent`, { method: "POST" });
       if (!opponentRes.ok) { if (!cancelled) { setError("This chicken cannot battle right now"); setPhase("error"); } return; }
-      const body = await opponentRes.json() as { opponent: Chicken; encounter: PveEncounterDefinition };
-      if (!cancelled) { setChicken(loadedChicken); setOpponent(body.opponent); setEncounter(body.encounter); setPhase("ready"); }
+      const body = await opponentRes.json() as { opponent: Chicken; encounter: PveEncounterDefinition; combatEncounterId: string };
+      if (!cancelled) { setChicken(loadedChicken); setOpponent(body.opponent); setEncounter(body.encounter); setCombatEncounterId(body.combatEncounterId); setPhase("ready"); }
     })();
     return () => { cancelled = true; };
   }, [chickenId]);
 
   async function handleFight() {
-    if (!chicken || !opponent) return;
+    if (!chicken || !opponent || !combatEncounterId) return;
     setPhase("fighting");
-    const response = await fetch(`/api/chickens/${chickenId}/fight`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ opponent }) });
+    const idempotencyKey = crypto.randomUUID();
+    const response = await fetch(`/api/combat/sessions`, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": idempotencyKey }, body: JSON.stringify({ fighterId: chickenId, encounterId: combatEncounterId, ...combatConfig }) });
     if (!response.ok) { setError("The fight could not be started"); setPhase("error"); return; }
-    const body: FightResponse = await response.json();
-    setResult(body.result ?? null); setUpdatedChicken(body.chicken ?? null); setCreditsEarned(body.creditsEarned ?? 0); setBattleReport(body.battleReport ?? null);
-    if (typeof body.credits === "number") setPlayerCredits(body.credits);
+    const body = await response.json() as CanonicalStart;
+    setSession(body);
   }
 
   if (phase === "loading") return <main className="flex min-h-screen items-center justify-center bg-(--color-ink) text-(--color-text-muted)">⚔️ Loading battle...</main>;
   if (phase === "error") return <main className="flex min-h-screen items-center justify-center bg-(--color-ink) p-6"><div className="panel-wood rounded-lg p-6 text-center"><p className="text-red-400">{error}</p><Link href="/coop" className="mt-4 inline-block text-(--color-gold-bright) hover:underline">← Back to Coop</Link></div></main>;
   if (!chicken || !opponent) return null;
-  if (phase === "fighting" && !result) return <main className="flex min-h-screen items-center justify-center bg-(--color-ink) text-(--color-text-muted)">Starting the arena...</main>;
-  if ((phase === "fighting" || phase === "result") && result) return <main className="min-h-screen bg-(--color-ink)"><div className="relative"><ContinuousBattle chickenA={chicken} chickenB={opponent} matchSeed={result.matchSeed} autoStart audioEnabled={audioEnabled} onToggleAudio={toggleAudio} onComplete={completePresentation} />{phase === "result" && <PostFightOverlay result={result} playerChicken={updatedChicken ?? chicken} creditsEarned={creditsEarned} battleReport={battleReport ?? undefined} onContinue={fightAgain} />}</div></main>;
-  return <main className="min-h-screen bg-(--color-ink)"><MatchupScreen chicken={chicken} opponent={opponent} encounter={encounter} fighting={false} onFight={handleFight} eyebrow="PVE Challenge" title={encounter?.name} subtitle={encounter?.description} matchInfo="Arena exhibition" /></main>;
+  if (phase === "fighting" && !session) return <main className="flex min-h-screen items-center justify-center bg-(--color-ink) text-(--color-text-muted)">Starting the arena...</main>;
+  if ((phase === "fighting" || phase === "result") && session) return <main className="min-h-screen bg-(--color-ink)"><div className="relative"><ContinuousBattle sessionId={session.sessionId} initialView={session as never} audioEnabled={audioEnabled} onToggleAudio={toggleAudio} onComplete={completePresentation} />{phase === "result" && result && <PostFightOverlay result={result} playerChicken={updatedChicken ?? chicken} creditsEarned={creditsEarned} battleReport={battleReport ?? undefined} onContinue={fightAgain} />}</div></main>;
+  return <main className="min-h-screen bg-(--color-ink)"><MatchupScreen chicken={chicken} opponent={opponent} encounter={encounter} fighting={false} onFight={handleFight} eyebrow="PVE Challenge" title={encounter?.name} subtitle={encounter?.description} matchInfo="Arena exhibition" combatConfig={combatConfig} onCombatConfigChange={setCombatConfig} /></main>;
 }

@@ -48,10 +48,10 @@ test("resolvePhysicalProfile: bigger wings relative to body raise wingControl", 
 
 test("resolvePhysicalProfile: two chickens with identical combat stats but different physiques diverge in physical profile", () => {
   const sprinter = resolvePhysicalProfile(
-    makeChicken({ physical: { body: 0.85, neck: 1, legs: 1.35, tail: 1, wings: 1.0 } })
+    makeChicken({ physical: { ...physicalBlock(1), body: 0.85, neck: 1, legs: 1.35, tail: 1, wings: 1.0 } })
   );
   const tank = resolvePhysicalProfile(
-    makeChicken({ physical: { body: 1.35, neck: 1, legs: 0.85, tail: 1, wings: 0.9 } })
+    makeChicken({ physical: { ...physicalBlock(1), body: 1.35, neck: 1, legs: 0.85, tail: 1, wings: 0.9 } })
   );
 
   assert.ok(sprinter.reach > tank.reach);
@@ -61,7 +61,7 @@ test("resolvePhysicalProfile: two chickens with identical combat stats but diffe
 
 test("resolvePhysicalProfile modifiers stay within the balancing band regardless of extreme proportions", () => {
   const extreme = resolvePhysicalProfile(
-    makeChicken({ physical: { body: 0.6, neck: 2.2, legs: 2.0, tail: 2.2, wings: 2.0 } })
+    makeChicken({ physical: { ...physicalBlock(1), body: 0.6, neck: 2.2, legs: 2.0, tail: 2.2, wings: 2.0 } })
   );
   for (const value of Object.values(extreme)) {
     assert.ok(value >= 0.85 && value <= 1.15, `modifier ${value} outside balancing band`);

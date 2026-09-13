@@ -97,3 +97,6 @@ injuries, persistent learned behavior, rig debug colliders, camera direction,
 audio and broader action balancing are also not complete. Preserve `2.0.0`
 rules or introduce an explicit version handler before shipping balance changes
 that need to reproduce historical competitive matches.
+> Status: ARCHIVED
+> Do not implement against this document.
+> Superseded by: `docs/combat/COMBAT-CANONICAL.md`

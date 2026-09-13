@@ -1739,3 +1739,7 @@ and its career history.
 That is the core tournament flow.
 
 The separate UI specification should be built around this flow rather than designing each screen independently.
+> Status: SUPPORTING
+> Canonical parent: `docs/combat/COMBAT-CANONICAL.md`
+> Scope: Sections 14.4 and 16 — tournament adapter and post-fight handoff.
+> If this document conflicts with the canonical specification, the canonical specification wins.

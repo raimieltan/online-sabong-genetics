@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type RefObject } from "react";
 
 import * as THREE from "three";
 
-import { useThree } from "@react-three/fiber";
+import { useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 
 import type {
@@ -24,7 +24,7 @@ const CAMERA_TARGET: [
   number
 ] = [0, 0, -0.6];
 
-export function CoopCamera() {
+export function CoopCamera({ focusTarget }: { focusTarget?: RefObject<THREE.Vector3> }) {
   const controlsRef =
     useRef<
       OrbitControlsImpl | null
@@ -52,6 +52,12 @@ export function CoopCamera() {
       controlsRef.current.update();
     }
   }, [camera]);
+
+  useFrame(() => {
+    if (!focusTarget?.current || !controlsRef.current) return;
+    controlsRef.current.target.lerp(focusTarget.current, 0.08);
+    controlsRef.current.update();
+  });
 
   return (
     <OrbitControls

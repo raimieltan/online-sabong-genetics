@@ -4,6 +4,7 @@ import { prisma } from "@/lib/db";
 import { canFight, generatePveOpponent } from "@/lib/combat";
 import { getOrCreatePlayer } from "@/lib/player";
 import type { Chicken } from "@/lib/types";
+import { createCombatEncounter } from "@/lib/combat/service";
 
 export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -18,6 +19,13 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   }
 
   const { opponent, encounter } = generatePveOpponent(chicken as unknown as Chicken);
+  const combatEncounter = await createCombatEncounter({
+    ownerPlayerId: player.id,
+    fighterId: id,
+    opponent,
+    mode: "NORMAL",
+    modeContextId: encounter.id,
+  });
 
-  return NextResponse.json({ opponent, encounter });
+  return NextResponse.json({ opponent, encounter, combatEncounterId: combatEncounter.id });
 }

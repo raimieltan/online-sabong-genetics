@@ -7,35 +7,25 @@ import type { Chicken, CombatResult } from "@/lib/types";
 import type { BattleReport } from "@/lib/combat/battleReport";
 
 export type PostFightState =
-  | "inactive"
-  | "ko_confirm"
-  | "winner_reaction"
-  | "result_reveal"
-  | "reward_reveal"
-  | "xp_reveal"
-  | "progression_reveal"
-  | "condition_reveal"
-  | "next_action";
+  | "FINAL_IMPACT"
+  | "DEFEAT_SETTLE"
+  | "WINNER_REACTION"
+  | "RESULT"
+  | "REWARDS"
+  | "PROGRESSION"
+  | "INJURY_CONDITION"
+  | "MODE_PROGRESS"
+  | "EXIT";
 
-const STEP_DELAY: Record<Exclude<PostFightState, "inactive">, number> = {
-  ko_confirm: 850,
-  winner_reaction: 900,
-  result_reveal: 1050,
-  reward_reveal: 900,
-  xp_reveal: 1000,
-  progression_reveal: 950,
-  condition_reveal: 1050,
-  next_action: 0,
-};
-
-const NEXT: Record<Exclude<PostFightState, "inactive" | "next_action">, PostFightState> = {
-  ko_confirm: "winner_reaction",
-  winner_reaction: "result_reveal",
-  result_reveal: "reward_reveal",
-  reward_reveal: "xp_reveal",
-  xp_reveal: "progression_reveal",
-  progression_reveal: "condition_reveal",
-  condition_reveal: "next_action",
+const NEXT: Record<Exclude<PostFightState, "EXIT">, PostFightState> = {
+  FINAL_IMPACT: "DEFEAT_SETTLE",
+  DEFEAT_SETTLE: "WINNER_REACTION",
+  WINNER_REACTION: "RESULT",
+  RESULT: "REWARDS",
+  REWARDS: "PROGRESSION",
+  PROGRESSION: "INJURY_CONDITION",
+  INJURY_CONDITION: "MODE_PROGRESS",
+  MODE_PROGRESS: "EXIT",
 };
 
 type Props = {
@@ -54,42 +44,39 @@ type Props = {
  * still-mounted arena.
  */
 export function PostFightOverlay({ result, playerChicken, creditsEarned = 0, battleReport, actionLabel = "Fight Again", onContinue, campaign }: Props) {
-  const [state, setState] = useState<PostFightState>("ko_confirm");
+  const [state, setState] = useState<PostFightState>("FINAL_IMPACT");
+  const didDraw = result.isDraw === true || result.winnerId === null;
   const didWin = result.winnerId === playerChicken.id;
   const playerInjured = result.injuredChickenId === playerChicken.id || Boolean(battleReport?.newInjuries.length);
   const playerHealth = result.finalHealth?.[playerChicken.id];
-  const opponentHealth = result.finalHealth?.[result.winnerId === playerChicken.id ? result.loserId : result.winnerId];
-  const next = () => setState(current => current === "next_action" ? current : NEXT[current as keyof typeof NEXT]);
-
-  useEffect(() => {
-    const activeState = state;
-    if (activeState === "inactive" || activeState === "next_action") return;
-    const timer = window.setTimeout(next, STEP_DELAY[activeState]);
-    return () => window.clearTimeout(timer);
-  }, [state]); // `next` intentionally reads only the state updater.
+  const opponentId = result.winnerId === playerChicken.id ? result.loserId : result.winnerId;
+  const opponentHealth = opponentId ? result.finalHealth?.[opponentId] : undefined;
+  const next = () => setState(current => current === "EXIT" ? current : NEXT[current]);
 
   useEffect(() => {
     const accelerate = (event: KeyboardEvent) => {
-      if ((event.key === " " || event.key === "Enter") && state !== "ko_confirm") next();
+      if ((event.key === " " || event.key === "Enter") && state !== "FINAL_IMPACT") next();
     };
     window.addEventListener("keydown", accelerate);
     return () => window.removeEventListener("keydown", accelerate);
   }, [state]);
 
-  const showResult = ["result_reveal", "reward_reveal", "xp_reveal", "progression_reveal", "condition_reveal", "next_action"].includes(state);
-  const showRewards = ["reward_reveal", "xp_reveal", "progression_reveal", "condition_reveal", "next_action"].includes(state);
-  const showExperience = ["xp_reveal", "progression_reveal", "condition_reveal", "next_action"].includes(state);
-  const showProgression = ["progression_reveal", "condition_reveal", "next_action"].includes(state);
-  const showCondition = ["condition_reveal", "next_action"].includes(state);
+  const showResult = ["RESULT", "REWARDS", "PROGRESSION", "INJURY_CONDITION", "MODE_PROGRESS", "EXIT"].includes(state);
+  const showRewards = ["REWARDS", "PROGRESSION", "INJURY_CONDITION", "MODE_PROGRESS", "EXIT"].includes(state);
+  const showExperience = ["PROGRESSION", "INJURY_CONDITION", "MODE_PROGRESS", "EXIT"].includes(state);
+  const showProgression = ["PROGRESSION", "INJURY_CONDITION", "MODE_PROGRESS", "EXIT"].includes(state);
+  const showCondition = ["INJURY_CONDITION", "MODE_PROGRESS", "EXIT"].includes(state);
 
   return (
-    <div className="absolute inset-0 z-40 flex items-center justify-center overflow-y-auto p-4 sm:p-8" onClick={state === "ko_confirm" ? undefined : next}>
-      {state === "ko_confirm" && <div className="pointer-events-none animate-postfight-ko text-center"><p className="font-comic text-3xl text-red-400 [-webkit-text-stroke:1px_#160806] sm:text-5xl">KALABOG!!</p><p className="mt-2 font-display text-6xl font-black tracking-[.14em] text-[#f4e3bb] drop-shadow-[0_5px_2px_rgba(0,0,0,.9)] sm:text-8xl">K.O.</p></div>}
-      {state === "winner_reaction" && <div className="pointer-events-none text-center animate-postfight-rise"><p className="font-comic text-sm uppercase tracking-[.3em] text-(--color-gold-bright)">The arena erupts</p><p className="mt-2 font-display text-3xl text-(--foreground) sm:text-5xl">{didWin ? playerChicken.name : "Your fighter"} holds the moment.</p></div>}
+    <div className="absolute inset-0 z-40 flex items-center justify-center overflow-y-auto p-4 sm:p-8" onClick={state === "FINAL_IMPACT" ? undefined : next}>
+      {state !== "EXIT" && <button type="button" onClick={event => { event.stopPropagation(); setState("EXIT"); }} className="absolute right-4 top-4 z-50 rounded border border-white/20 bg-black/60 px-3 py-2 text-[10px] uppercase tracking-widest text-white/70">Skip to summary</button>}
+      {state === "FINAL_IMPACT" && <div onAnimationEnd={next} className="pointer-events-none animate-postfight-ko text-center"><p className="font-comic text-3xl text-red-400 [-webkit-text-stroke:1px_#160806] sm:text-5xl">KALABOG!!</p><p className="mt-2 font-display text-6xl font-black tracking-[.14em] text-[#f4e3bb] drop-shadow-[0_5px_2px_rgba(0,0,0,.9)] sm:text-8xl">K.O.</p></div>}
+      {state === "DEFEAT_SETTLE" && <div onAnimationEnd={next} className="pointer-events-none text-center animate-postfight-rise"><p className="font-comic text-sm uppercase tracking-[.3em] text-(--color-gold-bright)">The dust settles</p></div>}
+      {state === "WINNER_REACTION" && <div onAnimationEnd={next} className="pointer-events-none text-center animate-postfight-rise"><p className="font-comic text-sm uppercase tracking-[.3em] text-(--color-gold-bright)">{didDraw ? "Neither fighter yields" : "The arena erupts"}</p><p className="mt-2 font-display text-3xl text-(--foreground) sm:text-5xl">{didDraw ? "The judges declare a draw." : `${didWin ? playerChicken.name : "Your fighter"} holds the moment.`}</p></div>}
 
       {showResult && <section className="postfight-glass my-auto w-full max-w-md animate-postfight-rise text-center" onClick={event => event.stopPropagation()}>
-        <p className={`font-comic text-xs uppercase tracking-[.3em] ${didWin ? "text-(--color-gold-bright)" : "text-red-300"}`}>{didWin ? "Winner" : "Defeat"}</p>
-        <h2 className="mt-2 font-display text-4xl font-bold tracking-[.08em] text-(--foreground) sm:text-5xl">{didWin ? "VICTORY" : "DEFEATED"}</h2>
+        <p className={`font-comic text-xs uppercase tracking-[.3em] ${didWin || didDraw ? "text-(--color-gold-bright)" : "text-red-300"}`}>{didDraw ? "Official draw" : didWin ? "Winner" : "Defeat"}</p>
+        <h2 className="mt-2 font-display text-4xl font-bold tracking-[.08em] text-(--foreground) sm:text-5xl">{didDraw ? "DRAW" : didWin ? "VICTORY" : "DEFEATED"}</h2>
         <p className="mt-1 font-display text-xl text-(--color-gold-bright)">{playerChicken.name}</p>
         <p className="mt-3 text-xs uppercase tracking-[.2em] text-(--color-text-muted)">{result.outcomeReason === "ko" ? "Knockout" : result.outcomeReason.replace("_", " ")} · Turn {result.totalTurns}</p>
 
@@ -102,8 +89,8 @@ export function PostFightOverlay({ result, playerChicken, creditsEarned = 0, bat
         {showProgression && campaign && <Reveal title="Campaign consequence"><p className="font-display text-xl text-(--color-gold-bright)">{campaign.headline}</p><p className="mt-1 text-sm text-(--color-text-muted)">{campaign.copy}</p>{campaign.reputation > 0 && <p className="mt-2 text-sm text-(--foreground)">+{campaign.reputation} reputation</p>}{campaign.unlocked && <p className="mt-2 text-xs font-semibold uppercase tracking-[.14em] text-(--color-gold-bright)">New unlock · {campaign.unlocked}</p>}</Reveal>}
         {showCondition && <Reveal title="Fight condition"><div className="space-y-1 text-sm text-(--color-text-muted)"><p>Condition <b className="ml-2 text-(--foreground)">{battleReport?.conditionDelta ?? 0}%</b></p><p>Morale <b className="ml-2 text-(--foreground)">{signed(battleReport?.moraleDelta)}</b> · Confidence <b className="text-(--foreground)">{signed(battleReport?.confidenceDelta)}</b></p>{battleReport?.newInjuries.map(injury => <p key={injury.id} className="mt-3 rounded-lg border border-red-400/35 bg-red-950/25 p-2 text-red-200">⚠ {injury.label} <span className="text-red-200/70">· {injury.severity.replace("_", " ")} · {injury.permanent ? "lasting injury" : `${injury.recoveryRemaining} recovery cycle${injury.recoveryRemaining === 1 ? "" : "s"}`}</span></p>)}</div></Reveal>}
 
-        {state === "next_action" && <div className="mt-6 flex gap-3"><Link href={playerInjured ? "/clinic" : "/coop"} className="flex-1 rounded-lg border border-(--color-gold)/35 bg-black/20 px-3 py-3 text-xs font-semibold uppercase tracking-[.12em] text-(--color-parchment) hover:bg-white/5">{playerInjured ? "Visit Clinic" : "Return to Coop"}</Link><button type="button" onClick={onContinue} className="flex-1 rounded-lg bg-gradient-to-b from-(--color-gold-bright) to-(--color-gold) px-3 py-3 font-display text-sm font-bold uppercase tracking-[.08em] text-(--color-ink) hover:brightness-110">{actionLabel}</button></div>}
-        {state !== "next_action" && <p className="mt-5 text-[10px] uppercase tracking-[.18em] text-(--color-text-muted)">Click, Space, or Enter to continue</p>}
+        {state === "EXIT" && <div className="mt-6 flex gap-3"><Link href={playerInjured ? "/clinic" : "/coop"} className="flex-1 rounded-lg border border-(--color-gold)/35 bg-black/20 px-3 py-3 text-xs font-semibold uppercase tracking-[.12em] text-(--color-parchment) hover:bg-white/5">{playerInjured ? "Visit Clinic" : "Return to Coop"}</Link><button type="button" onClick={onContinue} className="flex-1 rounded-lg bg-gradient-to-b from-(--color-gold-bright) to-(--color-gold) px-3 py-3 font-display text-sm font-bold uppercase tracking-[.08em] text-(--color-ink) hover:brightness-110">{actionLabel}</button></div>}
+        {state !== "EXIT" && <p className="mt-5 text-[10px] uppercase tracking-[.18em] text-(--color-text-muted)">Click, Space, or Enter to continue</p>}
       </section>}
     </div>
   );

@@ -445,3 +445,7 @@ I CHOSE WHAT TO DO NEXT.
 ```
 
 The fight does not end when HP reaches zero. It ends when the player has experienced the consequence of the result.
+> Status: SUPPORTING
+> Canonical parent: `docs/combat/COMBAT-CANONICAL.md`
+> Scope: Section 16 — post-fight presentation states and acknowledgements.
+> If this document conflicts with the canonical specification, the canonical specification wins.

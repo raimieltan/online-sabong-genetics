@@ -55,10 +55,10 @@ export function rollInjurySeverity(params: {
   return null;
 }
 
-let injuryCounter = 0;
-function nextInjuryId(): string {
-  injuryCounter += 1;
-  return `injury-${Date.now()}-${injuryCounter}`;
+function deterministicId(parts: readonly (string | number)[]): string {
+  let hash = 2166136261;
+  for (const char of parts.join("\u001f")) { hash ^= char.charCodeAt(0); hash = Math.imul(hash, 16777619); }
+  return `injury-${(hash >>> 0).toString(36)}`;
 }
 
 const SEVERITY_LABELS: Record<InjurySeverity, string[]> = {
@@ -69,14 +69,14 @@ const SEVERITY_LABELS: Record<InjurySeverity, string[]> = {
 
 const RECOVERY_TURNS: Record<InjurySeverity, number> = { minor: 1, serious: 3, career_altering: 0 };
 
-export function createInjuryRecord(rng: Rng, severity: InjurySeverity): InjuryRecord {
+export function createInjuryRecord(rng: Rng, severity: InjurySeverity, context?: { sessionId: string; eventCursor: number; fighterId: string; injuryType?: string; occurredAtTick: number }): InjuryRecord {
   const labels = SEVERITY_LABELS[severity];
   const label = labels[Math.floor(rng() * labels.length)];
   return {
-    id: nextInjuryId(),
+    id: context ? deterministicId([context.sessionId, context.eventCursor, context.fighterId, context.injuryType ?? label]) : `legacy-${deterministicId([rng(), severity, label])}`,
     severity,
     label,
-    incurredAt: Date.now(),
+    incurredAt: context?.occurredAtTick ?? 0,
     recoveryRemaining: RECOVERY_TURNS[severity],
     permanent: severity === "career_altering",
     statPenalty: severity === "career_altering" ? { power: -5, speed: -5 } : undefined,

@@ -2040,3 +2040,6 @@ And critically:
 **nobody knows for certain who is going to win.**
 
 That is the target experience.
+> Status: ARCHIVED
+> Do not implement against this document.
+> Superseded by: `docs/combat/COMBAT-CANONICAL.md`

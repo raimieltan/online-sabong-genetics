@@ -949,3 +949,6 @@ At the end report:
 10. Debug tools
 11. Any limitations
 12. Exact testing procedure
+> Status: ARCHIVED
+> Do not implement against this document.
+> Superseded by: `docs/combat/COMBAT-CANONICAL.md`

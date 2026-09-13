@@ -1,108 +1,37 @@
-import { deriveBehaviorProfile } from "../lib/combat/behavior";
-import { simulateBattle, type CoachFn } from "../lib/combat/simulator";
-import { autoCoachPolicy } from "../lib/combat/autoCoach";
+import { CanonicalCombatRuntime, digestSemantic, type CoachingCommand } from "../lib/combat-v2/canonical";
 import { generateRandomChicken } from "../lib/chickenGenerator";
-import type { Chicken, FightingStyle } from "../lib/types";
 
-/**
- * Validation-gate harness (spec: "the only thing that gets built before a
- * decision"). Throwaway CLI tool, not wired into the app or `yarn test` —
- * same status as scripts/balance-sim.ts. Run with:
- *   node --import ./scripts/test-ts-loader.mjs scripts/validation-gate-sim.ts
- */
+const seeds = Array.from({ length: 100 }, (_, index) => index * 7919 + 13);
+const fighterA = generateRandomChicken({ sex: "rooster", name: "Validator A" });
+const fighterB = generateRandomChicken({ sex: "rooster", name: "Validator B" });
 
-function seededRng(seed: number) {
-  let s = seed;
-  return () => {
-    s = (s * 1103515245 + 12345) & 0x7fffffff;
-    return s / 0x7fffffff;
-  };
-}
-
-/** A deliberately *weaker* fighter (lower fixed stats) than the opponent, so Test B/D measure coaching quality, not stat parity. */
-function buildFighter(style: FightingStyle, name: string, iv: number, ev: number): Chicken {
-  const c = generateRandomChicken({ sex: "rooster", name });
-  const ivBlock = { ...c.iv };
-  const evBlock = { ...c.ev };
-  (Object.keys(ivBlock) as (keyof typeof ivBlock)[]).forEach((k) => {
-    ivBlock[k] = iv;
-    evBlock[k] = ev;
-  });
-  return { ...c, iv: ivBlock, ev: evBlock, fightingStyle: style, traits: [], behavior: deriveBehaviorProfile(style, []) };
-}
-
-/** A scripted "good coaching" heuristic — reads the opponent's context state and this fighter's own state, same observation surface a human coach would have. */
-const readerCoach: CoachFn = (obs) => {
-  if (obs.own.commandPoints < 1) return null;
-  if (obs.own.mentalState === "desperate" || obs.own.mentalState === "exhausted") return "RECOVER";
-  if (obs.opponentContextState === "PRESSURING" && obs.own.momentum < 0) return "WAIT";
-  if (obs.opponentContextState === "EXHAUSTED" || obs.opponentContextState === "VULNERABLE") return "PRESS";
-  return null;
-};
-
-function runTrial(coachForWeaker: CoachFn | undefined, trials: number, seedBase: number): number {
-  let weakerWins = 0;
-  for (let i = 0; i < trials; i++) {
-    const weaker = buildFighter("counter", "Weaker", 55, 30);
-    const stronger = buildFighter("aggressive", "Stronger", 80, 60);
-    const result = simulateBattle(weaker, stronger, seededRng(seedBase + i), {
-      coachA: coachForWeaker,
-      coachB: autoCoachPolicy(),
-    });
-    if (result.winnerId === weaker.id) weakerWins += 1;
+function run(seed: number, pattern: readonly CoachingCommand[]) {
+  const runtime = CanonicalCombatRuntime.create({ sessionId: `validation-${seed}`, seed, fighterA, fighterB, openingCommand: pattern[0] });
+  const events = runtime.drainEvents();
+  let exchange = 0;
+  while (runtime.checkpoint.state.phase === "active") {
+    runtime.advance(1);
+    events.push(...runtime.drainEvents());
+    if (runtime.checkpoint.phase === "READ" && runtime.checkpoint.exchangeIndex > exchange) {
+      exchange = runtime.checkpoint.exchangeIndex;
+      runtime.acceptCommand(pattern[exchange % pattern.length]);
+      events.push(...runtime.drainEvents());
+    }
   }
-  return weakerWins / trials;
+  return { events, result: runtime.result(events) };
 }
 
-const TRIALS = 500;
-// 2026-09-09 fix: the original Test B only compared `readerCoach` against
-// `autoCoachPolicy()` — but the two heuristics are nearly identical (same
-// mental-state/context checks), so they were always going to tie regardless
-// of whether commands do anything at all. That made the gate FAIL
-// permanently without telling you why. The actual question ("do commands
-// move the needle over getting none") needs a true no-command baseline.
-const noCommandWinRate = runTrial(undefined, TRIALS, 1000);
-const manualWinRate = runTrial(readerCoach, TRIALS, 1000);
-const autoWinRate = runTrial(autoCoachPolicy(), TRIALS, 1000);
-
-console.log(`Test B — no-command baseline win rate: ${(noCommandWinRate * 100).toFixed(1)}%`);
-console.log(`Test B — manual-coach win rate:        ${(manualWinRate * 100).toFixed(1)}%`);
-console.log(`Test B — auto-coach win rate:           ${(autoWinRate * 100).toFixed(1)}%`);
-console.log(
-  manualWinRate > noCommandWinRate
-    ? "PASS — issuing commands beats getting none at equal-ish rooster strength"
-    : "FAIL — commands don't measurably help over no coaching at all; revisit scoring/compliance tuning before Phase C"
-);
-console.log(
-  `(informational only, not a gate: manual read ${manualWinRate >= autoWinRate ? ">=" : "<"} built-in Auto-Coach — ` +
-    "expected to be close since both read the same signals; a big gap either way is worth a look, not a failure.)"
-);
-
-/**
- * Test D (spec): a legible chain — opponent overcommits, weaker fighter's
- * momentum swings, fight becomes genuinely competitive — not a coinflip and
- * not a guaranteed "press WAIT, magically win." This traces one manual-coach
- * trial's log and reports whether the weaker fighter was ever VULNERABLE/
- * DISADVANTAGE before ending the fight ADVANTAGE/DOMINANT or winning outright.
- */
-function traceComeback(seed: number): void {
-  const weaker = buildFighter("counter", "Weaker", 55, 30);
-  const stronger = buildFighter("aggressive", "Stronger", 80, 60);
-  const result = simulateBattle(weaker, stronger, seededRng(seed), { coachA: readerCoach, coachB: autoCoachPolicy() });
-  const weakerWasBehind = result.log.some((e) => {
-    const weakerIsAttacker = e.attackerId === weaker.id;
-    const weakerState = weakerIsAttacker ? e.attackerState : e.defenderState;
-    return weakerState === "VULNERABLE" || weakerState === "DISADVANTAGE";
-  });
-  const won = result.winnerId === weaker.id;
-  console.log(`Test D trace (seed ${seed}): weaker fighter won = ${won}, was behind at some point = ${weakerWasBehind}, total turns = ${result.totalTurns}`);
-  console.log(won ? "  -> supports a believable comeback path; inspect the log manually for the full chain" : "  -> no comeback this seed; try other seeds before concluding Test D fails");
+let changedPaths = 0;
+for (const seed of seeds) {
+  const pressureA = run(seed, ["PRESS", "COUNTER"]);
+  const pressureB = run(seed, ["PRESS", "COUNTER"]);
+  if (!pressureA.result || !pressureB.result) throw new Error(`Missing terminal result for seed ${seed}`);
+  if (digestSemantic(pressureA) !== digestSemantic(pressureB)) throw new Error(`Determinism failed for seed ${seed}`);
+  const patient = run(seed, ["WAIT", "RECOVER"]);
+  if (!patient.result) throw new Error(`Missing patient terminal result for seed ${seed}`);
+  if (pressureA.result.eventDigest !== patient.result.eventDigest) changedPaths++;
 }
 
-traceComeback(2000);
-traceComeback(2001);
-traceComeback(2002);
-
-console.log("\nTest A (Reading) and Test C (Physical identity) are not automated by this script:");
-console.log("  Test A — run the app manually, watch a fight with tells enabled, and check whether you predict the AI's intent before it resolves.");
-console.log("  Test C — already checkable via scripts/balance-sim.ts against resolvePhysicalProfile() outputs; run it with a massive vs a long-legged same-style pair and confirm the action-mix differs, not just the numbers.");
+console.log(`V2 deterministic replays: ${seeds.length}/${seeds.length}`);
+console.log(`Command-log-sensitive semantic paths: ${changedPaths}/${seeds.length}`);
+if (changedPaths < seeds.length * .25) throw new Error("Canonical commands do not materially affect enough authoritative paths");

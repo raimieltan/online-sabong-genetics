@@ -1,5 +1,5 @@
 import { deriveBehaviorProfile } from "../lib/combat/behavior";
-import { simulateFight } from "../lib/combat.ts";
+import { simulateFight } from "../lib/combat";
 import { generateRandomChicken } from "../lib/chickenGenerator";
 import { FIGHTING_STYLES, type Chicken, type CombatAction, type FightingStyle } from "../lib/types";
 

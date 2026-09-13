@@ -2471,3 +2471,7 @@ Use disciplined rendering, strong art direction, physical animation, intelligent
 
 This is deliberately a **presentation revamp rather than another combat-system rewrite**, so Codex shouldn't start tearing apart the server simulation you just rebuilt. It also gives you the vertical-slice checkpoint before committing to new rooster models—which I think is important because the screenshot suggests lighting/materials are currently hurting them more than their actual geometry. 
 ```
+> Status: SUPPORTING
+> Canonical parent: `docs/combat/COMBAT-CANONICAL.md`
+> Scope: Section 15 — event-to-animation presentation and arena staging.
+> If this document conflicts with the canonical specification, the canonical specification wins.

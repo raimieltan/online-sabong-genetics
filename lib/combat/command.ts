@@ -46,7 +46,7 @@ export function complianceFactor(command: PlayerCommand, identity: CombatIdentit
     command === "PRESS"
       ? identity.aggression
       : command === "COUNTER"
-        ? identity.counterPreference * 0.6 + identity.patience * 0.4
+        ? identity.patience
       : command === "WAIT" || command === "GUARD"
         ? identity.patience
         : command === "RECOVER"

@@ -3968,3 +3968,7 @@ CAREER progression determines what the fighter ultimately becomes.
 Training should therefore feel like the player is coaching and developing an individual fighter rather than feeding points into a stat screen.
 
 That is the core objective of Training System V3.
+> Status: SUPPORTING
+> Canonical parent: `docs/combat/COMBAT-CANONICAL.md`
+> Scope: Section 9.2 and 11.2 — training inputs to effective combat stats and fatigue.
+> If this document conflicts with the canonical specification, the canonical specification wins.

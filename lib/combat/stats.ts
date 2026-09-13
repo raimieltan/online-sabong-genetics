@@ -29,7 +29,32 @@ export function mutationStatMultiplier(chicken: Chicken, key: GeneticStatKey): n
  */
 export function effectiveStat(chicken: Chicken, key: GeneticStatKey): number {
   const base = (chicken.iv[key] * 0.6 + chicken.ev[key] * 0.4) * growthFactor(chicken.growthStage);
-  return base * mutationStatMultiplier(chicken, key) * traitStatModifier(chicken, key);
+  return base * mutationStatMultiplier(chicken, key) * traitStatModifier(chicken, key) * permanentInjuryStatMultiplier(chicken, key);
+}
+
+/** Permanent modifiers are source-id deduplicated and enter the shared stat
+ * pipeline exactly once. A -5 stored penalty means five percent, not a second
+ * flat subtraction in the V2 adapter. */
+export function permanentInjuryStatMultiplier(chicken: Chicken, key: GeneticStatKey): number {
+  const seen = new Set<string>();
+  let percent = 0;
+  for (const injury of chicken.injuries ?? []) {
+    if (!injury.permanent || seen.has(injury.id)) continue;
+    seen.add(injury.id);
+    percent += injury.statPenalty?.[key] ?? 0;
+  }
+  return Math.max(0.5, 1 + percent / 100);
+}
+
+/** Fight-only readiness modifier. Condition and accumulated training fatigue
+ * target recovery-related stats more strongly than power, avoiding one opaque
+ * scalar across every capability. */
+export function effectiveCombatStat(chicken: Chicken, key: GeneticStatKey): number {
+  const condition = Math.max(0, Math.min(100, chicken.condition ?? 100));
+  const fatigue = Math.max(0, Math.min(100, chicken.trainingState?.trainingFatigue ?? 0));
+  const sensitivity = key === "stamina" ? 0.28 : key === "speed" || key === "agility" ? 0.18 : 0.1;
+  const readiness = 1 - (100 - condition) / 100 * sensitivity - fatigue / 100 * sensitivity;
+  return effectiveStat(chicken, key) * Math.max(0.65, readiness);
 }
 
 /** Body-size genetics add mass, which raises the HP pool a bird can soak up (spec: physique → combat). */

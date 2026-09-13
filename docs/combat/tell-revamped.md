@@ -2481,3 +2481,7 @@ CLICK CORRECT BUTTON
 ↓
 WATCH A
 ```
+> Status: SUPPORTING
+> Canonical parent: `docs/combat/COMBAT-CANONICAL.md`
+> Scope: Section 5 — tell-family variants, rig cues, UI anchors, audio, and accessibility.
+> If this document conflicts with the canonical specification, the canonical specification wins.

@@ -31,8 +31,10 @@ function toModifier(ratio: number): number {
 }
 
 export function resolvePhysicalProfile(chicken: Pick<Chicken, "physical">): PhysicalProfile {
-  const { bodyGirth, bodyLength, chest, legLength, legThick, footSize, wingSpan, wingSize, neckThick } =
-    chicken.physical;
+  const raw = chicken.physical;
+  const bodyGirth = raw.body ?? raw.bodyGirth, bodyLength = raw.body ?? raw.bodyLength, chest = raw.body ?? raw.chest;
+  const legLength = raw.legs ?? raw.legLength, legThick = raw.legs ?? raw.legThick, footSize = raw.legs ?? raw.footSize;
+  const wingSpan = raw.wings ?? raw.wingSpan, wingSize = raw.wings ?? raw.wingSize, neckThick = raw.neck ?? raw.neckThick;
 
   const body = (bodyGirth + bodyLength + chest) / 3;
   const wings = (wingSpan + wingSize) / 2;

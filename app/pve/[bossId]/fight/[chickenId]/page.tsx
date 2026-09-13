@@ -1,6 +1,6 @@
 "use client";
 
-import { use, useCallback, useEffect, useState } from "react";
+import { use, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { MatchupScreen } from "@/components/battle/MatchupScreen";
@@ -19,6 +19,7 @@ type Start = {
   bossFighter: Chicken;
   rivalry: import("@/lib/pve/rivalry").RivalryStatus;
   escalationDeltas: import("@/lib/pve/escalation").EscalationDelta[];
+  combatView: Record<string, unknown>;
 };
 
 export default function BossFightPage({ params }: { params: Promise<{ bossId: string; chickenId: string }> }) {
@@ -41,8 +42,7 @@ export default function BossFightPage({ params }: { params: Promise<{ bossId: st
       if (cancelled) return; setEntry(found ?? null); if (!found?.progress.unlocked) { setError("This encounter is locked."); setPhase("error"); return; } const response = await fetch(`/api/pve/bosses/${bossId}/fight/start`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chickenId }) }); if (cancelled) return; if (!response.ok) { setError((await response.json().catch(() => ({}))).error ?? "Unable to prepare this fight."); setPhase("error"); return; } setStart(await response.json()); setPhase("tape");
     } void prepare(); return () => { cancelled = true; };
   }, [bossId, chickenId]);
-  const resolve = useCallback(async () => { if (!start) return; for (; ;) { const response = await fetch(`/api/pve/bosses/${bossId}/fight/${start.sessionId}/step`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }); if (!response.ok) { setError("The fight connection was lost."); setPhase("error"); return; } const step = await response.json(); if (step.fightOver) { setOutcome(step.outcome); return; } } }, [bossId, start]);
-  useEffect(() => { if (phase !== "intro") return; const timer = window.setTimeout(() => { setPhase("battle"); void resolve(); }, 5200); return () => window.clearTimeout(timer); }, [phase, resolve]);
+  useEffect(() => { if (phase !== "intro") return; const timer = window.setTimeout(() => setPhase("battle"), 5200); return () => window.clearTimeout(timer); }, [phase]);
   if (phase === "loading") return <main className="min-h-screen bg-(--color-ink) py-20 text-center text-(--color-text-muted)">Preparing the event…</main>;
   if (phase === "error" || !entry) return <main className="min-h-screen bg-(--color-ink) py-20 text-center"><p className="text-red-300">{error ?? "Encounter unavailable."}</p><Link className="mt-4 inline-block text-(--color-gold-bright)" href={`/pve/${bossId}`}>Return to encounter</Link></main>;
   const p = entry.boss.presentation;
@@ -50,7 +50,7 @@ export default function BossFightPage({ params }: { params: Promise<{ bossId: st
   if (!start) return null;
   if (phase === "intro") return <ArenaIntro player={start.chicken} boss={start.bossFighter} entry={entry} start={start} />;
   const consequence = outcome ? campaignConsequence(outcome.won, entry.boss, outcome.rewards.firstClear, outcome.rivalry) : null;
-  return <main className="min-h-screen bg-(--color-ink)"><div className="relative"><ContinuousBattle chickenA={start.chicken} chickenB={start.bossFighter} matchSeed={start.matchSeed} autoStart onComplete={() => { setPresentationComplete(true); setPhase("result"); }} />{phase === "result" && presentationComplete && outcome && consequence && <PostFightOverlay result={outcome.result} playerChicken={outcome.chicken as Chicken} creditsEarned={outcome.rewards.credits} battleReport={outcome.battleReport} actionLabel="Return to Road" onContinue={() => router.push("/pve")} campaign={{ ...consequence, bossName: entry.boss.name, unlocked: outcome.won && outcome.rewards.firstClear ? `Next fight: ${nextBossName(entry.boss.order)}` : undefined }} />}</div></main>;
+  return <main className="min-h-screen bg-(--color-ink)"><div className="relative"><ContinuousBattle sessionId={start.sessionId} initialView={start.combatView as never} onComplete={(result, settlement) => { const payload = settlement as unknown as BossFightResult | null; if (payload) setOutcome({ ...payload, result: (payload as unknown as { legacyResult: BossFightResult["result"] }).legacyResult, won: (result as { winnerId: string | null }).winnerId === start.chicken.id, bossFighter: start.bossFighter, rivalry: start.rivalry } as BossFightResult); setPresentationComplete(true); setPhase("result"); }} />{phase === "result" && presentationComplete && outcome && consequence && <PostFightOverlay result={outcome.result} playerChicken={outcome.chicken as Chicken} creditsEarned={outcome.rewards.credits} battleReport={outcome.battleReport} actionLabel="Return to Road" onContinue={() => router.push("/pve")} campaign={{ ...consequence, bossName: entry.boss.name, unlocked: outcome.won && outcome.rewards.firstClear ? `Next fight: ${nextBossName(entry.boss.order)}` : undefined }} />}</div></main>;
 }
 
 function ArenaIntro({ player, boss, entry, start }: { player: Chicken; boss: Chicken; entry: BossListEntry; start: Start }) {

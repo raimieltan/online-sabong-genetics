@@ -175,13 +175,13 @@ test("physical modifiers nudge but do not swamp equal-stat matchups", () => {
     id: "sprinter",
     iv: statBlock(60),
     ev: statBlock(60),
-    physical: { body: 0.85, neck: 1, legs: 1.35, tail: 1, wings: 1.0 },
+    physical: { ...physicalBlock(1), body: 0.85, neck: 1, legs: 1.35, tail: 1, wings: 1.0 },
   });
   const tank = makeChicken({
     id: "tank",
     iv: statBlock(60),
     ev: statBlock(60),
-    physical: { body: 1.35, neck: 1, legs: 0.85, tail: 1, wings: 0.9 },
+    physical: { ...physicalBlock(1), body: 1.35, neck: 1, legs: 0.85, tail: 1, wings: 0.9 },
   });
 
   let sprinterWins = 0;

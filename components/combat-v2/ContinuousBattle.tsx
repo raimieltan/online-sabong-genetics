@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import * as THREE from 'three';
 import type { Chicken } from '@/lib/types';
-import { ACTIONS, AWAKENING_DURATION_TICKS, CombatSession, COMBAT_VERSION, TACTICAL_MODES, type TacticalMode, type MatchResult, type AwakeningType } from '@/lib/combat-v2';
+import { ACTIONS, AWAKENING_DURATION_TICKS, CombatSession, COMBAT_VERSION, type TacticalMode, type MatchResult, type AwakeningType } from '@/lib/combat-v2';
 import { toCombatV2Snapshot } from '@/lib/combatV2Snapshot';
 import type { AnimIntent, AnimState } from '@/lib/animation/types';
 import type { FighterAnim } from '@/components/chicken3d/ChickenModel';
@@ -21,6 +21,7 @@ import { CommandWheel, type CommandFeedback } from '@/components/combat-v2/hud/C
 import { TellLegend } from '@/components/combat-v2/hud/TellLegend';
 import { engagementToUiPhase, describeReadTell, injuriesToStatusIcons, fighterSubtitle, type CombatUiPhase, type TellUiState } from '@/components/combat-v2/hud/uiAdapter';
 import type { ReadTellType } from '@/lib/combat-v2';
+import type { AuthoritativeCombatResult, CoachingCommand, PublicFighterState } from '@/lib/combat-v2/canonical';
 
 const pose = (): FighterAnim => ({ offsetX: 0, offsetY: 0, offsetZ: 0, rot: 0, yaw: 0, roll: 0, scaleX: 1, scaleY: 1, flash: 0, wingPhase: 0, legPhase: 0 });
 const animation: Record<string, AnimState> = { neutral: 'ready', advancing: 'walk', retreating: 'backstep', circling: 'walk', feinting: 'tell_risk', defending: 'ready', evading: 'backstep', recovering: 'recovery', staggered: 'stagger', down: 'death', finished: 'victory', peck_strike: 'peck_attack', spur_lunge: 'heavy_kick', jump_kick: 'jump_attack', flying_spur: 'flying_kick', wing_counter: 'wing_strike', guard: 'ready', sidestep: 'backstep', feint: 'tell_risk' };
@@ -59,7 +60,182 @@ const TELL_LEAN: Partial<Record<ReadTellType, { rot?: number; scaleY?: number; y
 const AWAKENING_LABELS: Record<string, string> = { unbreakable: 'Unbreakable', berserker: 'Berserker', 'flow-state': 'Flow State', 'second-wind': 'Second Wind', apex: 'Apex' };
 
 /** Production presentation for the deterministic V2 combat session. */
-export default function ContinuousBattle({ chickenA, chickenB, matchSeed = 81726354, autoStart = false, showControls = true, onComplete, audioEnabled = true, onToggleAudio }: { chickenA: Chicken; chickenB: Chicken; matchSeed?: number; autoStart?: boolean; showControls?: boolean; onComplete?: (result: MatchResult) => void; audioEnabled?: boolean; onToggleAudio?: () => void }) {
+type AuthoritativeView = {
+  sessionId: string; status: string; revision: number; phase: string | null; exchangeIndex: number;
+  logicalTick: number; activeCommand: CoachingCommand; latestEventCursor: number; fighters: [Chicken, Chicken];
+  projection: PublicFighterState[]; events: { cursor: number; type: string; payload: Record<string, unknown> }[];
+  result: AuthoritativeCombatResult | null; settlement: Record<string, unknown> | null;
+  allowedActions: { command: boolean; sync: boolean };
+};
+
+type ContinuousBattleProps = {
+  chickenA?: Chicken; chickenB?: Chicken; matchSeed?: number; sessionId?: string; initialView?: AuthoritativeView;
+  autoStart?: boolean; showControls?: boolean; onComplete?: (result: MatchResult | AuthoritativeCombatResult, settlement?: Record<string, unknown> | null) => void;
+  audioEnabled?: boolean; onToggleAudio?: () => void;
+};
+
+// The HUD receives network state at 10 Hz, but the expensive Three.js tree
+// only consumes stable fighter assets and mutable animation refs. Memoizing
+// this boundary prevents every sync response from reconciling the full arena.
+const AuthoritativeBattleStage = memo(function AuthoritativeBattleStage({
+  chickenA, chickenB, animA, animB, intentA, intentB, screenAnchorA, screenAnchorB,
+}: {
+  chickenA: Chicken; chickenB: Chicken;
+  animA: RefObject<FighterAnim>; animB: RefObject<FighterAnim>;
+  intentA: RefObject<AnimIntent | null>; intentB: RefObject<AnimIntent | null>;
+  screenAnchorA: RefObject<ScreenAnchor>; screenAnchorB: RefObject<ScreenAnchor>;
+}) {
+  return <BattleStage3D simulationDriven fighterA={chickenA} fighterB={chickenB} animA={animA} animB={animB} intentA={intentA} intentB={intentB} screenAnchorA={screenAnchorA} screenAnchorB={screenAnchorB} />;
+});
+
+/** Production uses the durable authoritative player. The local engine remains
+ * available only for explicitly supplied sandbox chickens and is labelled as
+ * non-authoritative below. */
+export default function ContinuousBattle(props: ContinuousBattleProps) {
+  if (props.sessionId) return <AuthoritativeContinuousBattle {...props} sessionId={props.sessionId} />;
+  if (!props.chickenA || !props.chickenB) throw new Error('Authoritative combat requires a sessionId');
+  return <SandboxContinuousBattle {...props} chickenA={props.chickenA} chickenB={props.chickenB} />;
+}
+
+function AuthoritativeContinuousBattle({ sessionId, initialView, onComplete, audioEnabled = true, onToggleAudio }: ContinuousBattleProps & { sessionId: string }) {
+  const [view, setView] = useState<AuthoritativeView | null>(initialView ?? null);
+  const [sceneFighters, setSceneFighters] = useState<[Chicken, Chicken] | null>(() => initialView?.fighters ?? null);
+  const [error, setError] = useState('');
+  const cursor = useRef(initialView?.latestEventCursor ?? 0);
+  const completed = useRef(false);
+  const onCompleteRef = useRef(onComplete);
+  const animA = useRef(pose()), animB = useRef(pose());
+  const targetA = useRef(pose()), targetB = useRef(pose());
+  const intentA = useRef<AnimIntent | null>(null), intentB = useRef<AnimIntent | null>(null);
+  const actionA = useRef<string | null>(null), actionB = useRef<string | null>(null);
+  const screenAnchorA = useRef<ScreenAnchor>({ xPct: 14, yPct: 38, visible: true });
+  const screenAnchorB = useRef<ScreenAnchor>({ xPct: 86, yPct: 38, visible: true });
+  useEffect(() => { onCompleteRef.current = onComplete; }, [onComplete]);
+
+  // Network snapshots are authoritative targets, not animation frames. The
+  // render loop eases mutable transforms toward those targets so a DB/network
+  // round trip can never turn into visible movement stutter.
+  useEffect(() => {
+    let frame = 0;
+    let previous = performance.now();
+    const animate = (now: number) => {
+      const dt = Math.min(0.05, Math.max(0, (now - previous) / 1000));
+      previous = now;
+      const blend = 1 - Math.exp(-14 * dt);
+      for (const [current, target] of [[animA.current, targetA.current], [animB.current, targetB.current]] as const) {
+        current.offsetX += (target.offsetX - current.offsetX) * blend;
+        current.offsetY += (target.offsetY - current.offsetY) * blend;
+        current.offsetZ += (target.offsetZ - current.offsetZ) * blend;
+        const yawDelta = Math.atan2(Math.sin(target.yaw - current.yaw), Math.cos(target.yaw - current.yaw));
+        current.yaw += yawDelta * blend;
+      }
+      frame = requestAnimationFrame(animate);
+    };
+    frame = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(frame);
+  }, []);
+
+  useEffect(() => {
+    let stopped = false;
+    let timer: number | undefined;
+    const sync = async () => {
+      try {
+        const response = await fetch(`/api/combat/sessions/${sessionId}/sync`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ afterCursor: cursor.current }) });
+        const body = await response.json();
+        if (!response.ok) throw new Error(body.error ?? 'Combat sync failed');
+        if (stopped) return;
+        const next = body as AuthoritativeView;
+        const newEvents = next.events.filter(event => event.cursor > cursor.current).sort((a, b) => a.cursor - b.cursor);
+        if (newEvents.length && newEvents[0].cursor !== cursor.current + 1) {
+          const recovery = await fetch(`/api/combat/sessions/${sessionId}?after=${cursor.current}`);
+          if (!recovery.ok) throw new Error('Authoritative event gap could not be recovered');
+          Object.assign(next, await recovery.json());
+        }
+        cursor.current = next.latestEventCursor;
+        // Drive discrete clips from the ordered semantic stream. This keeps
+        // quick or repeated strikes visible even when both occur between two
+        // projection samples.
+        for (const event of newEvents) {
+          if (event.type !== 'ACTION_STARTED' && event.type !== 'ACTION_CHAINED') continue;
+          const index = next.projection.findIndex(fighter => fighter.fighterId === event.payload.fighterId);
+          if (index < 0) continue;
+          const state = animation[String(event.payload.actionId ?? '')] ?? 'ready';
+          const intent: AnimIntent = { state, startedAt: event.cursor, speed: 1, facing: index === 0 ? 'right' : 'left', tacticalMode: index === 0 ? commandModeForPresentation(next.activeCommand) : 'balanced', fatal: false };
+          if (index === 0) { actionA.current = state; intentA.current = intent; }
+          else { actionB.current = state; intentB.current = intent; }
+        }
+        if (!sceneFighters) setSceneFighters(next.fighters);
+        next.projection.forEach((fighter, index) => {
+          const target = index === 0 ? targetA.current : targetB.current;
+          target.offsetX = (fighter.position.x - (index === 0 ? -WORLD_HALF_GAP : WORLD_HALF_GAP)) / ANIM_PX_TO_WORLD;
+          target.offsetY = -fighter.position.y / ANIM_PX_TO_WORLD;
+          target.offsetZ = fighter.position.z / ANIM_PX_TO_WORLD;
+          target.yaw = -fighter.facing + (index === 0 ? 0 : Math.PI);
+          const state = animation[fighter.actionId ?? fighter.mentalState] ?? 'ready';
+          const previousAction = index === 0 ? actionA : actionB;
+          if (state !== previousAction.current) {
+            previousAction.current = state;
+            const intent: AnimIntent = { state, startedAt: next.logicalTick, speed: 1, facing: index === 0 ? 'right' : 'left', tacticalMode: index === 0 ? commandModeForPresentation(next.activeCommand) : 'balanced', fatal: fighter.health <= 0 };
+            if (index === 0) intentA.current = intent; else intentB.current = intent;
+          }
+        });
+        setView(next);
+        if (next.result && !completed.current) { completed.current = true; onCompleteRef.current?.(next.result, next.settlement); }
+        // Keep authoritative targets frequent enough that the frame-rate
+        // interpolator never catches and waits on the next snapshot.
+        if (next.allowedActions.sync) timer = window.setTimeout(sync, 100);
+      } catch (cause) { if (!stopped) setError(cause instanceof Error ? cause.message : 'Combat connection lost'); }
+    };
+    void sync();
+    return () => { stopped = true; if (timer) clearTimeout(timer); };
+  }, [sceneFighters, sessionId]);
+
+  const issue = useCallback(async (command: CoachingCommand) => {
+    const response = await fetch(`/api/combat/sessions/${sessionId}/commands`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ commandId: crypto.randomUUID(), command, observedRevision: view?.revision ?? 0 }) });
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      setError(body.error === 'COMMAND_LOCKED' ? 'Instruction locked for this exchange.' : body.error ?? 'Command rejected');
+      return;
+    }
+    setError('');
+  }, [sessionId, view?.revision]);
+
+  useEffect(() => {
+    const commands = ['PRESS', 'WAIT', 'COUNTER', 'RECOVER'] as const;
+    const onKeyDown = (event: KeyboardEvent) => {
+      const command = commands[Number(event.key) - 1];
+      if (command && view?.allowedActions.command) { event.preventDefault(); void issue(command); }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [issue, view?.allowedActions.command]);
+
+  if (!view || !sceneFighters) return <div className="flex min-h-screen items-center justify-center bg-(--color-ink) text-(--color-text-muted)">{error || 'Connecting to the authoritative arena…'}</div>;
+  const [chickenA, chickenB] = sceneFighters;
+  const [left, right] = view.projection;
+  const tell = right?.readTells[0];
+  return <section className="relative min-h-screen overflow-hidden bg-[#090706] text-white">
+    <div className="absolute inset-0"><AuthoritativeBattleStage chickenA={chickenA} chickenB={chickenB} animA={animA} animB={animB} intentA={intentA} intentB={intentB} screenAnchorA={screenAnchorA} screenAnchorB={screenAnchorB} /></div>
+    <div className="pointer-events-none absolute inset-x-4 top-4 z-20 flex justify-between gap-6">
+      <FighterHud chicken={chickenA} subtitle={fighterSubtitle(chickenA)} hp={left?.health ?? 0} maxHp={left?.maxHealth ?? 1} stamina={left?.stamina ?? 0} maxStamina={100} statuses={injuriesToStatusIcons(chickenA.injuries)} side="left" />
+      <RoundHeader elapsedSeconds={view.logicalTick / 60} phase={view.phase ?? 'TERMINAL'} statusLabel={`● Authoritative · Exchange ${view.exchangeIndex + 1}`} />
+      <FighterHud chicken={chickenB} subtitle={fighterSubtitle(chickenB)} hp={right?.health ?? 0} maxHp={right?.maxHealth ?? 1} stamina={right?.stamina ?? 0} maxStamina={100} statuses={injuriesToStatusIcons(chickenB.injuries)} side="right" />
+    </div>
+    {tell && <div className="pointer-events-none absolute left-1/2 top-1/4 z-30 -translate-x-1/2 rounded-lg border border-amber-300/50 bg-black/70 px-3 py-2 text-xs uppercase tracking-wider">{describeReadTell(tell.type as ReadTellType, tell.strength).label}</div>}
+    <div className="absolute inset-x-0 bottom-5 z-30 flex flex-col items-center gap-2">
+      <p className="text-xs uppercase tracking-[.2em] text-amber-200">{view.phase === 'READ' ? `Instruction: ${view.activeCommand} · Change freely until commit` : `Locked: ${view.activeCommand}`}</p>
+      <div className="flex flex-wrap justify-center gap-2">{(['PRESS', 'WAIT', 'COUNTER', 'RECOVER'] as const).map((command, index) => <button key={command} disabled={!view.allowedActions.command} onClick={() => void issue(command)} className={`rounded-lg border px-4 py-3 text-sm font-bold ${view.activeCommand === command ? 'border-amber-300 bg-amber-900/70' : 'border-white/25 bg-black/70'} disabled:opacity-40`}><span className="mr-2 text-[10px] text-white/50">{index + 1}</span>{command}</button>)}</div>
+      {error && <p className="rounded bg-red-950/80 px-3 py-1 text-xs text-red-200">{error}</p>}
+    </div>
+    {onToggleAudio && <button type="button" onClick={onToggleAudio} className="absolute right-5 top-28 z-30 rounded-full bg-black/60 px-3 py-2">{audioEnabled ? '🔊' : '🔇'}</button>}
+  </section>;
+}
+
+function commandModeForPresentation(command: CoachingCommand): TacticalMode {
+  return command === 'PRESS' ? 'pressure' : command === 'WAIT' ? 'defensive' : command === 'COUNTER' ? 'counter' : 'recover';
+}
+
+function SandboxContinuousBattle({ chickenA, chickenB, matchSeed = 81726354, autoStart = false, showControls = true, onComplete, audioEnabled = true, onToggleAudio }: { chickenA: Chicken; chickenB: Chicken; matchSeed?: number; autoStart?: boolean; showControls?: boolean; onComplete?: (result: MatchResult) => void; audioEnabled?: boolean; onToggleAudio?: () => void }) {
   const [display, setDisplay] = useState({ tick: 0, phase: 'paused', result: '', fighters: [] as FighterDisplay[] });
   const [stats, setStats] = useState<MatchStats>({ hits: [0, 0], damage: [0, 0], lastDamage: null });
   const [bursts, setBursts] = useState<CommentaryBurst[]>([]);
@@ -69,7 +245,7 @@ export default function ContinuousBattle({ chickenA, chickenB, matchSeed = 81726
   const [uiPhase, setUiPhase] = useState<CombatUiPhase>('circle');
   const [tell, setTell] = useState<TellUiState | null>(null);
   const [commandFeedback, setCommandFeedback] = useState<CommandFeedback | null>(null);
-  const feedbackTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const feedbackTimer = useRef<number | null>(null);
   const sessionRef = useRef<CombatSession | null>(null);
   const completedRef = useRef(false);
   const burstId = useRef(0);
