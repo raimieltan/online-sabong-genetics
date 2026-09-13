@@ -214,6 +214,8 @@ export interface AnimContext {
   wingFlapIntensity: number;
   /** Move variant for attack states that share a base state. */
   moveKind?: string;
+  /** Stable 0..2 visual variation for repeated attacks. It never affects combat. */
+  attackVariant?: number;
   stagger?: string;
   /** Target head yaw toward the opponent in the model's local frame (rad, pre-clamped). */
   aimYaw: number;

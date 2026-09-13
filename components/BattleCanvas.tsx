@@ -952,6 +952,14 @@ export default function BattleCanvas({
                 new THREE.Vector3(fallbackX, -0.2, fallbackZ);
               const normal = new THREE.Vector3(knockDirX, 0.15, knockDirZ);
               vfxRef.current.spawn(vfxKind, pos, normal);
+              const bloodIntensity = entry.isCritical
+                ? 1.8
+                : entry.isCrit
+                  ? 1.35
+                  : entry.stagger === "heavy" || entry.stagger === "knockdown"
+                    ? 1.2
+                    : 0.8;
+              vfxRef.current.spawnBlood(pos, normal, bloodIntensity);
             }
 
             debugRef.current.stagger = entry.stagger;

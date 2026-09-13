@@ -91,15 +91,16 @@ type ContinuousBattleProps = {
 // only consumes stable fighter assets and mutable animation refs. Memoizing
 // this boundary prevents every sync response from reconciling the full arena.
 const AuthoritativeBattleStage = memo(function AuthoritativeBattleStage({
-  chickenA, chickenB, animA, animB, intentA, intentB, awakeningA, awakeningB, screenAnchorA, screenAnchorB,
+  chickenA, chickenB, animA, animB, intentA, intentB, awakeningA, awakeningB, screenAnchorA, screenAnchorB, vfx,
 }: {
   chickenA: Chicken; chickenB: Chicken;
   animA: RefObject<FighterAnim>; animB: RefObject<FighterAnim>;
   intentA: RefObject<AnimIntent | null>; intentB: RefObject<AnimIntent | null>;
   awakeningA: RefObject<AwakeningType | null>; awakeningB: RefObject<AwakeningType | null>;
   screenAnchorA: RefObject<ScreenAnchor>; screenAnchorB: RefObject<ScreenAnchor>;
+  vfx: RefObject<ImpactVFXHandle | null>;
 }) {
-  return <BattleStage3D simulationDriven fighterA={chickenA} fighterB={chickenB} animA={animA} animB={animB} intentA={intentA} intentB={intentB} awakeningA={awakeningA} awakeningB={awakeningB} screenAnchorA={screenAnchorA} screenAnchorB={screenAnchorB} />;
+  return <BattleStage3D simulationDriven fighterA={chickenA} fighterB={chickenB} animA={animA} animB={animB} intentA={intentA} intentB={intentB} awakeningA={awakeningA} awakeningB={awakeningB} screenAnchorA={screenAnchorA} screenAnchorB={screenAnchorB} vfxRef={vfx} />;
 });
 
 /** Production uses the durable authoritative player. The local engine remains
@@ -130,6 +131,7 @@ function AuthoritativeContinuousBattle({ sessionId, initialView, onComplete, aud
   const actionA = useRef<string | null>(null), actionB = useRef<string | null>(null);
   const screenAnchorA = useRef<ScreenAnchor>({ xPct: 14, yPct: 38, visible: true });
   const screenAnchorB = useRef<ScreenAnchor>({ xPct: 86, yPct: 38, visible: true });
+  const vfx = useRef<ImpactVFXHandle | null>(null);
   useEffect(() => { onCompleteRef.current = onComplete; }, [onComplete]);
 
   // Network snapshots are authoritative targets, not animation frames. The
@@ -177,18 +179,31 @@ function AuthoritativeContinuousBattle({ sessionId, initialView, onComplete, aud
         // projection samples.
         for (const event of newEvents) {
           if (event.type === 'HEALTH_CHANGED') {
-            const defenderIndex = next.projection.findIndex(fighter => fighter.fighterId === event.payload.fighterId);
+            const defenderId = String(event.payload.targetId ?? event.payload.fighterId ?? '');
+            const attackerId = String(event.payload.fighterId ?? '');
+            const defenderIndex = next.projection.findIndex(fighter => fighter.fighterId === defenderId);
+            const attackerIndex = next.projection.findIndex(fighter => fighter.fighterId === attackerId);
             const amount = Math.max(0, Math.round(Number(event.payload.value ?? 0)));
             if (defenderIndex >= 0 && amount > 0) {
               const anchor = defenderIndex === 0 ? screenAnchorA.current : screenAnchorB.current;
               setDamageCounters(previous => [...previous.slice(-4), { id: event.cursor, amount, side: defenderIndex === 0 ? 'left' : 'right', anchor: { ...anchor } }]);
+              const defender = next.projection[defenderIndex];
+              const attacker = next.projection[attackerIndex >= 0 ? attackerIndex : 1 - defenderIndex];
+              const point = new THREE.Vector3(defender.position.x, -2.1 + defender.position.y, defender.position.z);
+              const normal = new THREE.Vector3(
+                defender.position.x - attacker.position.x,
+                0.15,
+                defender.position.z - attacker.position.z,
+              ).normalize();
+              vfx.current?.spawn(amount >= 9 ? 'heavy_impact' : 'light_impact', point, normal);
+              vfx.current?.spawnBlood(point, normal, amount >= 9 ? 1.45 : 0.85);
             }
           }
           if (event.type !== 'ACTION_STARTED' && event.type !== 'ACTION_CHAINED') continue;
           const index = next.projection.findIndex(fighter => fighter.fighterId === event.payload.fighterId);
           if (index < 0) continue;
           const state = animation[String(event.payload.actionId ?? '')] ?? 'ready';
-          const intent: AnimIntent = { state, startedAt: event.cursor, speed: 1, facing: index === 0 ? 'right' : 'left', tacticalMode: index === 0 ? commandModeForPresentation(next.activeCommand) : 'balanced', fatal: false };
+          const intent: AnimIntent = { state, startedAt: event.cursor, speed: 1, moveKind: String(event.payload.actionId ?? state), facing: index === 0 ? 'right' : 'left', tacticalMode: index === 0 ? commandModeForPresentation(next.activeCommand) : 'balanced', fatal: false };
           if (index === 0) { actionA.current = state; intentA.current = intent; }
           else { actionB.current = state; intentB.current = intent; }
         }
@@ -203,7 +218,7 @@ function AuthoritativeContinuousBattle({ sessionId, initialView, onComplete, aud
           const previousAction = index === 0 ? actionA : actionB;
           if (state !== previousAction.current) {
             previousAction.current = state;
-            const intent: AnimIntent = { state, startedAt: next.logicalTick, speed: 1, facing: index === 0 ? 'right' : 'left', tacticalMode: index === 0 ? commandModeForPresentation(next.activeCommand) : 'balanced', fatal: fighter.health <= 0 };
+            const intent: AnimIntent = { state, startedAt: next.logicalTick, speed: 1, moveKind: fighter.actionId ?? fighter.mentalState, facing: index === 0 ? 'right' : 'left', tacticalMode: index === 0 ? commandModeForPresentation(next.activeCommand) : 'balanced', fatal: fighter.health <= 0 };
             if (index === 0) intentA.current = intent; else intentB.current = intent;
           }
         });
@@ -285,7 +300,7 @@ function AuthoritativeContinuousBattle({ sessionId, initialView, onComplete, aud
   const unlockedAwakenings = left?.unlockedAwakenings ?? [];
   const canAwaken = view.allowedActions.awakening && unlockedAwakenings.length > 0;
   return <section className="relative h-[calc(100dvh-5.5rem)] min-h-[560px] overflow-hidden bg-[#090706] text-white">
-    <div className="absolute inset-0"><AuthoritativeBattleStage chickenA={chickenA} chickenB={chickenB} animA={animA} animB={animB} intentA={intentA} intentB={intentB} awakeningA={awakeningA} awakeningB={awakeningB} screenAnchorA={screenAnchorA} screenAnchorB={screenAnchorB} /></div>
+    <div className="absolute inset-0"><AuthoritativeBattleStage chickenA={chickenA} chickenB={chickenB} animA={animA} animB={animB} intentA={intentA} intentB={intentB} awakeningA={awakeningA} awakeningB={awakeningB} screenAnchorA={screenAnchorA} screenAnchorB={screenAnchorB} vfx={vfx} /></div>
     <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_38%,rgba(7,5,3,.17)_72%,rgba(3,2,1,.64)_100%)]" />
     <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/55 via-transparent to-black/65" />
     <div className="pointer-events-none absolute inset-x-4 top-3 z-20 flex items-start justify-between gap-3 sm:inset-x-6">
@@ -416,11 +431,14 @@ function SandboxContinuousBattle({ chickenA, chickenB, matchSeed = 81726354, aut
         }
         if (event.type === 'DAMAGE' && targetIndex >= 0) {
           const amount = Math.max(0, Math.round(event.value ?? 0)); damageTick[fighterIndex] = event.tick;
-          const point = session.state.fighters[fighterIndex]?.position;
-          if (point) {
+          const point = session.state.fighters[targetIndex]?.position;
+          const attackerPoint = session.state.fighters[fighterIndex]?.position;
+          if (point && attackerPoint) {
             const impactPoint = new THREE.Vector3(point.x, -2.1 + point.y, point.z);
-            vfx.current?.spawn(presentation.vfx ?? (amount > 8 ? 'heavy_impact' : 'light_impact'), impactPoint);
+            const normal = new THREE.Vector3(point.x - attackerPoint.x, 0.15, point.z - attackerPoint.z).normalize();
+            vfx.current?.spawn(presentation.vfx ?? (amount > 8 ? 'heavy_impact' : 'light_impact'), impactPoint, normal);
             if (presentation.secondaryVfx) vfx.current?.spawn(presentation.secondaryVfx, impactPoint);
+            vfx.current?.spawnBlood(impactPoint, normal, amount > 8 ? 1.45 : 0.85);
           }
           setStats(previous => ({ ...previous, damage: previous.damage.map((value, index) => index === targetIndex ? value + amount : value) as [number, number], lastDamage: { id: event.tick, amount, side: fighterIndex === 0 ? 'left' : 'right' } }));
           const anchor = fighterIndex === 0 ? screenAnchorA.current : screenAnchorB.current;
@@ -475,7 +493,7 @@ function SandboxContinuousBattle({ chickenA, chickenB, matchSeed = 81726354, aut
         const flowStep = fighter.awakening?.type === 'flow-state' && (fighter.state === 'evading' || runtime?.id === 'sidestep')
           ? (runtime?.startedTick ?? fighter.stateEnteredTick) * 10 + 1
           : undefined;
-        const intent: AnimIntent = { state: animation[(aerial?.phase === 'LAND' ? undefined : runtime)?.id ?? fighter.state] ?? 'ready', startedAt: (runtime?.startedTick ?? fighter.stateEnteredTick) * 1000 / 60, speed: 1, facing: index === 0 ? 'right' : 'left', simulationProgress: progress, tacticalMode: fighter.tacticalMode, fatal: fighter.state === 'down', afterimageKey: recentMirageEvade ?? flowStep };
+        const intent: AnimIntent = { state: animation[(aerial?.phase === 'LAND' ? undefined : runtime)?.id ?? fighter.state] ?? 'ready', startedAt: (runtime?.startedTick ?? fighter.stateEnteredTick) * 1000 / 60, speed: 1, moveKind: runtime?.id ?? fighter.state, facing: index === 0 ? 'right' : 'left', simulationProgress: progress, tacticalMode: fighter.tacticalMode, fatal: fighter.state === 'down', afterimageKey: recentMirageEvade ?? flowStep };
         if (aerial && state.phase !== 'finished') intent.aerial = { ...aerial, tick: state.tick + alpha, actionId: runtime?.id, strikeProgress: runtime?.phase === 'active' && action ? (state.tick + alpha - runtime.startedTick - action.startupTicks) / action.activeTicks : undefined, phaseProgress: (state.tick + alpha - aerial.phaseTick) / (aerial.phase === 'PRELOAD' ? action?.aerial?.takeoffTick ?? 6 : aerial.phase === 'STRIKE_ACTIVE' ? action?.activeTicks ?? 6 : 8) };
         if (index === 0) intentA.current = intent; else intentB.current = intent;
         if (index === 0) awakeningA.current = fighter.awakening?.type ?? null; else awakeningB.current = fighter.awakening?.type ?? null;

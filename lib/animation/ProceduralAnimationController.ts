@@ -15,6 +15,7 @@ import * as THREE from "three";
 
 import { ANIMATIONS } from "./animations/index";
 import { aerialAttack } from './animations/aerial';
+import { applyAttackVariation } from "./animations/attackVariation";
 import { applyTacticalPosture } from './animations/tacticalPosture';
 import { LayerRig } from "./layers";
 import { clamp, clamp01, smoothstep } from "./math";
@@ -69,6 +70,9 @@ export class ProceduralAnimationController {
 
   private playbackSpeed = 1;
   private locoPhase = 0;
+  private attackVariant = 0;
+  private simulationKey = "";
+  private simulationBlend = 1;
   private facing: "left" | "right" = "right";
   private gains: AnimationGains;
   private alive = true;
@@ -136,6 +140,7 @@ export class ProceduralAnimationController {
     const accepted = this.sm.request(target, finished, blendScale);
     if (!accepted) return;
     this.playbackSpeed = Math.max(0.2, intent.speed || 1);
+    this.attackVariant = variantFor(intent);
     copyPose(this.poseOut, this.poseBlendFrom);
     if (target === "death") this.alive = false;
     const power = HIT_POWER[target];
@@ -166,11 +171,21 @@ export class ProceduralAnimationController {
     this.sm.update(dt);
     const simulation = frame.simulationIntent;
     if (simulation) {
+      const simulationKey = `${simulation.state}:${simulation.startedAt}`;
+      if (simulationKey !== this.simulationKey) {
+        copyPose(this.poseOut, this.poseBlendFrom);
+        this.simulationKey = simulationKey;
+        this.simulationBlend = 0;
+      }
       this.sm.current = simulation.state;
-      this.sm.transitionT = 1;
       this.sm.stateTime = (simulation.simulationProgress ?? 0) * ANIMATIONS[simulation.state].duration;
       this.playbackSpeed = 1;
       this.alive = !simulation.fatal;
+      const blendDuration = 0.08 * clamp(this.gains.inertia, 0.9, 1.4);
+      this.simulationBlend = clamp01(this.simulationBlend + dt / blendDuration);
+    } else {
+      this.simulationKey = "";
+      this.simulationBlend = 1;
     }
 
     // --- internal auto-transitions ------------------------------------------
@@ -211,6 +226,8 @@ export class ProceduralAnimationController {
     ctx.wingFlapIntensity = flapIntensityFor(state, frame, simulation);
     ctx.aimYaw = frame.aimYaw;
     ctx.alive = this.alive;
+    ctx.moveKind = simulation?.moveKind;
+    ctx.attackVariant = simulation ? variantFor(simulation) : this.attackVariant;
     ctx.stateTime = this.sm.stateTime * this.playbackSpeed;
 
     if (state === "walk" || state === "run") {
@@ -227,12 +244,14 @@ export class ProceduralAnimationController {
     resetPose(this.poseBase);
     if (simulation?.aerial && !simulation.fatal) aerialAttack(simulation.aerial, this.poseBase);
     else def.fn(ctx.t, ctx, this.poseBase);
+    if (!simulation?.aerial && !simulation?.fatal) applyAttackVariation(state, ctx.t, ctx, this.poseBase);
     if (simulation?.tacticalMode && !simulation.aerial && !simulation.fatal) {
       applyTacticalPosture(simulation.tacticalMode, state, ctx, this.poseBase);
     }
 
-    if (this.sm.transitionT < 1) {
-      lerpPose(this.poseBlendFrom, this.poseBase, smoothstep(this.sm.transitionT), this.poseOut);
+    const transitionT = simulation ? this.simulationBlend : this.sm.transitionT;
+    if (transitionT < 1) {
+      lerpPose(this.poseBlendFrom, this.poseBase, smoothstep(transitionT), this.poseOut);
     } else {
       copyPose(this.poseBase, this.poseOut);
     }
@@ -253,6 +272,17 @@ export class ProceduralAnimationController {
       bone.position.set(rest.pos.x + d.px, rest.pos.y + d.py, rest.pos.z + d.pz);
     }
   }
+}
+
+/** Stable visual variety from an authoritative action identity. */
+function variantFor(intent: AnimIntent): number {
+  const key = `${intent.moveKind ?? intent.state}:${intent.startedAt}`;
+  let hash = 2166136261;
+  for (let i = 0; i < key.length; i++) {
+    hash ^= key.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0) % 3;
 }
 
 function isAttack(s: AnimState): boolean {

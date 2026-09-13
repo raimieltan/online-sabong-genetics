@@ -602,7 +602,7 @@ export function BattleStage3D({
             worldScale={STAGE_SCALE}
           />
         </ArenaPhysics>}
-        <ImpactVFX ref={vfxRef} timeScaleRef={hitStopScaleRef} />
+        <ImpactVFX ref={vfxRef} timeScaleRef={hitStopScaleRef} floorY={STAGE_Y_OFFSET} />
       </Suspense>
     </Canvas>
   );
