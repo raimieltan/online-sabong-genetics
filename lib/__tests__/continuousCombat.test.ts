@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ACTIONS, COMBAT_VERSION, CombatSession, createMatch, createCombatRng, queueCommand, runCombatToCompletion, stepCombat } from '../combat-v2/index';
+import { ACTIONS, AWAKENING_DURATION_TICKS, COMBAT_VERSION, CombatSession, createMatch, createCombatRng, queueCommand, runCombatToCompletion, stepCombat, triggerAwakening } from '../combat-v2/index';
 import type { CombatMatchState, MatchConfig } from '../combat-v2/types';
 import { toCombatV2Snapshot } from '../combatV2Snapshot';
 import { makeChicken } from './testHelpers';
@@ -179,15 +179,58 @@ test('range and evade deny contact; guard reduces damage; hit cannot repeat', ()
   stepCombat(block); assert.equal(block.eventBuffer.filter(e => e.type === 'BLOCK').length, 1);
   const hp = block.fighters[1].health; stepCombat(block); assert.equal(block.fighters[1].health, hp);
 });
-test('commands enforce identity, tick, sequence and cooldown', () => {
+test('Flow State phase-dodge leaves a presentation key and slips off the attack line', () => {
+  let witnessed = false;
+  for (let seed = 0; seed < 40 && !witnessed; seed++) {
+    const c = config(seed);
+    c.fighterB = { ...c.fighterB, evolution: { ...c.fighterB.evolution, awakenings: ['flow-state'] } };
+    const s = createMatch(c);
+    triggerAwakening(s, 'b', 'flow-state');
+    pairedAttack(s);
+    const target = s.fighters[1];
+    target.currentAction = undefined;
+    target.state = 'neutral';
+    const before = { ...target.position };
+    stepCombat(s);
+    const evade = s.eventBuffer.find(event => event.type === 'EVADE' && event.detail === 'MIRAGE_EVADE');
+    if (!evade) continue;
+    witnessed = true;
+    assert.equal(target.lastMirageEvadeTick, s.tick);
+    assert.ok(Math.hypot(target.position.x - before.x, target.position.z - before.z) >= .5);
+    assert.equal(s.eventBuffer.some(event => event.type === 'DAMAGE' && event.fighterId === target.snapshot.fighterId), false);
+  }
+  assert.equal(witnessed, true, 'seed sweep should observe at least one deterministic Flow State phase-dodge');
+});
+test('awakening expires after exactly 30 seconds and cannot immediately retrigger', () => {
+  const c = config();
+  c.fighterA = { ...c.fighterA, evolution: { ...c.fighterA.evolution, awakenings: ['unbreakable'] } };
+  const s = createMatch(c);
+  triggerAwakening(s, 'a', 'unbreakable');
+  s.tick = AWAKENING_DURATION_TICKS - 2;
+  s.fighters.forEach(fighter => { fighter.nextDecisionTick = AWAKENING_DURATION_TICKS + 10; });
+
+  stepCombat(s);
+  assert.equal(s.fighters[0].awakening?.type, 'unbreakable');
+  stepCombat(s);
+  assert.equal(s.fighters[0].awakening, undefined);
+  assert.equal(s.eventBuffer.some(event => event.type === 'AWAKENING_ENDED' && event.fighterId === 'a'), true);
+  assert.throws(() => triggerAwakening(s, 'a', 'unbreakable'), /already awakened/);
+});
+test('commands enforce identity, tick, sequence, and lock once committed', () => {
   const s = createMatch(config());
   const c = { playerId: 'player-a', fighterId: 'a', command: 'pressure' as const, issuedTick: 0, effectiveTick: 12, sequence: 0 };
   assert.throws(() => queueCommand(s, { ...c, playerId: 'player-b' }));
   assert.throws(() => queueCommand(s, { ...c, effectiveTick: 0 }));
   queueCommand(s, c); assert.throws(() => queueCommand(s, c));
-  assert.throws(() => queueCommand(s, { ...c, sequence: 1, effectiveTick: 13 }));
+  // docs/combat/tell-revamped.md §5-6: the read may be freely revised right
+  // up until commitment — there is no cooldown between commands.
+  assert.doesNotThrow(() => queueCommand(s, { ...c, command: 'counter', sequence: 1, effectiveTick: 13 }));
   for (let i = 0; i < 11; i++) stepCombat(s);
   assert.equal(s.fighters[0].tacticalMode, 'balanced'); stepCombat(s); assert.equal(s.fighters[0].tacticalMode, 'pressure');
+  // Once the fighter has committed to an exchange, coaching locks until the
+  // next readable window.
+  s.fighters[0].engagement.phase = 'committing';
+  assert.throws(() => queueCommand(s, { ...c, command: 'recover', sequence: 2, effectiveTick: s.tick + 12 }));
 });
 test('different render rates advance identical simulation ticks', () => {
   const sessions = [47, 60, 144, 240].map(fps => {

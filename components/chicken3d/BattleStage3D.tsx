@@ -8,7 +8,7 @@ import { Canvas, useFrame } from "@react-three/fiber";
 import type { Chicken, StaggerLevel } from "@/lib/types";
 import { CameraDirector, type CameraCueName } from "@/lib/animation/cameraDirector";
 import { bodyClearanceRadius, hurtboxOffsets } from "@/lib/combat-v2/collision";
-import type { FighterCombatSnapshot } from "@/lib/combat-v2/types";
+import type { AwakeningType, FighterCombatSnapshot, ReadTellType, TacticalMode } from "@/lib/combat-v2/types";
 
 import { ArenaPhysics } from "./ArenaPhysics";
 import { ChickenPhysicsRig, type ChickenPhysicsHandle } from "./ChickenPhysicsRig";
@@ -209,6 +209,139 @@ function FighterTracker({
   return null;
 }
 
+/** Approximate world-space height of a standing rig's head above the stage
+ * floor, at `STAGE_SCALE` — used only to aim the screen-space projection, not
+ * for collision. */
+const HEAD_HEIGHT_WORLD = 1.3;
+
+/** Live screen-space position (viewport percent) a fighter's head projects
+ * to, refreshed every frame so HUD elements can track the actual camera
+ * instead of a fixed corner. `visible` is false once the head goes behind
+ * the camera plane (e.g. a hard cinematic cut). */
+export interface ScreenAnchor {
+  xPct: number;
+  yPct: number;
+  visible: boolean;
+}
+
+/**
+ * Projects each fighter's head position through the live (director-driven)
+ * camera into viewport-percent coordinates, written into mutable refs rather
+ * than React state so the 60fps camera orbit/shake doesn't force HUD
+ * re-renders — consumers (e.g. the tell HUD) sample the ref on their own
+ * slower tick.
+ */
+function ScreenAnchorTracker({
+  animA,
+  animB,
+  anchorA,
+  anchorB,
+}: {
+  animA: RefObject<FighterAnim | null>;
+  animB: RefObject<FighterAnim | null>;
+  anchorA?: RefObject<ScreenAnchor>;
+  anchorB?: RefObject<ScreenAnchor>;
+}) {
+  const worldFighterX = FIGHTER_X * STAGE_SCALE;
+  const point = useMemo(() => new THREE.Vector3(), []);
+
+  useFrame(({ camera }) => {
+    const project = (pose: FighterAnim | null, baseX: number, out?: RefObject<ScreenAnchor>) => {
+      if (!out?.current) return;
+      const x = baseX + (pose?.offsetX ?? 0) * ANIM_PX_TO_WORLD;
+      const z = (pose?.offsetZ ?? 0) * ANIM_PX_TO_WORLD;
+      const y = STAGE_Y_OFFSET + HEAD_HEIGHT_WORLD - (pose?.offsetY ?? 0) * ANIM_PX_TO_WORLD;
+      point.set(x, y, z).project(camera);
+      out.current.xPct = Math.min(94, Math.max(6, (point.x * 0.5 + 0.5) * 100));
+      out.current.yPct = Math.min(88, Math.max(6, (1 - (point.y * 0.5 + 0.5)) * 100));
+      out.current.visible = point.z < 1;
+    };
+    project(animA.current, -worldFighterX, anchorA);
+    project(animB.current, worldFighterX, anchorB);
+  });
+
+  return null;
+}
+
+/** Live per-fighter posture summary, written every HUD tick from the sim's
+ * `tacticalMode` + primary read-tell — drives the ground intent ring's color
+ * and pulse without threading full combat state into the 3D layer.
+ *
+ * `tacticalMode` only ever leaves `'balanced'` for a fighter that's actively
+ * being coached (i.e. the player's own bird after issuing a command) — the
+ * AI opponent runs at `'balanced'` for effectively the whole match. So the
+ * ring can't gate solely on tacticalMode or it would only ever light up for
+ * the player's fighter; `tellType` (present for both fighters any time a
+ * read is forming) is the primary driver, with tacticalMode layered on top
+ * as an accent once a tactic actually is active. */
+export interface FighterPosture {
+  mode: TacticalMode;
+  hesitating: boolean;
+  strength: number;
+  tellType: ReadTellType | null;
+}
+
+const AGGRESSIVE_TELLS = new Set<ReadTellType>(["weight_forward", "closing_distance", "rear_leg_loaded", "overextended"]);
+const DEFENSIVE_TELLS = new Set<ReadTellType>(["guard_open", "side_on_stance", "recovering", "resetting"]);
+
+function postureColor(posture: FighterPosture | null): string {
+  if (!posture) return "#b99b5f";
+  if (posture.hesitating) return "#e8d34a";
+  if (posture.mode === "pressure" || posture.mode === "all_in") return "#e2542d";
+  if (posture.mode === "defensive" || posture.mode === "counter" || posture.mode === "recover") return "#6f9bd8";
+  if (posture.tellType && AGGRESSIVE_TELLS.has(posture.tellType)) return "#e2542d";
+  if (posture.tellType && DEFENSIVE_TELLS.has(posture.tellType)) return "#6f9bd8";
+  return "#b99b5f";
+}
+
+/** Below this a forming tell is too faint to bother lighting the ring for — matches the read threshold the tell HUD itself uses (docs/combat/tell-revamped.md §22). */
+const RING_TELL_THRESHOLD = 0.18;
+
+/** Ground-level pulsing ring under a fighter — the "body language"
+ * reinforcement layer alongside the floating tell label: orange/red for
+ * pressure, blue/gray for a defensive read, a fast yellow flicker for
+ * hesitation. Purely additive VFX; never gates gameplay. */
+function IntentRing({
+  anim,
+  anchorX,
+  postureRef,
+}: {
+  anim: RefObject<FighterAnim | null>;
+  anchorX: number;
+  postureRef?: RefObject<FighterPosture | null>;
+}) {
+  const mesh = useRef<THREE.Mesh>(null);
+  const material = useRef<THREE.MeshBasicMaterial>(null);
+  const clock = useRef(0);
+
+  useFrame((_, delta) => {
+    const pose = anim.current;
+    if (!mesh.current || !material.current || !pose) return;
+    mesh.current.position.set(
+      anchorX + pose.offsetX * ANIM_PX_TO_WORLD,
+      STAGE_Y_OFFSET + 0.022,
+      pose.offsetZ * ANIM_PX_TO_WORLD
+    );
+    const posture = postureRef?.current ?? null;
+    clock.current += delta;
+    const pulseHz = posture?.hesitating ? 6.5 : 1.2;
+    const pulse = Math.sin(clock.current * pulseHz * Math.PI * 2) * 0.5 + 0.5;
+    const tacticActive = !!posture && posture.mode !== "balanced";
+    const tellActive = !!posture && posture.strength >= RING_TELL_THRESHOLD;
+    const active = tacticActive || tellActive || !!posture?.hesitating;
+    const baseOpacity = active ? 0.1 + Math.max(posture?.strength ?? 0, tacticActive ? 0.4 : 0) * 0.24 : 0;
+    material.current.color.set(postureColor(posture));
+    material.current.opacity = baseOpacity * (0.5 + pulse * 0.5);
+  });
+
+  return (
+    <mesh ref={mesh} rotation={[-Math.PI / 2, 0, 0]} renderOrder={-1}>
+      <ringGeometry args={[0.52, 0.76, 40]} />
+      <meshBasicMaterial ref={material} transparent opacity={0} depthWrite={false} side={THREE.DoubleSide} />
+    </mesh>
+  );
+}
+
 function heuristicCue(cue: CameraCue): CameraCueName {
   if (cue.isMiss) return "attack";
   if (cue.isCrit) return "critical";
@@ -310,6 +443,8 @@ export function BattleStage3D({
   animB,
   intentA,
   intentB,
+  awakeningA,
+  awakeningB,
   physicsA,
   physicsB,
   cameraCue,
@@ -318,6 +453,10 @@ export function BattleStage3D({
   simulationDriven = false,
   showCollisionDebug = false,
   collisionDebugFighters,
+  screenAnchorA,
+  screenAnchorB,
+  postureA,
+  postureB,
 }: {
   fighterA: Pick<Chicken, "colorScheme" | "sex" | "physical" | "mutations" | "growthStage">;
   fighterB: Pick<Chicken, "colorScheme" | "sex" | "physical" | "mutations" | "growthStage">;
@@ -326,6 +465,9 @@ export function BattleStage3D({
   /** Procedural-animation intent per fighter, written by BattleCanvas per turn. */
   intentA?: RefObject<AnimIntent | null>;
   intentB?: RefObject<AnimIntent | null>;
+  /** Current awakening type per fighter (or null), read every frame to drive the plumage tint + particle aura. */
+  awakeningA?: RefObject<AwakeningType | null>;
+  awakeningB?: RefObject<AwakeningType | null>;
   /** Imperative handles for real-physics knockback/stagger, called by BattleCanvas on impact. */
   physicsA?: Ref<ChickenPhysicsHandle>;
   physicsB?: Ref<ChickenPhysicsHandle>;
@@ -340,6 +482,12 @@ export function BattleStage3D({
   /** Draw V2 simulation hurtboxes and clearance radii for movement diagnosis. */
   showCollisionDebug?: boolean;
   collisionDebugFighters?: [FighterCombatSnapshot, FighterCombatSnapshot];
+  /** Written every frame with each fighter's head projected into viewport-% — lets the HUD anchor the live tell label to the actual on-screen fighter. */
+  screenAnchorA?: RefObject<ScreenAnchor>;
+  screenAnchorB?: RefObject<ScreenAnchor>;
+  /** Drives the ground intent ring's color/pulse; written by the HUD tick, read every render frame. */
+  postureA?: RefObject<FighterPosture | null>;
+  postureB?: RefObject<FighterPosture | null>;
 }) {
   const worldFighterX = FIGHTER_X * STAGE_SCALE;
   // One-time capability selection avoids a runtime FPS monitor and React work
@@ -405,15 +553,20 @@ export function BattleStage3D({
         oppoForA={oppoPosForA}
         oppoForB={oppoPosForB}
       />
+      {(screenAnchorA || screenAnchorB) && (
+        <ScreenAnchorTracker animA={animA} animB={animB} anchorA={screenAnchorA} anchorB={screenAnchorB} />
+      )}
       <Suspense fallback={null}>
+        <IntentRing anim={animA} anchorX={-worldFighterX} postureRef={postureA} />
+        <IntentRing anim={animB} anchorX={worldFighterX} postureRef={postureB} />
         <FighterContactShadow anim={animA} anchorX={-worldFighterX} />
         <FighterContactShadow anim={animB} anchorX={worldFighterX} />
         {simulationDriven ? <>
           <group position={[-worldFighterX, STAGE_Y_OFFSET, 0]} scale={STAGE_SCALE}>
-            <ChickenModel {...fighterA} combatAnim={animA} animIntent={intentA} opponentPos={oppoPosForA} facing="right" />
+            <ChickenModel {...fighterA} combatAnim={animA} animIntent={intentA} awakening={awakeningA} opponentPos={oppoPosForA} facing="right" />
           </group>
           <group position={[worldFighterX, STAGE_Y_OFFSET, 0]} scale={STAGE_SCALE}>
-            <ChickenModel {...fighterB} combatAnim={animB} animIntent={intentB} opponentPos={oppoPosForB} facing="left" />
+            <ChickenModel {...fighterB} combatAnim={animB} animIntent={intentB} awakening={awakeningB} opponentPos={oppoPosForB} facing="left" />
           </group>
           {showCollisionDebug && collisionDebugFighters && <>
             <CollisionDebugVolumes fighter={collisionDebugFighters[0]} anim={animA} anchorX={-worldFighterX} facingOffset={0} color="#fb7185" />

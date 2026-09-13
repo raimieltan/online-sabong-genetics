@@ -2,6 +2,7 @@ import type { BehavioralProfile, Chicken, CombatExperience, FightingStyle } from
 import { deriveBehaviorProfile } from "./behavior";
 import { emptyExperience } from "./experience";
 import { battleReadyNpcGenerator, generateMatchedOpponent } from "./matchmaking";
+import { withNpcAwakening } from "./evolution";
 
 export type PveEncounterId =
   | "aggressive_specialist"
@@ -152,13 +153,13 @@ export function generatePveOpponent(
   const experience: CombatExperience = { ...emptyExperience(), ...encounter.experienceBaseline };
 
   return {
-    opponent: {
+    opponent: withNpcAwakening({
       ...base,
       fightingStyle: encounter.fightingStyle,
       behavior,
       experience,
       condition: encounter.condition ?? base.condition ?? 100,
-    },
+    }),
     encounter,
   };
 }

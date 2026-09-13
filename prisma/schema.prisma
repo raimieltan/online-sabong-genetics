@@ -18,6 +18,7 @@ model Player {
   pveProgress        PveProgress[]
   pveCampaignState   PveCampaignState?
   pveOpponentHistory PveOpponentHistory[]
+  pveEncounterEvents PveEncounterEvent[]
   tournaments        Tournament[]
 }
 
@@ -152,6 +153,24 @@ model PveOpponentHistory {
 
   @@unique([playerId, bossId])
   @@index([playerId, lastFightAt])
+}
+
+/** Phase 3 "Dynamic Stories" campaign feed — callouts, rivalry deciders, and
+ * unlock announcements. Purely a read-side event log; nothing here feeds
+ * combat or is treated as a second progression store (see PveOpponentHistory,
+ * PveProgress). */
+model PveEncounterEvent {
+  id        String   @id @default(uuid())
+  playerId  String
+  player    Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  kind      String
+  bossId    String?
+  headline  String
+  detail    String
+  seen      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([playerId, createdAt])
 }
 
 model TrainingSession {

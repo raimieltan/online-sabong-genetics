@@ -77,6 +77,31 @@ export function normalizeCombatCareer(value?: Partial<CombatCareerState> | null)
   };
 }
 
+/** Gives a generated, non-persistent opponent one style-appropriate awakening.
+ * NPCs use the same low-health trigger, duration, and modifiers as players. */
+export function withNpcAwakening(chicken: Chicken, requested?: AwakeningState["id"]): Chicken {
+  const label = `${chicken.id} ${chicken.name}`.toLowerCase();
+  const type: AwakeningState["id"] = requested
+    ?? (label.includes("apex") ? "apex"
+      : label.includes("berserk") ? "berserker"
+      : label.includes("phantom") || label.includes("counter-master") ? "flow-state"
+      : chicken.fightingStyle === "aggressive" ? "berserker"
+      : chicken.fightingStyle === "counter" ? "flow-state"
+      : chicken.fightingStyle === "endurance" ? "unbreakable"
+      : "second-wind");
+  const career = normalizeCombatCareer(chicken.combatCareer);
+  return {
+    ...chicken,
+    combatCareer: {
+      ...career,
+      awakenings: career.awakenings.map((awakening) => ({
+        ...awakening,
+        unlocked: awakening.id === type,
+      })),
+    },
+  };
+}
+
 type TraitRule = {
   id: string; name: string; stages: readonly [string, string, string];
   advantages: readonly string[]; tradeoffs: readonly string[];

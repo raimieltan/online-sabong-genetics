@@ -238,6 +238,8 @@ export interface AnimIntent {
   simulationProgress?: number;
   /** V2-only tactical silhouette layered over the authoritative action pose. */
   tacticalMode?: import('../combat-v2/types').TacticalMode;
+  /** One-shot simulation tick for a successful Flow State dodge snapshot. */
+  afterimageKey?: number;
   state: AnimState;
   /** ms timestamp when this intent began. */
   startedAt: number;

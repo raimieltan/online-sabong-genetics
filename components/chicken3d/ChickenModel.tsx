@@ -12,6 +12,8 @@ import { growthVisualScale } from "@/lib/growth";
 import { deriveAnimationGains } from "@/lib/animation/physicalGenetics";
 import { ProceduralAnimationController } from "@/lib/animation/ProceduralAnimationController";
 import type { AnimIntent } from "@/lib/animation/types";
+import { AWAKENING_VISUALS } from "@/lib/animation/awakeningVisuals";
+import type { AwakeningType } from "@/lib/combat-v2/types";
 import type { Chicken, ChickenColorScheme, GrowthStage, PhysicalBlock } from "@/lib/types";
 
 // Both sexes share the single rigged mesh — there is no separate hen
@@ -22,6 +24,10 @@ const MODEL_PATH = "/3d-chicken/rooster_rigged_rebuilt_skinned_wingfans.glb";
 
 /** Bone scaled by "Giant" when the mutation is expressed. */
 const GIANT_SCALE = 1.4;
+
+export type ChickenRenderMode = "combat" | "profile" | "village";
+
+const VILLAGE_ANIMATION_FPS = 12;
 
 const WING_TRAIL_POINTS = 64;
 
@@ -109,6 +115,152 @@ const DEFAULT_PHYSICAL_BLOCK: PhysicalBlock = {
 
 /** Converts the pixel-space offsets the 2D battle timeline produces into world units. */
 export const PX_TO_WORLD = 0.016;
+
+/** Materials an awakening's tint/glow overlay is allowed to touch — plumage only, never beak/legs/comb. */
+const FEATHER_MATERIAL_NAMES = ["M_Feathers", "M_Hackle", "M_Wing", "M_Tail"] as const;
+
+const MAX_AURA_PARTICLES = 64;
+const MAX_AURA_RINGS = 3;
+
+/** Ambient particle aura orbiting/rising off an awakened fighter. Idle (invisible) until `awakening.current` is set, and eases out again once it clears. */
+function AwakeningAura({ awakening }: { awakening: RefObject<AwakeningType | null> }) {
+  const meshRef = useRef<THREE.InstancedMesh>(null);
+  const lightRef = useRef<THREE.PointLight>(null);
+  const ringRefs = useRef<(THREE.Mesh | null)[]>([]);
+  const strength = useRef(0);
+  // Deterministic per-particle variety (golden-angle spread + coprime moduli
+  // for the other fields) instead of Math.random — keeps this a pure render.
+  const particles = useMemo(
+    () =>
+      Array.from({ length: MAX_AURA_PARTICLES }, (_, i) => ({
+        angle: i * 2.39996,
+        radius: 0.55 + 0.45 * (((i * 7) % MAX_AURA_PARTICLES) / MAX_AURA_PARTICLES),
+        speed: 0.72 + 0.55 * (((i * 3) % MAX_AURA_PARTICLES) / MAX_AURA_PARTICLES),
+        spin: 0.65 + 0.8 * (((i * 5) % MAX_AURA_PARTICLES) / MAX_AURA_PARTICLES),
+        size: 0.022 + 0.026 * (((i * 11) % MAX_AURA_PARTICLES) / MAX_AURA_PARTICLES),
+        phase: i / MAX_AURA_PARTICLES,
+      })),
+    []
+  );
+  const geometry = useMemo(() => new THREE.PlaneGeometry(1, 1), []);
+  const material = useMemo(
+    () => new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }),
+    []
+  );
+  useEffect(() => () => { geometry.dispose(); material.dispose(); }, [geometry, material]);
+
+  const _m = useMemo(() => new THREE.Matrix4(), []);
+  const _q = useMemo(() => new THREE.Quaternion(), []);
+  const _s = useMemo(() => new THREE.Vector3(), []);
+  const _p = useMemo(() => new THREE.Vector3(), []);
+  const _c = useMemo(() => new THREE.Color(), []);
+  const _c2 = useMemo(() => new THREE.Color(), []);
+  const _mixed = useMemo(() => new THREE.Color(), []);
+
+  useFrame((state, delta) => {
+    const mesh = meshRef.current;
+    if (!mesh) return;
+    const type = awakening.current;
+    strength.current += ((type ? 1 : 0) - strength.current) * Math.min(1, delta * 3.5);
+    if (strength.current < 0.01) {
+      mesh.visible = false;
+      return;
+    }
+    mesh.visible = true;
+    const visual = type ? AWAKENING_VISUALS[type] : null;
+    if (visual) {
+      _c.set(visual.particleColor);
+      _c2.set(visual.particleColor2);
+    }
+    const t = state.clock.elapsedTime;
+    const pulse = visual ? 0.88 + Math.sin(t * visual.pulseSpeed) * 0.12 : 1;
+    for (let i = 0; i < MAX_AURA_PARTICLES; i++) {
+      const p = particles[i];
+      if (!visual || i >= visual.particleCount) {
+        _m.makeScale(0, 0, 0);
+        mesh.setMatrixAt(i, _m);
+        continue;
+      }
+      const cycle = (t * p.speed * visual.particleSpeed + p.phase) % 1;
+      let angle = p.angle + t * p.spin;
+      let height = cycle * visual.auraHeight;
+      let radius = p.radius * visual.auraRadius * (1 - cycle * 0.3);
+      if (visual.particleMotion === "mirage") {
+        angle += Math.sin(t * 5.5 + p.phase * 19) * 0.55;
+        radius *= 0.8 + Math.sin(t * 7 + i) * 0.35;
+        height = 0.2 + cycle * visual.auraHeight;
+      } else if (visual.particleMotion === "flame") {
+        radius *= (1 - cycle * 0.72) * pulse;
+        height = cycle * visual.auraHeight + Math.sin(t * 9 + i) * 0.05;
+      } else if (visual.particleMotion === "embers") {
+        radius *= 0.45 + cycle * 1.25;
+        angle += Math.sin(i * 4.7) * cycle;
+        height = 0.25 + cycle * visual.auraHeight * 0.8;
+      } else if (visual.particleMotion === "grounded") {
+        radius *= 0.75 + cycle * 0.45;
+        height = 0.03 + Math.sin(cycle * Math.PI) * visual.auraHeight * 0.48;
+      } else {
+        angle += cycle * Math.PI * 2.5;
+        radius *= 0.55 + Math.sin(cycle * Math.PI) * 0.5;
+      }
+      _p.set(Math.cos(angle) * radius, height, Math.sin(angle) * radius);
+      const fade = Math.sin(cycle * Math.PI) * strength.current;
+      const sz = p.size * visual.particleSize * (0.6 + fade * 0.9);
+      const stretch = visual.particleMotion === "flame" || visual.particleMotion === "updraft" ? 2.4 : 1;
+      _s.set(sz, sz * stretch, sz);
+      _m.compose(_p, _q.identity(), _s);
+      mesh.setMatrixAt(i, _m);
+      mesh.setColorAt(i, _mixed.copy(_c).lerp(_c2, p.phase).multiplyScalar(fade * pulse));
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+
+    if (lightRef.current) {
+      lightRef.current.visible = Boolean(visual);
+      lightRef.current.color.copy(_c2);
+      lightRef.current.intensity = (visual?.lightIntensity ?? 0) * strength.current * pulse;
+    }
+    ringRefs.current.forEach((ring, i) => {
+      if (!ring) return;
+      ring.visible = Boolean(visual && i < visual.ringCount);
+      if (!ring.visible || !visual) return;
+      const ringPulse = 1 + Math.sin(t * visual.pulseSpeed + i * 1.8) * 0.12;
+      ring.scale.setScalar(ringPulse * (0.78 + i * 0.22) * visual.auraRadius / 0.5);
+      ring.rotation.z = t * (i % 2 ? -0.8 : 0.65) * visual.particleSpeed;
+      ring.position.y = visual.particleMotion === "grounded" ? 0.035 + i * 0.035 : 0.25 + i * 0.3;
+      const ringMaterial = ring.material as THREE.MeshBasicMaterial;
+      ringMaterial.color.copy(i % 2 ? _c2 : _c);
+      ringMaterial.opacity = strength.current * (visual.particleMotion === "grounded" ? 0.48 : 0.26);
+    });
+  });
+
+  return (
+    <group>
+      <instancedMesh ref={meshRef} args={[geometry, material, MAX_AURA_PARTICLES]} frustumCulled={false} />
+      <pointLight ref={lightRef} position={[0, 0.72, 0]} intensity={0} distance={2.8} decay={2} />
+      {Array.from({ length: MAX_AURA_RINGS }, (_, i) => (
+        <mesh key={`aura-ring-${i}`} ref={(node) => { ringRefs.current[i] = node; }} rotation-x={-Math.PI / 2} visible={false}>
+          <torusGeometry args={[0.5, 0.012 + i * 0.004, 8, 42]} />
+          <meshBasicMaterial transparent depthWrite={false} blending={THREE.AdditiveBlending} />
+        </mesh>
+      ))}
+    </group>
+  );
+}
+
+type DodgeAfterimage = {
+  root: THREE.Group;
+  materials: THREE.Material[];
+  baseScale: THREE.Vector3;
+  age: number;
+  duration: number;
+  maxOpacity: number;
+};
+
+function disposeAfterimage(afterimage: DodgeAfterimage) {
+  afterimage.root.removeFromParent();
+  afterimage.materials.forEach((material) => material.dispose());
+}
 
 // --- Feather color-pattern shader ------------------------------------------
 // Patches M_Feathers' fragment shader to blend a primary/secondary color per
@@ -433,12 +585,14 @@ export function ChickenModel({
   physical,
   mutations,
   animate = true,
+  renderMode = "profile",
   combatAnim,
   animIntent,
   opponentPos,
   facing,
   basePosition = [0, 0, 0],
   debugWingTrajectory,
+  awakening,
 }: {
   colorScheme: Chicken["colorScheme"];
   sex: Chicken["sex"];
@@ -446,6 +600,8 @@ export function ChickenModel({
   physical?: Chicken["physical"];
   mutations?: Chicken["mutations"];
   animate?: boolean;
+  /** Rendering context. Village mode disables expensive dynamic shadows and throttles idle rig updates. */
+  renderMode?: ChickenRenderMode;
   /** When provided, the model is driven by this ref every frame instead of the idle showcase spin. */
   combatAnim?: RefObject<FighterAnim | null>;
   /** Procedural-animation intent (state to play), written by BattleCanvas per turn / at impact. */
@@ -457,9 +613,13 @@ export function ChickenModel({
   basePosition?: [number, number, number];
   /** Draw ~1 second of each wing tip's world-space path. Also enabled by ?debugWingTrail. */
   debugWingTrajectory?: boolean;
+  /** Current awakening type (or null/undefined), read every frame to drive the plumage tint + particle aura. */
+  awakening?: RefObject<AwakeningType | null>;
 }) {
   const { scene } = useGLTF(MODEL_PATH);
   const group = useRef<THREE.Group>(null);
+  const villageAnimAccumulator = useRef(0);
+  const isVillage = renderMode === "village";
 
   const clonedScene = useMemo(() => {
     // Plain Object3D#clone(true) deep-clones the bone hierarchy but leaves
@@ -494,7 +654,7 @@ export function ChickenModel({
       }
       // The two active fighters are the visual priority. Their shadows give
       // the arena volume without adding any dynamic lights.
-      node.castShadow = true;
+      node.castShadow = !isVillage;
       node.receiveShadow = true;
     });
 
@@ -517,8 +677,16 @@ export function ChickenModel({
     applyVisualTraits(bones, mats, mutations ? resolveVisualTraits({ mutations }) : []);
     applyRuntimeNeutralPose(bones);
 
-    return { scene: clone, bones };
-  }, [scene, colorScheme, physical, mutations, sex, growthStage]);
+    // Snapshot the genetic feather colors before any awakening overlay runs,
+    // so the tint can ease back to the bird's real plumage once it fades.
+    const featherBaseline: Record<string, THREE.Color> = {};
+    for (const name of FEATHER_MATERIAL_NAMES) {
+      const first = mats[name]?.[0];
+      if (first) featherBaseline[name] = first.color.clone();
+    }
+
+    return { scene: clone, bones, mats, featherBaseline };
+  }, [scene, colorScheme, physical, mutations, sex, growthStage, isVillage]);
 
   // Procedural animation controller — rebuilt whenever the scene is re-cloned
   // (physical/mutation change) so it re-captures rest pose against the new bones.
@@ -538,8 +706,18 @@ export function ChickenModel({
     typeof window !== "undefined" && new URLSearchParams(window.location.search).has("debugWingTrail")
   );
   const wingTrails = useMemo(() => new WingTrajectoryRecorder(), []);
+  const auraStrength = useRef(0);
+  const auraScratchColor = useRef(new THREE.Color());
+  const auraScratchGlow = useRef(new THREE.Color());
+  const afterimageRoot = useMemo(() => new THREE.Group(), []);
+  const afterimages = useRef<DodgeAfterimage[]>([]);
+  const lastAfterimageKey = useRef<number | null>(null);
 
-  useEffect(() => () => wingTrails.dispose(), [wingTrails]);
+  useEffect(() => () => {
+    wingTrails.dispose();
+    afterimages.current.forEach(disposeAfterimage);
+    afterimages.current = [];
+  }, [afterimageRoot, wingTrails]);
 
   const recordWingTrails = (dt: number) => {
     if (!showWingTrajectory) return;
@@ -547,6 +725,93 @@ export function ChickenModel({
     const rightTip = clonedScene.bones.WingR_Tip;
     if (!leftTip || !rightTip) return;
     wingTrails.record(leftTip, rightTip, dt);
+  };
+
+  const spawnDodgeAfterimage = (velocityX: number, velocityZ: number) => {
+    if (!group.current) return;
+    // SkeletonUtils preserves the current skinned pose instead of sharing the
+    // live fighter's bones. The duplicate is attached outside the moving
+    // fighter group, so it stays frozen at the dodge-start location.
+    clonedScene.scene.updateMatrixWorld(true);
+    const velocityLength = Math.hypot(velocityX, velocityZ);
+    const trailX = velocityLength > 0.01 ? velocityX / velocityLength : 0;
+    const trailZ = velocityLength > 0.01 ? velocityZ / velocityLength : (facing === "right" ? -1 : 1);
+    const ghostColors = ["#efffff", "#70dcff", "#597cff"];
+
+    for (let echoIndex = 0; echoIndex < 3; echoIndex++) {
+      const posedClone = SkeletonUtils.clone(clonedScene.scene);
+      const materials: THREE.Material[] = [];
+      const maxOpacity = 0.72 - echoIndex * 0.17;
+      posedClone.traverse((node) => {
+        if (!(node instanceof THREE.Mesh)) return;
+        node.frustumCulled = false;
+        node.renderOrder = 980 - echoIndex;
+        const sources = Array.isArray(node.material) ? node.material : [node.material];
+        const ghosts = sources.map((source) => {
+          const ghost = source.clone();
+          ghost.transparent = true;
+          ghost.opacity = maxOpacity;
+          ghost.depthWrite = false;
+          ghost.depthTest = false;
+          ghost.blending = THREE.AdditiveBlending;
+          ghost.side = THREE.DoubleSide;
+          if (ghost instanceof THREE.MeshStandardMaterial) {
+            // Strip the original texture so the entire posed silhouette reads
+            // as a bright afterimage even against a similarly colored arena.
+            ghost.map = null;
+            ghost.normalMap = null;
+            ghost.roughnessMap = null;
+            ghost.metalnessMap = null;
+            ghost.color.set(ghostColors[echoIndex]);
+            ghost.emissive.set(ghostColors[echoIndex]);
+            ghost.emissiveIntensity = 2.8 - echoIndex * 0.4;
+            ghost.roughness = 0;
+          }
+          materials.push(ghost);
+          return ghost;
+        });
+        node.material = Array.isArray(node.material) ? ghosts : ghosts[0];
+      });
+
+      const root = new THREE.Group();
+      root.add(posedClone);
+      root.position.copy(group.current.position);
+      root.position.x -= trailX * echoIndex * 0.09;
+      root.position.z -= trailZ * echoIndex * 0.09;
+      root.quaternion.copy(group.current.quaternion);
+      root.scale.copy(group.current.scale).multiplyScalar(growthVisualScale(growthStage));
+      afterimageRoot.add(root);
+      afterimages.current.push({
+        root,
+        materials,
+        baseScale: root.scale.clone(),
+        age: echoIndex * -0.025,
+        duration: 0.42 + echoIndex * 0.06,
+        maxOpacity,
+      });
+    }
+
+    // Keep the pool bounded even if several perfect dodges occur back-to-back.
+    while (afterimages.current.length > 9) disposeAfterimage(afterimages.current.shift()!);
+  };
+
+  const updateDodgeAfterimages = (dt: number) => {
+    afterimages.current = afterimages.current.filter((afterimage) => {
+      afterimage.age += dt;
+      const progress = Math.max(0, Math.min(1, afterimage.age / afterimage.duration));
+      const opacity = afterimage.maxOpacity * (1 - progress) * (1 - progress * 0.75);
+      afterimage.materials.forEach((material) => { material.opacity = opacity; });
+      // A slight directional smear sells speed while the pose itself remains
+      // a frozen snapshot rather than becoming a second animated fighter.
+      afterimage.root.scale.set(
+        afterimage.baseScale.x * (1 + progress * 0.12),
+        afterimage.baseScale.y * (1 - progress * 0.04),
+        afterimage.baseScale.z * (1 + progress * 0.12)
+      );
+      if (progress < 1) return true;
+      disposeAfterimage(afterimage);
+      return false;
+    });
   };
 
   useFrame((state, delta) => {
@@ -621,19 +886,70 @@ export function ChickenModel({
       controller.update({ dt: safeDt, now: state.clock.elapsedTime * 1000, speed, velX, velZ, velY, aimYaw, simulationIntent: intent?.simulationProgress !== undefined ? intent : undefined });
       recordWingTrails(safeDt);
 
+      const awakeningType = awakening?.current ?? null;
+      const afterimageKey = awakeningType === "flow-state" ? intent?.afterimageKey : undefined;
+      if (afterimageKey !== undefined && afterimageKey !== lastAfterimageKey.current) {
+        lastAfterimageKey.current = afterimageKey;
+        spawnDodgeAfterimage(velX, velZ);
+      }
+      updateDodgeAfterimages(safeDt);
+      const visual = awakeningType ? AWAKENING_VISUALS[awakeningType] : null;
+      auraStrength.current += ((visual ? 1 : 0) - auraStrength.current) * Math.min(1, safeDt * 4);
+      const strength = auraStrength.current;
+      if (visual) {
+        auraScratchColor.current.set(visual.tint);
+        auraScratchGlow.current.set(visual.glow);
+      }
+
       modelScene.traverse((node) => {
-        if (node instanceof THREE.Mesh && node.material instanceof THREE.MeshStandardMaterial) {
-          node.material.emissive.setScalar(a.flash);
-          node.material.emissiveIntensity = a.flash;
+        if (!(node instanceof THREE.Mesh) || !(node.material instanceof THREE.MeshStandardMaterial)) return;
+        const material = node.material;
+        const baseline = clonedScene.featherBaseline[material.name];
+        if (baseline && strength > 0.001) {
+          material.color.copy(baseline).lerp(auraScratchColor.current, strength);
+          material.emissive.copy(auraScratchGlow.current).multiplyScalar(strength);
+          material.emissiveIntensity = Math.max(a.flash, (visual?.glowIntensity ?? 0) * strength);
+        } else {
+          if (baseline) material.color.copy(baseline);
+          material.emissive.setScalar(a.flash);
+          material.emissiveIntensity = a.flash;
         }
       });
       return;
     }
 
-    // Profile/coop views use the same neutral controller as combat, so the
+    // Profile/village views use the same neutral controller as combat, so the
     // corrected GLB never exposes its source T-pose between animation states.
     if (!animate) return;
     const t = state.clock.elapsedTime;
+
+    // Village mode is viewed from much farther away and may contain many birds.
+    // Keep rendering normally, but only recompute the expensive procedural bone
+    // pose at a low fixed rate. CoopChicken owns world yaw, so do not run the
+    // showcase spin in this mode.
+    if (isVillage) {
+      villageAnimAccumulator.current += delta;
+      const interval = 1 / VILLAGE_ANIMATION_FPS;
+
+      if (villageAnimAccumulator.current < interval) return;
+
+      const elapsed = Math.min(villageAnimAccumulator.current, 0.15);
+      villageAnimAccumulator.current = 0;
+
+      controller.setFacing("right");
+      controller.update({
+        dt: elapsed,
+        now: t * 1000,
+        speed: 0,
+        velX: 0,
+        velZ: 0,
+        velY: 0,
+        aimYaw: 0,
+      });
+      return;
+    }
+
+    // Profile/showcase mode keeps the original full-rate animation and slow spin.
     group.current.rotation.y = Math.sin(t * 0.4) * 0.35;
     controller.setFacing("right");
     controller.update({
@@ -654,9 +970,11 @@ export function ChickenModel({
         <group scale={growthVisualScale(growthStage)}>
           <primitive object={clonedScene.scene} />
         </group>
+        {awakening && <AwakeningAura awakening={awakening} />}
       </group>
       {showWingTrajectory && <primitive object={wingTrails.left.line} />}
       {showWingTrajectory && <primitive object={wingTrails.right.line} />}
+      <primitive object={afterimageRoot} />
     </>
   );
 }

@@ -7,6 +7,7 @@ import type {
   ChickenColorScheme,
   ChickenSex,
   FightingStyle,
+  GrowthStage,
   MutationGenome,
   PhysicalBlock,
   StatBlock,
@@ -37,6 +38,7 @@ export type MarketListingRow = {
   traits: Trait[];
   fightingStyle: FightingStyle;
   colorScheme: ChickenColorScheme;
+  growthStage: GrowthStage;
   price: number;
 };
 
@@ -58,6 +60,7 @@ export function generateListing(): MarketListingRow {
     traits: chicken.traits,
     fightingStyle: chicken.fightingStyle,
     colorScheme: chicken.colorScheme,
+    growthStage: "adult",
     price: Math.round(chickenValue(chicken) * MARKET_MARKUP),
   };
 }
@@ -82,7 +85,7 @@ export function listingToChicken(listing: MarketListingRow): Chicken {
     energy: 100,
     record: { wins: 0, losses: 0, championships: 0, koTko: 0, decisions: 0 },
     status: "active",
-    growthStage: "adult",
+    growthStage: listing.growthStage,
     fightingStyle: listing.fightingStyle,
     colorScheme: listing.colorScheme,
     injured: false,

@@ -67,7 +67,7 @@ export type BossRewardConfig = {
 };
 
 /** Presentation-only campaign metadata. It deliberately never feeds combat. */
-export type PveNodeType = "standard" | "gatekeeper" | "rival" | "challenge" | "qualifier" | "championship" | "special";
+export type PveNodeType = "standard" | "gatekeeper" | "rival" | "challenge" | "qualifier" | "championship" | "special" | "invitational";
 
 export type PveOpponentPresentation = {
   title: string;
@@ -132,6 +132,8 @@ export type PublicPveBoss = Omit<PveBossDefinition, "iv" | "ev" | "behaviorOverr
 export type BossListEntry = {
   boss: PublicPveBoss;
   progress: BossProgressView;
+  rivalry: import("./rivalry").RivalryStatus;
+  escalationDeltas: import("./escalation").EscalationDelta[];
 };
 
 export type CampaignProgressView = {
@@ -140,4 +142,33 @@ export type CampaignProgressView = {
   reputation: number;
   rank: number;
   unlockedCircuitIds: string[];
+};
+
+/** Phase 3 — Optional Challenges / Invitationals / Special Encounters. These
+ * fights live outside the fixed 20-boss ladder (§35 Phase 3) but reuse the
+ * exact same PveBossDefinition shape so they flow through the same
+ * fighter-build/session/finish pipeline as ladder bosses. */
+export type SideEncounterKind = "challenge" | "invitational" | "special";
+
+export type SideEncounterRequirement =
+  | { type: "reputation"; min: number }
+  | { type: "circuitCompleted"; circuitId: string }
+  | { type: "cleanRecord"; maxLosses: number }
+  | { type: "rivalryDecider"; bossId: PveBossId };
+
+export type SideEncounterDefinition = Omit<PveBossDefinition, "id"> & {
+  id: string;
+  kind: SideEncounterKind;
+  circuitId: string;
+  requirement: SideEncounterRequirement;
+};
+
+export type CampaignEventView = {
+  id: string;
+  kind: "callout" | "rivalry_decider" | "invitational_unlocked" | "special_encounter_unlocked" | "milestone";
+  bossId: string | null;
+  headline: string;
+  detail: string;
+  seen: boolean;
+  createdAt: string;
 };

@@ -7,7 +7,7 @@ import type { BossListEntry, CampaignProgressView, PveCircuit } from "@/lib/pve/
 
 type Props = { bosses: BossListEntry[]; circuits: readonly PveCircuit[]; campaign: CampaignProgressView; focusCircuitId?: string };
 
-const NODE_ICON: Record<string, string> = { standard: "◆", gatekeeper: "♜", rival: "⚔", qualifier: "✦", championship: "♛", challenge: "!", special: "?" };
+const NODE_ICON: Record<string, string> = { standard: "◆", gatekeeper: "♜", rival: "⚔", qualifier: "✦", championship: "♛", challenge: "!", special: "✵", invitational: "✉" };
 
 export function CampaignMap({ bosses, circuits, campaign, focusCircuitId }: Props) {
   const visibleCircuits = focusCircuitId ? circuits.filter((c) => c.id === focusCircuitId) : circuits;
@@ -36,7 +36,9 @@ function CampaignNode({ entry, index }: { entry: BossListEntry; index: number })
   const state = progress.completed ? "defeated" : progress.unlocked ? "available" : "locked";
   const body = <div className={`campaign-node campaign-node-${state} campaign-node-${type}`} style={{ "--node-offset": `${index % 2 ? 12 : -12}%` } as CSSProperties}>
     <span className="campaign-node-mark">{progress.completed ? "✓" : progress.unlocked ? NODE_ICON[type] : "🔒"}</span>
+    {entry.rivalry.isRival && progress.unlocked && <span className="campaign-node-rivalry" title="Rivalry">⚔</span>}
     <div><p>{type.replace("-", " ")}</p><h3>{progress.unlocked || progress.completed ? boss.name : "Unknown fighter"}</h3><span>{progress.unlocked ? boss.styleLabel : "Requirement locked"}</span></div>
+    {entry.rivalry.isRival && progress.unlocked && <b className="campaign-node-rivalry-record">{entry.rivalry.record.wins} — {entry.rivalry.record.losses}{entry.rivalry.deciderDue ? " · DECIDER" : ""}</b>}
     {progress.unlocked && !progress.completed && <b>Fight available</b>}
     {progress.completed && <b>Defeated {progress.clearCount > 1 ? `· ${progress.clearCount} clears` : ""}</b>}
   </div>;

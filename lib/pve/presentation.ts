@@ -14,8 +14,22 @@ export function buildMatchupAssessment(chicken: Chicken, boss: BossListEntry["bo
   return "EVEN";
 }
 
-export function campaignConsequence(won: boolean, boss: BossListEntry["boss"], firstClear: boolean) {
-  if (!won) return { headline: `${boss.name.toUpperCase()} HOLDS THE PIT`, copy: "The report points to patterns worth changing before the next attempt.", reputation: 0 };
+export function campaignConsequence(
+  won: boolean,
+  boss: BossListEntry["boss"],
+  firstClear: boolean,
+  rivalry?: import("./rivalry").RivalryStatus,
+) {
+  const rivalryLine = rivalry?.isRival
+    ? rivalry.deciderDue
+      ? ` The rivalry is now tied ${rivalry.record.wins}–${rivalry.record.losses} — the next meeting is a decider.`
+      : ` Head-to-head now stands ${rivalry.record.wins}–${rivalry.record.losses}.`
+    : "";
+  if (!won) return { headline: `${boss.name.toUpperCase()} HOLDS THE PIT`, copy: `The report points to patterns worth changing before the next attempt.${rivalryLine}`, reputation: 0 };
   const title = boss.presentation.nodeType === "championship" ? `${boss.name.toUpperCase()} FALLS` : firstClear ? "A NEW NAME ON THE ROAD" : "THE CROWD REMEMBERS";
-  return { headline: title, copy: firstClear ? `${boss.name}'s run is over. The circuit is beginning to watch your fighter.` : `${boss.name} has been beaten again. Your reputation continues to grow.`, reputation: Math.round(boss.rewards.firstClearCredits / 10) };
+  return {
+    headline: title,
+    copy: `${firstClear ? `${boss.name}'s run is over. The circuit is beginning to watch your fighter.` : `${boss.name} has been beaten again. Your reputation continues to grow.`}${rivalryLine}`,
+    reputation: Math.round(boss.rewards.firstClearCredits / 10),
+  };
 }

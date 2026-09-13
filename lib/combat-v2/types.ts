@@ -12,6 +12,11 @@ export type CommandCompliance = 'ignore' | 'resist' | 'partial' | 'obey' | 'comm
 export type AwakeningType = 'unbreakable' | 'berserker' | 'flow-state' | 'second-wind' | 'apex';
 export type FighterState = 'neutral' | 'advancing' | 'retreating' | 'circling' | 'feinting' | 'winding_up' | 'attacking' | 'defending' | 'evading' | 'countering' | 'recovering' | 'staggered' | 'down' | 'finished';
 export type EngagementPhase = 'stalking' | 'committing' | 'clashing' | 'breaking' | 'resetting';
+/** Player-facing observable body language (docs/combat/tell-revamped.md §8). Distinct
+ * from the AI-vs-AI `TELL_DETECTED`/`reaction` perception system below — these are
+ * read during `stalking`/`resetting`, before any action commits. */
+export type ReadTellType = 'weight_forward' | 'closing_distance' | 'wing_adjust' | 'head_low' | 'guard_open' | 'rear_leg_loaded' | 'hesitating' | 'recovering' | 'angle_shift' | 'side_on_stance' | 'overextended' | 'resetting';
+export interface ActiveReadTell { type: ReadTellType; strength: number; confidence: number; startedTick: number; }
 export type Behavior = Record<'aggression' | 'caution' | 'patience' | 'persistence' | 'riskTolerance' | 'counterPreference' | 'pressurePreference' | 'recoveryPreference', number>;
 export interface FighterCombatSnapshot {
   readonly fighterId: string;
@@ -68,6 +73,8 @@ export interface FighterRuntimeState {
   tacticalMode: TacticalMode;
   coaching?: { command: TacticalMode; compliance: CommandCompliance; strength: number; issuedTick: number; exchangeTick: number; successful: boolean };
   awakening?: { type: AwakeningType; startedTick: number };
+  /** Tick of the most recent Flow State phase-dodge; presentation uses it as a one-shot afterimage key. */
+  lastMirageEvadeTick?: number;
   awakeningAttempted: boolean;
   lastSignatureTick: number;
   nextDecisionTick: number;
@@ -81,9 +88,11 @@ export interface FighterRuntimeState {
   observedTellTick: number;
   memory: { attacks: Record<string, number>; successfulCounters: number; failedCounters: number; recentDamageTaken: number };
   utilities: Record<string, number>;
+  /** Currently readable body-language tells, primary first, capped at 2 (docs/combat/tell-revamped.md §26). */
+  readTells: ActiveReadTell[];
 }
 export interface CombatCommand { playerId: string; fighterId: string; command: TacticalMode; issuedTick: number; effectiveTick: number; sequence: number }
-export interface CombatEvent { type: 'ENGAGEMENT_CHANGED' | 'CLASH_STARTED' | 'CLASH_ENDED' | 'COLLISION' | 'STATE_CHANGED' | 'INTENT_CHANGED' | 'TELL_STARTED' | 'TELL_DETECTED' | 'ATTACK_STARTED' | 'ATTACK_ACTIVE' | 'ATTACK_MISSED' | 'ATTACK_LANDED' | 'BLOCK' | 'EVADE' | 'COUNTER_LANDED' | 'DAMAGE' | 'STAGGER' | 'COMMAND' | 'COMMAND_RESPONSE' | 'SIGNATURE_TECHNIQUE' | 'AWAKENING_STARTED' | 'MATCH_FINISHED'; tick: number; fighterId: string; targetId?: string; actionId?: string; value?: number; detail?: string }
+export interface CombatEvent { type: 'ENGAGEMENT_CHANGED' | 'CLASH_STARTED' | 'CLASH_ENDED' | 'COLLISION' | 'STATE_CHANGED' | 'INTENT_CHANGED' | 'TELL_STARTED' | 'TELL_DETECTED' | 'READ_TELL_STARTED' | 'READ_TELL_UPDATED' | 'READ_TELL_ENDED' | 'ATTACK_STARTED' | 'ATTACK_ACTIVE' | 'ATTACK_MISSED' | 'ATTACK_LANDED' | 'BLOCK' | 'EVADE' | 'COUNTER_LANDED' | 'DAMAGE' | 'STAGGER' | 'COMMAND' | 'COMMAND_RESPONSE' | 'SIGNATURE_TECHNIQUE' | 'AWAKENING_STARTED' | 'AWAKENING_ENDED' | 'MATCH_FINISHED'; tick: number; fighterId: string; targetId?: string; actionId?: string; value?: number; detail?: string }
 export interface MatchConfig { id: string; version: string; seed: number; fighterA: FighterCombatSnapshot; fighterB: FighterCombatSnapshot; arena: { radius: number }; maxTicks: number; commands?: CombatCommand[] }
 export interface MatchResult { winnerId: string | null; finishReason: 'KO' | 'double_KO' | 'time_limit'; durationTicks: number }
 export interface CombatMatchState { config: MatchConfig; tick: number; phase: 'active' | 'paused' | 'finished'; rngState: number; fighters: [FighterRuntimeState, FighterRuntimeState]; commands: CombatCommand[]; eventBuffer: CombatEvent[]; lastContactTick: number; result?: MatchResult }

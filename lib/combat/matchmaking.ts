@@ -1,6 +1,7 @@
 import { generateRandomChicken, randomStatBlock } from "../chickenGenerator";
 import { GENETIC_STAT_KEYS, type Chicken } from "../types";
 import { effectiveStat } from "./stats";
+import { withNpcAwakening } from "./evolution";
 
 const MATCH_TOLERANCE = 0.2; // ±20% of the player chicken's total effective stats
 const MATCH_ATTEMPTS = 20;
@@ -60,7 +61,7 @@ export function generateMatchedOpponent(
     const candidateTotal = totalEffectiveStats(candidate);
 
     if (candidateTotal >= minTotal && candidateTotal <= maxTotal) {
-      return candidate;
+      return withNpcAwakening(candidate);
     }
 
     const diff = Math.abs(candidateTotal - targetTotal);
@@ -70,5 +71,5 @@ export function generateMatchedOpponent(
     }
   }
 
-  return closest ?? generator();
+  return withNpcAwakening(closest ?? generator());
 }

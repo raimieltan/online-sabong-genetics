@@ -1,6 +1,6 @@
 import { COMBAT_DT, COMMAND_BUFFER_TICKS } from './constants';
-import { createMatch, queueCommand, stepCombat } from './engine';
-import type { CombatEvent, CombatMatchState, MatchConfig, TacticalMode, Vec3 } from './types';
+import { createMatch, queueCommand, stepCombat, triggerAwakening } from './engine';
+import type { AwakeningType, CombatEvent, CombatMatchState, MatchConfig, TacticalMode, Vec3 } from './types';
 
 /** Client-controlled fixed clock. Frame debt is retained; no simulation ticks are dropped. */
 export class CombatSession {
@@ -34,5 +34,8 @@ export class CombatSession {
     if (!f || this.state.phase !== 'active') throw new Error('No active fighter');
     const previous = this.state.commands.filter(c => c.fighterId === fighterId).at(-1);
     queueCommand(this.state, { playerId: f.snapshot.playerId, fighterId, command: mode, issuedTick: this.state.tick, effectiveTick: this.state.tick + COMMAND_BUFFER_TICKS, sequence: (previous?.sequence ?? -1) + 1 });
+  }
+  triggerAwakening(fighterId: string, type?: AwakeningType) {
+    triggerAwakening(this.state, fighterId, type);
   }
 }

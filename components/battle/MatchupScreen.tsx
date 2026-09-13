@@ -155,7 +155,7 @@ function FighterHud({ fighter, corner, record, align }: { fighter: Chicken; corn
   const career = normalizeCombatCareer(fighter.combatCareer);
   const knownTraits = career.evolutionTraits.filter(entry => entry.active).slice(0, 2);
   const signature = career.signatures.find(entry => entry.developed);
-  const awakeningKnown = career.awakenings.some(entry => entry.unlocked);
+  const unlockedAwakenings = career.awakenings.filter(entry => entry.unlocked);
   // Both HUDs keep the numeric value at the outside edge, followed by the
   // flexible bar track and a fixed-width label column. The right HUD only
   // differs in text alignment; reordering its grid children would put the
@@ -175,7 +175,7 @@ function FighterHud({ fighter, corner, record, align }: { fighter: Chicken; corn
         <span className="matchup-badge">{record.wins}W · {record.losses}L</span>
         {knownTraits.map(trait => <span key={trait.id} className="matchup-badge">{trait.name} {trait.level > 1 ? trait.level : ''}</span>)}
         {signature && <span className="matchup-badge">Signature · {signature.name}</span>}
-        {awakeningKnown && <span className="matchup-badge">Awakening · Unknown</span>}
+        {unlockedAwakenings.map(awakening => <span key={awakening.id} className="matchup-badge">Awakening · {awakening.name}</span>)}
       </div>
       <div className="mt-4 space-y-1.5">
         {GENETIC_STAT_KEYS.map((stat) => {

@@ -2,10 +2,12 @@ import { ACTIONS } from './actions';
 import { aerialImpact, aerialPhase } from './aerial';
 import { bodyRadius, separateFighters, strikeCollision } from './collision';
 import { beginBreak, beginClash, readTicks, resetProfile, setEngagement, updateEngagement } from './rhythm';
+import { updateReadTells } from './tells';
 import { canTransition } from './transitions';
 import { clamp, COMBAT_VERSION, COMMAND_COOLDOWN_TICKS, TACTICAL_MODES, TEMPORARY_COMBAT_EXAGGERATION, quantize as q } from './constants';
 import { createCombatRng } from './rng';
-import type { CombatMatchState, CombatCommand, CombatEvent, CommandCompliance, FighterRuntimeState as Fighter, FighterState, MatchConfig, TacticalMode } from './types';
+import { AWAKENING_DURATION_TICKS, awakeningModifiers } from './awakenings';
+import type { AwakeningType, CombatMatchState, CombatCommand, CombatEvent, CommandCompliance, FighterRuntimeState as Fighter, FighterState, MatchConfig, TacticalMode } from './types';
 
 const GROUND_HEIGHT = 0;
 const GROUND_EPSILON = .001;
@@ -34,7 +36,7 @@ export function createMatch(input: MatchConfig): CombatMatchState {
   const fighter = (snapshot: MatchConfig['fighterA'], x: number): Fighter => {
     const b = snapshot.behavior;
     const preferred = clamp(5.1 + b.caution * 1.35 + b.patience * .8 + b.counterPreference * .75 - b.aggression * .9 - b.pressurePreference * .6, 4.1, 7.3);
-    return { snapshot, state: 'circling', previousState: 'neutral', stateEnteredTick: 0, position: { x, y: 0, z: 0 }, velocity: { x: 0, y: 0, z: 0 }, grounded: true, wasGrounded: true, justLanded: false, groundedTicks: 1, locomotion: 'GROUNDED', facing: x < 0 ? 0 : Math.PI, health: snapshot.maxHealth, stamina: 100, balance: 100, currentIntent: 'probe', tacticalMode: 'balanced', awakeningAttempted: false, lastSignatureTick: -1000, nextDecisionTick: Math.round(18 + snapshot.behavior.patience * 20), lastCommandTick: -COMMAND_COOLDOWN_TICKS, lastSequence: -1, openingUntil: 0, cooldowns: {}, engagement: { phase: 'stalking', enteredTick: 0, clashUntil: 0, breakUntil: 0, resetUntil: 0, desiredRange: preferred, orbitDirection: x < 0 ? 1 : -1, lastCollisionTick: -1000 }, observedTellTick: -1, memory: { attacks: {}, successfulCounters: 0, failedCounters: 0, recentDamageTaken: 0 }, utilities: {} };
+    return { snapshot, state: 'circling', previousState: 'neutral', stateEnteredTick: 0, position: { x, y: 0, z: 0 }, velocity: { x: 0, y: 0, z: 0 }, grounded: true, wasGrounded: true, justLanded: false, groundedTicks: 1, locomotion: 'GROUNDED', facing: x < 0 ? 0 : Math.PI, health: snapshot.maxHealth, stamina: 100, balance: 100, currentIntent: 'probe', tacticalMode: 'balanced', awakeningAttempted: false, lastSignatureTick: -1000, nextDecisionTick: Math.round(18 + snapshot.behavior.patience * 20), lastCommandTick: -COMMAND_COOLDOWN_TICKS, lastSequence: -1, openingUntil: 0, cooldowns: {}, engagement: { phase: 'stalking', enteredTick: 0, clashUntil: 0, breakUntil: 0, resetUntil: 0, desiredRange: preferred, orbitDirection: x < 0 ? 1 : -1, lastCollisionTick: -1000 }, observedTellTick: -1, memory: { attacks: {}, successfulCounters: 0, failedCounters: 0, recentDamageTaken: 0 }, utilities: {}, readTells: [] };
   };
   const openingHalfGap = Math.min(input.arena.radius * .55, 4.6);
   const state: CombatMatchState = { config, tick: 0, phase: 'active', rngState: input.seed >>> 0, fighters: [fighter(config.fighterA, -openingHalfGap), fighter(config.fighterB, openingHalfGap)], commands: [], eventBuffer: [], lastContactTick: 0 };
@@ -45,7 +47,12 @@ export function queueCommand(s: CombatMatchState, c: CombatCommand): void {
   const f = s.fighters.find(f => f.snapshot.fighterId === c.fighterId);
   if (s.phase === 'finished' || !f || c.playerId !== f.snapshot.playerId || !TACTICAL_MODES.includes(c.command) || !Number.isInteger(c.issuedTick) || !Number.isInteger(c.effectiveTick) || !Number.isInteger(c.sequence) || c.sequence < 0 || c.issuedTick < 0 || c.effectiveTick <= s.tick || c.effectiveTick < c.issuedTick || c.effectiveTick > s.config.maxTicks) throw new Error('Invalid command');
   const prior = s.commands.filter(x => x.fighterId === c.fighterId).at(-1);
-  if (c.sequence <= (prior?.sequence ?? f.lastSequence) || c.effectiveTick - (prior?.effectiveTick ?? f.lastCommandTick) < COMMAND_COOLDOWN_TICKS) throw new Error('Command cooldown or sequence violation');
+  if (c.sequence <= (prior?.sequence ?? f.lastSequence)) throw new Error('Command sequence violation');
+  // docs/combat/tell-revamped.md §5-6: commands may be freely issued/changed
+  // at any point while the fighter is still reading (stalking) — there is no
+  // cooldown. Once the fighter has committed to an exchange, coaching locks
+  // until the next readable window.
+  if (f.engagement.phase !== 'stalking') throw new Error('COMMAND_LOCKED');
   s.commands.push({ ...c });
   s.commands.sort((a, b) => a.effectiveTick - b.effectiveTick || (a.fighterId < b.fighterId ? -1 : a.fighterId > b.fighterId ? 1 : a.sequence - b.sequence));
 }
@@ -53,25 +60,43 @@ function emit(s: CombatMatchState, f: Fighter, type: CombatEvent['type'], fields
 
 function traitLevel(f: Fighter, id: string) { return f.snapshot.evolution.traitLevels[id] ?? 0; }
 function awakeningPower(f: Fighter) {
-  if (!f.awakening) return 1;
-  return f.awakening.type === 'apex' ? 1.15 : f.awakening.type === 'berserker' ? 1.12 : f.awakening.type === 'flow-state' ? 1.08 : 1.06;
+  return awakeningModifiers(f.awakening?.type)?.power ?? 1;
+}
+function pickAwakening(f: Fighter): AwakeningType {
+  const available = f.snapshot.evolution.awakenings;
+  return available.includes('apex') ? 'apex'
+    : available.includes('flow-state') && traitLevel(f, 'counter-instinct') >= 3 ? 'flow-state'
+    : available.includes('unbreakable') ? 'unbreakable'
+    : available.includes('second-wind') && f.stamina < 28 ? 'second-wind'
+    : available[0] ?? 'unbreakable';
+}
+function startAwakening(s: CombatMatchState, f: Fighter, type: AwakeningType) {
+  f.awakeningAttempted = true;
+  f.awakening = { type, startedTick: s.tick };
+  f.balance = Math.max(f.balance, type === 'unbreakable' ? 55 : 40);
+  emit(s, f, 'AWAKENING_STARTED', { detail: type });
 }
 function tryAwakening(s: CombatMatchState, f: Fighter, other: Fighter, rng: ReturnType<typeof createCombatRng>) {
   if (f.awakening || f.awakeningAttempted || !f.snapshot.evolution.awakenings.length) return;
   const healthRatio = f.health / f.snapshot.maxHealth;
   if (healthRatio > .18 || healthRatio >= other.health / other.snapshot.maxHealth) return;
   f.awakeningAttempted = true;
-  const available = f.snapshot.evolution.awakenings;
-  const preferred = available.includes('apex') ? 'apex'
-    : available.includes('flow-state') && traitLevel(f, 'counter-instinct') >= 3 ? 'flow-state'
-    : available.includes('unbreakable') ? 'unbreakable'
-    : available.includes('second-wind') && f.stamina < 28 ? 'second-wind'
-    : available[0] ?? 'unbreakable';
+  const preferred = pickAwakening(f);
   const chance = clamp(.24 + f.snapshot.experience * .28 + (f.stamina < 20 ? .1 : 0) - (preferred === 'apex' ? .18 : 0), .08, .62);
   if (!rng.chance(chance)) return;
-  f.awakening = { type: preferred, startedTick: s.tick };
-  f.balance = Math.max(f.balance, preferred === 'unbreakable' ? 55 : 40);
-  emit(s, f, 'AWAKENING_STARTED', { detail: preferred });
+  startAwakening(s, f, preferred);
+}
+/** Manual override for a player-unlocked awakening. Still requires the
+ * fighter to have earned it in career progression; only the in-fight RNG
+ * gate is bypassed. */
+export function triggerAwakening(s: CombatMatchState, fighterId: string, type?: AwakeningType): void {
+  const f = s.fighters.find(f => f.snapshot.fighterId === fighterId);
+  if (!f || s.phase !== 'active') throw new Error('No active fighter');
+  if (f.awakening) throw new Error('Fighter is already awakened');
+  if (f.awakeningAttempted) throw new Error('Fighter has already awakened this match');
+  const requested = type ?? pickAwakening(f);
+  if (!f.snapshot.evolution.awakenings.includes(requested)) throw new Error('Awakening not unlocked');
+  startAwakening(s, f, requested);
 }
 function commandAlignment(f: Fighter, command: TacticalMode) {
   const b = f.snapshot.behavior;
@@ -150,7 +175,7 @@ function normalizePhysicsState(s: CombatMatchState, f: Fighter) {
 function start(s: CombatMatchState, f: Fighter, id: string) {
   const a = ACTIONS[id];
   const rushCost = f.snapshot.evolution.signatures.includes('relentless-rush') && (f.tacticalMode === 'pressure' || f.tacticalMode === 'all_in') ? 1.14 : 1;
-  const awakeningCost = f.awakening?.type === 'berserker' ? 1.18 : 1;
+  const awakeningCost = awakeningModifiers(f.awakening?.type)?.staminaCost ?? 1;
   const staminaCost = a.staminaCost * rushCost * awakeningCost;
   if (!free(f) || f.stamina < staminaCost || (f.cooldowns[id] ?? 0) > s.tick) return false;
   if (a.damage && f.engagement.phase === 'stalking') setEngagement(s, f, 'committing');
@@ -183,13 +208,18 @@ function perceive(s: CombatMatchState, f: Fighter, other: Fighter, rng: ReturnTy
   if (!tell || tell.phase !== 'startup' || f.observedTellTick === tell.startedTick || !free(f) || distance(f, other) > 2.8) return;
   if (!ACTIONS[tell.id].damage && ACTIONS[tell.id].category !== 'feint') return;
   f.observedTellTick = tell.startedTick;
-  if (!rng.chance(clamp(.35 + f.snapshot.stats.accuracy / 200 + f.snapshot.experience * .25))) return;
-  const delay = Math.round(clamp(17 - f.snapshot.stats.speed / 18 - f.snapshot.stats.agility / 36 - f.snapshot.experience * 4 + (100 - f.stamina) / 10, 5, 25));
+  // Flow State reads tells almost on reflex: near-guaranteed detection, a
+  // shorter reaction window, and a much higher willingness to commit into
+  // the counter rather than just guarding/sidestepping.
+  const flowState = f.awakening?.type === 'flow-state';
+  if (!rng.chance(clamp(.35 + f.snapshot.stats.accuracy / 200 + f.snapshot.experience * .25 + (flowState ? .35 : 0)))) return;
+  const delay = Math.round(clamp(17 - f.snapshot.stats.speed / 18 - f.snapshot.stats.agility / 36 - f.snapshot.experience * 4 + (100 - f.stamina) / 10 - (flowState ? 6 : 0), 5, 25));
   const b = f.snapshot.behavior;
   const meetChance = clamp(.35 + b.aggression * .35 + b.riskTolerance * .25 - b.caution * .15
     + (f.tacticalMode === 'pressure' || f.tacticalMode === 'all_in' ? .2 : 0)
-    - (f.tacticalMode === 'recover' || f.tacticalMode === 'defensive' ? .3 : 0), .05, .85);
-  const canMeet = f.engagement.phase === 'stalking' && f.stamina >= 35 && f.balance >= 45;
+    - (f.tacticalMode === 'recover' || f.tacticalMode === 'defensive' ? .3 : 0)
+    + (flowState ? .35 : 0), .05, .85);
+  const canMeet = (flowState || f.engagement.phase === 'stalking') && f.stamina >= (flowState ? 20 : 35) && f.balance >= (flowState ? 30 : 45);
   const meet = canMeet && rng.chance(meetChance);
   const reply = ACTIONS[tell.id].aerial ? tell.id : distance(f, other) < 1.6 ? 'wing_counter' : 'spur_lunge';
   f.reaction = { sourceTick: tell.startedTick, readyTick: s.tick + delay, actionId: meet ? reply : rng.chance(.45 + b.counterPreference * .3) ? 'sidestep' : 'guard' };
@@ -413,7 +443,7 @@ function move(s: CombatMatchState) {
     if (action?.damage && rt?.phase === 'startup' && f.engagement.phase === 'committing' && d > 1.15) forward = 15;
     if (action?.id === 'wing_counter' && rt?.phase === 'active') forward = 1.8;
     if (action?.id === 'spur_lunge' && rt?.phase === 'active') forward = 2;
-    const awakenedSpeed = f.awakening?.type === 'flow-state' || f.awakening?.type === 'apex' ? 1.08 : f.awakening ? 1.04 : 1;
+    const awakenedSpeed = awakeningModifiers(f.awakening?.type)?.speed ?? 1;
     const speed = (.9 + f.snapshot.stats.speed / 120) * awakenedSpeed * f.snapshot.physical.mobility / f.snapshot.physical.mass * (.5 + f.stamina / 200) * (.6 + f.snapshot.condition * .4);
     let y = f.position.y, vy = f.velocity.y;
     if (launch) {
@@ -446,6 +476,13 @@ function move(s: CombatMatchState) {
 export function stepCombat(s: CombatMatchState): CombatMatchState {
   if (s.phase !== 'active') return s;
   s.tick++; s.eventBuffer = [];
+  for (const fighter of s.fighters) {
+    if (!fighter.awakening || s.tick - fighter.awakening.startedTick < AWAKENING_DURATION_TICKS) continue;
+    const expiredType = fighter.awakening.type;
+    fighter.awakening = undefined;
+    fighter.lastMirageEvadeTick = undefined;
+    emit(s, fighter, 'AWAKENING_ENDED', { detail: expiredType });
+  }
   // Landing is an edge, not a sticky state. Preserve it through both
   // normalization passes in this tick, then clear it before the next one.
   s.fighters.forEach(f => { f.justLanded = false; });
@@ -460,6 +497,7 @@ export function stepCombat(s: CombatMatchState): CombatMatchState {
   s.fighters.forEach(f => { timeline(s, f); updateEngagement(s, f); });
   s.fighters.forEach((f, i) => perceive(s, f, s.fighters[1 - i], rng));
   s.fighters.forEach((f, i) => decide(s, f, s.fighters[1 - i], rng));
+  s.fighters.forEach((f, i) => updateReadTells(s, f, s.fighters[1 - i], rng));
   move(s);
   const [fighterA, fighterB] = s.fighters;
   const bodyDistance = distance(fighterA, fighterB);
@@ -487,14 +525,37 @@ export function stepCombat(s: CombatMatchState): CombatMatchState {
     const zone = strikeCollision(f, target, a);
     if (!zone) return;
     rt.hit = true;
+    const targetAwakening = awakeningModifiers(target.awakening?.type);
+    if (targetAwakening?.evadeChance && rng.chance(targetAwakening.evadeChance)) {
+      // Flow State does not teleport. It makes a short, explosive lateral slip
+      // off the attack line, then exposes the old pose to presentation as a
+      // frozen afterimage. The seeded RNG keeps both the dodge and its side
+      // deterministic in replay.
+      const side = rng.chance(.5) ? 1 : -1;
+      const slipAngle = target.facing + side * Math.PI / 2;
+      const slipDistance = target.awakening?.type === 'flow-state' ? .62 : .4;
+      target.position.x += Math.cos(slipAngle) * slipDistance;
+      target.position.z += Math.sin(slipAngle) * slipDistance;
+      const maxRadius = s.config.arena.radius - bodyRadius(target);
+      const radialDistance = Math.hypot(target.position.x, target.position.z);
+      if (radialDistance > maxRadius) {
+        target.position.x *= maxRadius / radialDistance;
+        target.position.z *= maxRadius / radialDistance;
+      }
+      target.velocity.x = Math.cos(slipAngle) * 4.5;
+      target.velocity.z = Math.sin(slipAngle) * 4.5;
+      target.lastMirageEvadeTick = s.tick;
+      emit(s, target, 'EVADE', { targetId: f.snapshot.fighterId, actionId: a.id, detail: target.awakening?.type === 'flow-state' ? 'MIRAGE_EVADE' : 'AWAKENED_EVADE' });
+      return;
+    }
     const blocked = target.state === 'defending';
     const blockMultiplier = blocked ? target.tacticalMode === 'defensive' ? .25 / TEMPORARY_COMBAT_EXAGGERATION : .25 : 1;
-    const damage = q(a.damage * (.6 + f.snapshot.stats.power / 100) * awakeningPower(f) * (zone === 'head' ? 1.15 * target.snapshot.physical.neck : 1) * (.65 + f.stamina / 285) * (.8 + f.snapshot.condition * .2) / (1 + target.snapshot.stats.defense / 120) / target.snapshot.physical.mass * blockMultiplier);
+    const damage = q(a.damage * (.6 + f.snapshot.stats.power / 100) * awakeningPower(f) * (zone === 'head' ? 1.15 * target.snapshot.physical.neck : 1) * (.65 + f.stamina / 285) * (.8 + f.snapshot.condition * .2) / (1 + target.snapshot.stats.defense / 120) / target.snapshot.physical.mass * blockMultiplier * (targetAwakening?.incomingDamage ?? 1));
     const resistance = target.currentAction ? ACTIONS[target.currentAction.id].interruptResistance : 0;
     // Balanced strikes and deliberate meet-in counters follow through so overlapping hits can trade.
     // Ordinary startup and off-balance attacks can still be stuffed; damage is never suppressed.
     const hardened = traitLevel(target, 'battle-hardened');
-    const resolve = (target.awakening?.type === 'unbreakable' || target.awakening?.type === 'flow-state' ? 15 : 0) + (hardened >= 3 ? 12 : hardened === 2 ? 5 : hardened === 1 ? -4 : 0);
+    const resolve = (targetAwakening?.resolve ?? 0) + (hardened >= 3 ? 12 : hardened === 2 ? 5 : hardened === 1 ? -4 : 0);
     const followingThrough = target.currentAction && ACTIONS[target.currentAction.id].damage > 0 && target.balance + resolve >= 45
       && (target.currentAction.phase === 'active'
         || (target.currentAction.phase === 'startup' && ['committing', 'clashing'].includes(target.engagement.phase))
@@ -529,10 +590,10 @@ export function stepCombat(s: CombatMatchState): CombatMatchState {
   // after their own root has landed; each fighter is normalized independently.
   s.fighters.forEach(f => normalizePhysicsState(s, f));
   for (const f of s.fighters) {
-    const awakenedRecovery = f.awakening?.type === 'second-wind' ? .16 : f.awakening ? .05 : 0;
+    const awakened = awakeningModifiers(f.awakening?.type);
     const reserves = f.stamina < 30 ? traitLevel(f, 'deep-reserves') * .025 : 0;
-    f.stamina = q(clamp(f.stamina + (f.currentAction ? .04 : .10 + f.snapshot.stats.stamina / 1200) + awakenedRecovery + reserves, 0, 100));
-    f.balance = q(clamp(f.balance + .08 * f.snapshot.physical.wingControl, 0, 100));
+    f.stamina = q(clamp(f.stamina + (f.currentAction ? .04 : .10 + f.snapshot.stats.stamina / 1200) + (awakened?.staminaRecovery ?? 0) + reserves, 0, 100));
+    f.balance = q(clamp(f.balance + .08 * f.snapshot.physical.wingControl + (awakened?.balanceRecovery ?? 0), 0, 100));
     f.memory.recentDamageTaken = q(Math.max(0, f.memory.recentDamageTaken - .035));
   }
   s.rngState = rng.state;

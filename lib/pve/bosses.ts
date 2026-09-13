@@ -1,6 +1,7 @@
 import type { StatBlock } from "../types";
 import { PVE_BOSS_ORDER, type PveBossDefinition, type PveBossId } from "./types";
 import { campaignPresentation } from "./campaign";
+import { getSideEncounter } from "./sideEncounters";
 
 /**
  * Fixed PvE boss ladder (Phase 1). Bosses are data-driven and never scale to
@@ -843,8 +844,14 @@ export const PVE_BOSSES: Record<PveBossId, PveBossDefinition> = {
 
 export const PVE_BOSS_LIST: readonly PveBossDefinition[] = PVE_BOSS_ORDER.map((id) => PVE_BOSSES[id]);
 
+/** Checks the fixed ladder first, then Phase 3 side encounters (§35 Phase
+ * 3) — both flow through the identical fighter-build/session/finish
+ * pipeline, so callers never need to know which registry a fight came from. */
 export function getBoss(bossId: string): PveBossDefinition | undefined {
-  return (PVE_BOSSES as Record<string, PveBossDefinition>)[bossId];
+  return (
+    (PVE_BOSSES as Record<string, PveBossDefinition>)[bossId] ??
+    (getSideEncounter(bossId) as unknown as PveBossDefinition | undefined)
+  );
 }
 
 export function previousBossId(bossId: PveBossId): PveBossId | null {

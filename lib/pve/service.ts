@@ -1,9 +1,10 @@
-import type { PveProgress } from "@prisma/client";
+import type { PveOpponentHistory, PveProgress } from "@prisma/client";
 
 import { applyFightOutcome, canFight } from "../combat";
 import { buildBattleReport, type BattleReport } from "../combat/battleReport";
 import { deriveBehaviorProfile } from "../combat/behavior";
 import { emptyExperience } from "../combat/experience";
+import { withNpcAwakening } from "../combat/evolution";
 import { LiveCombatV2Session, MAX_TURNS } from "../combat-v2/liveSession";
 import { createChicken } from "../chickenGenerator";
 import { prisma } from "../db";
@@ -12,9 +13,14 @@ import { PVE_BOSSES, PVE_BOSS_LIST, bossPreview, getBoss, previousBossId } from 
 import { PVE_CIRCUITS } from "./campaign";
 import { createBossFightSession, endBossFightSession, getBossFightSession } from "./bossFightSessions";
 import { PveError } from "./errors";
+import { escalateBoss, type PveOpponentHistorySummary } from "./escalation";
+import { rivalryStatus } from "./rivalry";
+import { deriveCampaignEvents } from "./events";
+import { PVE_SIDE_ENCOUNTERS, isSideEncounterUnlocked, type SideEncounterUnlockContext } from "./sideEncounters";
 import {
   PVE_BOSS_ORDER,
   type BossListEntry,
+  type CampaignEventView,
   type BossProgressView,
   type PveBossDefinition,
   type PveBossId,
@@ -44,7 +50,8 @@ function clampProfile(p: BehavioralProfile): BehavioralProfile {
  * fighter, with a stable synthetic id so it can never collide with a player's
  * chicken and is easy to recognise in a battle log.
  */
-export function buildBossFighter(boss: PveBossDefinition): Chicken {
+export function buildBossFighter(boss: PveBossDefinition, history: PveOpponentHistorySummary | null = null): Chicken {
+  const escalation = escalateBoss(boss, history);
   const base = createChicken({
     id: `pve-boss-${boss.id}`,
     name: boss.name,
@@ -58,19 +65,19 @@ export function buildBossFighter(boss: PveBossDefinition): Chicken {
 
   const behavior = clampProfile({
     ...deriveBehaviorProfile(boss.fightingStyle, base.traits),
-    ...boss.behaviorOverrides,
+    ...escalation.behaviorOverrides,
   });
   const experience: CombatExperience = { ...emptyExperience(), ...boss.experienceBaseline };
 
-  return {
+  return withNpcAwakening({
     ...base,
-    ev: boss.ev,
+    ev: escalation.ev,
     fightingStyle: boss.fightingStyle,
     behavior,
     experience,
-    condition: boss.condition ?? 100,
+    condition: escalation.condition,
     age: 400,
-  };
+  });
 }
 
 function toProgressView(bossId: PveBossId, unlocked: boolean, row?: PveProgress): BossProgressView {
@@ -89,18 +96,91 @@ async function progressRows(playerId: string): Promise<Map<string, PveProgress>>
   return new Map(rows.map((r) => [r.bossId, r]));
 }
 
+async function opponentHistoryRows(playerId: string): Promise<Map<string, PveOpponentHistory>> {
+  const rows = await prisma.pveOpponentHistory.findMany({ where: { playerId } });
+  return new Map(rows.map((r) => [r.bossId, r]));
+}
+
+function historySummary(row: PveOpponentHistory | undefined): PveOpponentHistorySummary | null {
+  if (!row) return null;
+  return { wins: row.wins, losses: row.losses, kosFor: row.kosFor, kosAgainst: row.kosAgainst };
+}
+
 function isUnlocked(bossId: PveBossId, rows: Map<string, PveProgress>): boolean {
   const prev = previousBossId(bossId);
   if (!prev) return true;
   return (rows.get(prev)?.clearCount ?? 0) > 0;
 }
 
+function completedCircuitIds(rows: Map<string, PveProgress>): string[] {
+  return PVE_CIRCUITS.filter((c) => (rows.get(c.championshipBossId)?.clearCount ?? 0) > 0).map((c) => c.id);
+}
+
+function toCampaignEventView(row: { id: string; kind: string; bossId: string | null; headline: string; detail: string; seen: boolean; createdAt: Date }): CampaignEventView {
+  return {
+    id: row.id,
+    kind: row.kind as CampaignEventView["kind"],
+    bossId: row.bossId,
+    headline: row.headline,
+    detail: row.detail,
+    seen: row.seen,
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+/** Campaign feed for the "Call-Outs & Invitationals" panel (§35 Phase 3). */
+export async function listCampaignEvents(playerId: string, limit = 20): Promise<CampaignEventView[]> {
+  const rows = await prisma.pveEncounterEvent.findMany({
+    where: { playerId },
+    orderBy: [{ seen: "asc" }, { createdAt: "desc" }],
+    take: limit,
+  });
+  return rows.map(toCampaignEventView);
+}
+
+export async function markCampaignEventsSeen(playerId: string, ids: string[]): Promise<void> {
+  if (!ids.length) return;
+  await prisma.pveEncounterEvent.updateMany({ where: { playerId, id: { in: ids } }, data: { seen: true } });
+}
+
 export async function listBosses(playerId: string): Promise<BossListEntry[]> {
-  const rows = await progressRows(playerId);
-  return PVE_BOSS_LIST.map((boss) => ({
-    boss: bossPreview(boss),
-    progress: toProgressView(boss.id, isUnlocked(boss.id, rows), rows.get(boss.id)),
-  }));
+  const [rows, historyRows] = await Promise.all([progressRows(playerId), opponentHistoryRows(playerId)]);
+  return PVE_BOSS_LIST.map((boss) => {
+    const history = historySummary(historyRows.get(boss.id));
+    return {
+      boss: bossPreview(boss),
+      progress: toProgressView(boss.id, isUnlocked(boss.id, rows), rows.get(boss.id)),
+      rivalry: rivalryStatus(history),
+      escalationDeltas: escalateBoss(boss, history).deltas,
+    };
+  });
+}
+
+/** Phase 3 side content (§35 Phase 3) — outside the fixed 20-boss ladder,
+ * unlocked by reputation/record/circuit completion instead of "previous
+ * boss cleared" (see isSideEncounterUnlocked). */
+export async function listSideEncounters(playerId: string): Promise<BossListEntry[]> {
+  const [rows, historyRows, campaignState] = await Promise.all([
+    progressRows(playerId),
+    opponentHistoryRows(playerId),
+    prisma.pveCampaignState.findUnique({ where: { playerId } }),
+  ]);
+  const ctx: SideEncounterUnlockContext = {
+    reputation: campaignState?.reputation ?? 0,
+    completedCircuitIds: completedCircuitIds(rows),
+    totalLossesAcrossHistory: [...historyRows.values()].reduce((sum, r) => sum + r.losses, 0),
+    rivalryDeciderBossIds: PVE_BOSS_ORDER.filter((id) => rivalryStatus(historySummary(historyRows.get(id))).deciderDue),
+  };
+  return PVE_SIDE_ENCOUNTERS.filter((encounter) => isSideEncounterUnlocked(encounter, ctx)).map((encounter) => {
+    const history = historySummary(historyRows.get(encounter.id));
+    const def = encounter as unknown as PveBossDefinition;
+    return {
+      boss: bossPreview(def),
+      progress: toProgressView(encounter.id as PveBossId, true, rows.get(encounter.id)),
+      rivalry: rivalryStatus(history),
+      escalationDeltas: escalateBoss(def, history).deltas,
+    };
+  });
 }
 
 /** Campaign state is derived from authoritative PvE clear records. This keeps the
@@ -129,6 +209,8 @@ export type StartBossFightResult = {
   maxTurns: number;
   snapshotA: ReturnType<LiveCombatV2Session["snapshotA"]>;
   snapshotB: ReturnType<LiveCombatV2Session["snapshotB"]>;
+  rivalry: import("./rivalry").RivalryStatus;
+  escalationDeltas: import("./escalation").EscalationDelta[];
 };
 
 export type BossFightResult = {
@@ -147,6 +229,8 @@ export type BossFightResult = {
     analysis: string | null;
   };
   battleReport: BattleReport;
+  rivalry: import("./rivalry").RivalryStatus;
+  newEvents: CampaignEventView[];
 };
 
 /**
@@ -165,8 +249,20 @@ export async function startBossFight(
   const boss = getBoss(bossIdRaw);
   if (!boss) throw new PveError("BOSS_NOT_FOUND");
 
-  const rows = await progressRows(playerId);
-  if (!isUnlocked(boss.id, rows)) throw new PveError("BOSS_LOCKED");
+  const sideEncounter = PVE_SIDE_ENCOUNTERS.find((e) => e.id === boss.id);
+  const [rows, historyRows] = await Promise.all([progressRows(playerId), opponentHistoryRows(playerId)]);
+  if (sideEncounter) {
+    const campaignState = await prisma.pveCampaignState.findUnique({ where: { playerId } });
+    const ctx: SideEncounterUnlockContext = {
+      reputation: campaignState?.reputation ?? 0,
+      completedCircuitIds: completedCircuitIds(rows),
+      totalLossesAcrossHistory: [...historyRows.values()].reduce((sum, r) => sum + r.losses, 0),
+      rivalryDeciderBossIds: PVE_BOSS_ORDER.filter((id) => rivalryStatus(historySummary(historyRows.get(id))).deciderDue),
+    };
+    if (!isSideEncounterUnlocked(sideEncounter, ctx)) throw new PveError("BOSS_LOCKED");
+  } else if (!isUnlocked(boss.id, rows)) {
+    throw new PveError("BOSS_LOCKED");
+  }
 
   const row = await prisma.chicken.findUnique({ where: { id: chickenId } });
   if (!row) throw new PveError("CHICKEN_NOT_FOUND");
@@ -175,7 +271,8 @@ export async function startBossFight(
   const chicken = row as unknown as Chicken;
   if (!canFight(chicken)) throw new PveError("CHICKEN_NOT_ELIGIBLE");
 
-  const bossFighter = buildBossFighter(boss);
+  const history = historySummary(historyRows.get(boss.id));
+  const bossFighter = buildBossFighter(boss, history);
   const session = new LiveCombatV2Session(chicken, bossFighter);
   const sessionId = createBossFightSession({ session, playerId, chickenId, chicken, bossId: boss.id, bossFighter });
 
@@ -188,6 +285,8 @@ export async function startBossFight(
     maxTurns: MAX_TURNS,
     snapshotA: session.snapshotA(),
     snapshotB: session.snapshotB(),
+    rivalry: rivalryStatus(history),
+    escalationDeltas: escalateBoss(boss, history).deltas,
   };
 }
 
@@ -210,7 +309,13 @@ export async function finishBossFight(playerId: string, sessionId: string): Prom
   const boss = getBoss(entry.bossId);
   if (!boss) throw new PveError("BOSS_NOT_FOUND");
 
-  const rows = await progressRows(playerId);
+  const [rows, historyRows, campaignStateBefore] = await Promise.all([
+    progressRows(playerId),
+    opponentHistoryRows(playerId),
+    prisma.pveCampaignState.findUnique({ where: { playerId } }),
+  ]);
+  const historyBefore = historyRows.get(boss.id) ?? null;
+  const rivalryBefore = rivalryStatus(historySummary(historyBefore ?? undefined));
   const result = session.finalize();
   const won = result.winnerId === chicken.id;
 
@@ -238,7 +343,7 @@ export async function finishBossFight(playerId: string, sessionId: string): Prom
     : 0;
 
   const reputationEarned = won && firstClear ? Math.round(boss.rewards.firstClearCredits / 10) : 0;
-  const [updatedChicken, updatedPlayer, progressRow] = await prisma.$transaction(async (tx) => {
+  const [updatedChicken, updatedPlayer, progressRow, newEvents, rivalryAfterFight] = await prisma.$transaction(async (tx) => {
     const uc = await tx.chicken.update({ where: { id: chickenId }, data: persistedOutcome });
 
     const up = credits > 0
@@ -288,7 +393,49 @@ export async function finishBossFight(playerId: string, sessionId: string): Prom
         lastFightAt: new Date(),
       },
     });
-    return [uc, up, pr] as const;
+    // Everything below reads back the rows this same transaction just wrote,
+    // so "before" vs "after" comparisons (streaks, rivalry deciders, newly
+    // unlocked side content, reputation milestones) never race a later fight.
+    const [rowsAfter, historyRowsAfter, campaignStateAfter] = await Promise.all([
+      tx.pveProgress.findMany({ where: { playerId } }),
+      tx.pveOpponentHistory.findMany({ where: { playerId } }),
+      tx.pveCampaignState.findUniqueOrThrow({ where: { playerId } }),
+    ]);
+    const rowsAfterMap = new Map(rowsAfter.map((r) => [r.bossId, r]));
+    const historyRowsAfterMap = new Map(historyRowsAfter.map((r) => [r.bossId, r]));
+    const rivalryAfter = rivalryStatus(historySummary(historyRowsAfterMap.get(boss.id)));
+
+    const unlockCtxBefore: SideEncounterUnlockContext = {
+      reputation: campaignStateBefore?.reputation ?? 0,
+      completedCircuitIds: completedCircuitIds(rows),
+      totalLossesAcrossHistory: [...historyRows.values()].reduce((sum, r) => sum + r.losses, 0),
+      rivalryDeciderBossIds: PVE_BOSS_ORDER.filter((id) => rivalryStatus(historySummary(historyRows.get(id))).deciderDue),
+    };
+    const unlockCtxAfter: SideEncounterUnlockContext = {
+      reputation: campaignStateAfter.reputation,
+      completedCircuitIds: completedCircuitIds(rowsAfterMap),
+      totalLossesAcrossHistory: [...historyRowsAfterMap.values()].reduce((sum, r) => sum + r.losses, 0),
+      rivalryDeciderBossIds: PVE_BOSS_ORDER.filter((id) => rivalryStatus(historySummary(historyRowsAfterMap.get(id))).deciderDue),
+    };
+    const newlyUnlockedSideEncounters = PVE_SIDE_ENCOUNTERS.filter(
+      (encounter) => !isSideEncounterUnlocked(encounter, unlockCtxBefore) && isSideEncounterUnlocked(encounter, unlockCtxAfter),
+    );
+
+    const events = deriveCampaignEvents({
+      boss,
+      won,
+      priorHistory: historyBefore ? { wins: historyBefore.wins, losses: historyBefore.losses } : null,
+      rivalry: rivalryAfter,
+      wasRivalryDeciderDueBefore: rivalryBefore.deciderDue,
+      reputationBefore: campaignStateBefore?.reputation ?? 0,
+      reputationAfter: campaignStateAfter.reputation,
+      newlyUnlockedSideEncounters,
+    });
+    const created = events.length
+      ? await Promise.all(events.map((e) => tx.pveEncounterEvent.create({ data: { playerId, kind: e.kind, bossId: e.bossId, headline: e.headline, detail: e.detail } })))
+      : [];
+
+    return [uc, up, pr, created, rivalryAfter] as const;
   });
 
   return {
@@ -301,6 +448,8 @@ export async function finishBossFight(playerId: string, sessionId: string): Prom
     playerCredits: updatedPlayer.credits,
     chicken: updatedChicken,
     progress: toProgressView(boss.id, true, progressRow ?? undefined),
+    rivalry: rivalryAfterFight,
+    newEvents: newEvents.map(toCampaignEventView),
     summary: {
       durationTurns: result.totalTurns,
       outcomeReason: result.outcomeReason,
