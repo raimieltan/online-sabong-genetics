@@ -468,9 +468,9 @@
     "semantic_hash": ""
   },
   "components/chicken3d/BattleStage3D.tsx": {
-    "mtime": 1789260438.427556,
-    "seen": 1789262833.8644211,
-    "ast_hash": "f8f6545c7a3067b32ff0966fa56ac07f",
+    "mtime": 1789263059.4754565,
+    "seen": 1789263148.56951,
+    "ast_hash": "14c220fe8679ad86221834e0b2ce7cc0",
     "semantic_hash": ""
   },
   "components/chicken3d/ChickenModel.tsx": {
@@ -1950,9 +1950,9 @@
     "semantic_hash": ""
   },
   "components/combat-v2/ContinuousBattle.tsx": {
-    "mtime": 1789262804.4718137,
-    "seen": 1789262833.864747,
-    "ast_hash": "e95aed7240cb82b47a1d038126311403",
+    "mtime": 1789263098.0969036,
+    "seen": 1789263148.569845,
+    "ast_hash": "eafac22e73661203ce9b190d62780c4d",
     "semantic_hash": ""
   },
   "lib/__tests__/continuousCollision.test.ts": {
@@ -2610,9 +2610,9 @@
     "semantic_hash": ""
   },
   "components/combat-v2/hud/TellIndicator.tsx": {
-    "mtime": 1789262800.2696483,
-    "seen": 1789262833.864863,
-    "ast_hash": "39218a458eeb64cdc6b3d2482418b8ce",
+    "mtime": 1789263123.8936439,
+    "seen": 1789263148.569959,
+    "ast_hash": "7f0c4a41649f9d636c752c8d67300724",
     "semantic_hash": ""
   },
   "components/combat-v2/hud/TellLegend.tsx": {
@@ -2622,9 +2622,9 @@
     "semantic_hash": ""
   },
   "components/combat-v2/hud/uiAdapter.ts": {
-    "mtime": 1789224180.777158,
-    "seen": 1789240999.964128,
-    "ast_hash": "3e913cf2c7b7dbd916a62b9c3415d13c",
+    "mtime": 1789263011.8346539,
+    "seen": 1789263148.569988,
+    "ast_hash": "d16c7805bd54c9e0b755a578aa65eca7",
     "semantic_hash": ""
   },
   "components/pve/CampaignFeed.tsx": {

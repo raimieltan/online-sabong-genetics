@@ -193,7 +193,7 @@ export default function ContinuousBattle({ chickenA, chickenB, matchSeed = 81726
         current.offsetY = -(prior.y + (fighter.position.y - prior.y) * alpha) / ANIM_PX_TO_WORLD; current.offsetZ = (prior.z + (fighter.position.z - prior.z) * alpha) / ANIM_PX_TO_WORLD;
         current.yaw = -fighter.facing + (index === 0 ? 0 : Math.PI); current.flash = Math.max(0, 1 - (state.tick - damageTick[index]) / 8);
         const primaryTell = fighter.readTells[0]; const lean = primaryTell && TELL_LEAN[primaryTell.type];
-        const posture: FighterPosture = { mode: fighter.tacticalMode, hesitating: primaryTell?.type === 'hesitating', strength: primaryTell?.strength ?? 0 };
+        const posture: FighterPosture = { mode: fighter.tacticalMode, hesitating: primaryTell?.type === 'hesitating', strength: primaryTell?.strength ?? 0, tellType: primaryTell?.type ?? null };
         if (index === 0) postureA.current = posture; else postureB.current = posture;
         current.rot = (lean?.rot ?? 0) * (primaryTell?.strength ?? 0);
         current.scaleY = 1 + (lean?.scaleY ?? 0) * (primaryTell?.strength ?? 0);

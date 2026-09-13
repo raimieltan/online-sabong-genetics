@@ -48,7 +48,6 @@ export const TOURNAMENT_DEFINITIONS: readonly TournamentDefinition[] = [
   },
   {
     id: "philippine-championship", name: "Philippine Championship", circuit: "National", bracketSize: 32, tier: "champion", entryFee: 0, championPrize: 64000,
-    qualification: "Win a Regional Championship to qualify.",
     rules: ["Single elimination", "Condition carries between rounds", "Injuries persist"],
   },
 ] as const;

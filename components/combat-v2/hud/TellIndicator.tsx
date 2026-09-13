@@ -26,7 +26,7 @@ export function TellIndicator({ tell, dimmed }: { tell: TellUiState | null; dimm
   return (
     <div
       key={tell.id}
-      className={`pointer-events-none absolute z-20 flex max-w-[190px] flex-col gap-0.5 rounded-md border border-[rgba(185,155,95,0.28)] bg-[rgba(12,12,11,0.68)] px-2.5 py-1.5 backdrop-blur-sm animate-tell-in transition-[left,top,opacity,transform,box-shadow] duration-300 ease-out ${isLeft ? 'items-start text-left' : 'items-end text-right'}`}
+      className={`pointer-events-none absolute z-20 flex max-w-[150px] flex-col gap-0.5 rounded-md border border-[rgba(185,155,95,0.28)] bg-[rgba(12,12,11,0.68)] px-2 py-1 backdrop-blur-sm animate-tell-in transition-[left,top,opacity,transform,box-shadow] duration-300 ease-out ${isLeft ? 'items-start text-left' : 'items-end text-right'}`}
       style={{
         left: `${xPct}%`,
         top: `${yPct}%`,
@@ -36,14 +36,14 @@ export function TellIndicator({ tell, dimmed }: { tell: TellUiState | null; dimm
         boxShadow: `0 0 ${8 + tell.strength * 14}px rgba(231,185,95,${glow})`,
       }}
     >
-      <span className="flex items-center gap-1.5 text-sm text-(--color-ivory,#e8e0d0)">
+      <span className="flex items-center gap-1 text-[12px] leading-tight text-(--color-ivory,#e8e0d0)">
         {isLeft && <span className="text-(--color-gold-bright)">{tell.icon}</span>}
         {tell.label}
         {!isLeft && <span className="text-(--color-gold-bright)">{tell.icon}</span>}
       </span>
-      {tell.interpretation && <span className="text-[11px] text-(--color-text-muted)">{tell.interpretation}</span>}
+      {tell.interpretation && <span className="text-[10px] leading-tight text-(--color-text-muted)">{tell.interpretation}</span>}
       {tell.secondary && (
-        <span className="flex items-center gap-1 text-[10px] text-(--color-text-muted) opacity-70">
+        <span className="flex items-center gap-1 text-[9px] leading-tight text-(--color-text-muted) opacity-70">
           {isLeft && <span>{tell.secondary.icon}</span>}
           {tell.secondary.label}
           {!isLeft && <span>{tell.secondary.icon}</span>}

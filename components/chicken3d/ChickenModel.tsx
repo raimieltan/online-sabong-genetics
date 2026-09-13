@@ -250,16 +250,60 @@ function AwakeningAura({ awakening }: { awakening: RefObject<AwakeningType | nul
 
 type DodgeAfterimage = {
   root: THREE.Group;
-  materials: THREE.Material[];
+  material: THREE.MeshBasicMaterial;
+  posePairs: { source: THREE.Object3D; ghost: THREE.Object3D }[];
   baseScale: THREE.Vector3;
   age: number;
   duration: number;
   maxOpacity: number;
+  active: boolean;
 };
 
 function disposeAfterimage(afterimage: DodgeAfterimage) {
   afterimage.root.removeFromParent();
-  afterimage.materials.forEach((material) => material.dispose());
+  afterimage.material.dispose();
+}
+
+/** Builds one reusable ghost once per model. Dodge events only copy bone
+ * transforms into it; they never clone a rig, geometry, or materials in the
+ * render loop. Keeping a single explicit silhouette also bounds skinning and
+ * draw-call cost while preserving the readable "old position" illusion. */
+function createDodgeAfterimage(sourceScene: THREE.Object3D): DodgeAfterimage {
+  const ghostScene = SkeletonUtils.clone(sourceScene);
+  const material = new THREE.MeshBasicMaterial({
+    color: "#d9fbff",
+    transparent: true,
+    opacity: 0,
+    depthWrite: false,
+    depthTest: false,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide,
+    toneMapped: false,
+  });
+  const sourcePoseNodes: THREE.Object3D[] = [];
+  const ghostPoseNodes: THREE.Object3D[] = [];
+  sourceScene.traverse((node) => { if (node instanceof THREE.Bone) sourcePoseNodes.push(node); });
+  ghostScene.traverse((node) => {
+    if (node instanceof THREE.Bone) ghostPoseNodes.push(node);
+    if (node instanceof THREE.Mesh) {
+      node.material = material;
+      node.frustumCulled = false;
+      node.renderOrder = 980;
+    }
+  });
+  const root = new THREE.Group();
+  root.visible = false;
+  root.add(ghostScene);
+  return {
+    root,
+    material,
+    posePairs: sourcePoseNodes.map((source, index) => ({ source, ghost: ghostPoseNodes[index] })).filter(pair => pair.ghost),
+    baseScale: new THREE.Vector3(1, 1, 1),
+    age: 0,
+    duration: 0.42,
+    maxOpacity: 0.68,
+    active: false,
+  };
 }
 
 // --- Feather color-pattern shader ------------------------------------------
@@ -709,15 +753,18 @@ export function ChickenModel({
   const auraStrength = useRef(0);
   const auraScratchColor = useRef(new THREE.Color());
   const auraScratchGlow = useRef(new THREE.Color());
-  const afterimageRoot = useMemo(() => new THREE.Group(), []);
-  const afterimages = useRef<DodgeAfterimage[]>([]);
+  const afterimage = useMemo(() => createDodgeAfterimage(clonedScene.scene), [clonedScene]);
+  const afterimageRef = useRef<DodgeAfterimage | null>(null);
   const lastAfterimageKey = useRef<number | null>(null);
 
-  useEffect(() => () => {
-    wingTrails.dispose();
-    afterimages.current.forEach(disposeAfterimage);
-    afterimages.current = [];
-  }, [afterimageRoot, wingTrails]);
+  useEffect(() => {
+    afterimageRef.current = afterimage;
+    return () => {
+      afterimageRef.current = null;
+      disposeAfterimage(afterimage);
+    };
+  }, [afterimage]);
+  useEffect(() => () => wingTrails.dispose(), [wingTrails]);
 
   const recordWingTrails = (dt: number) => {
     if (!showWingTrajectory) return;
@@ -728,90 +775,46 @@ export function ChickenModel({
   };
 
   const spawnDodgeAfterimage = (velocityX: number, velocityZ: number) => {
-    if (!group.current) return;
-    // SkeletonUtils preserves the current skinned pose instead of sharing the
-    // live fighter's bones. The duplicate is attached outside the moving
-    // fighter group, so it stays frozen at the dodge-start location.
+    const ghost = afterimageRef.current;
+    if (!group.current || !ghost) return;
+    // Copy the exact current pose into the prebuilt independent skeleton. The
+    // ghost lives outside the moving fighter group and therefore stays behind.
     clonedScene.scene.updateMatrixWorld(true);
     const velocityLength = Math.hypot(velocityX, velocityZ);
     const trailX = velocityLength > 0.01 ? velocityX / velocityLength : 0;
     const trailZ = velocityLength > 0.01 ? velocityZ / velocityLength : (facing === "right" ? -1 : 1);
-    const ghostColors = ["#efffff", "#70dcff", "#597cff"];
-
-    for (let echoIndex = 0; echoIndex < 3; echoIndex++) {
-      const posedClone = SkeletonUtils.clone(clonedScene.scene);
-      const materials: THREE.Material[] = [];
-      const maxOpacity = 0.72 - echoIndex * 0.17;
-      posedClone.traverse((node) => {
-        if (!(node instanceof THREE.Mesh)) return;
-        node.frustumCulled = false;
-        node.renderOrder = 980 - echoIndex;
-        const sources = Array.isArray(node.material) ? node.material : [node.material];
-        const ghosts = sources.map((source) => {
-          const ghost = source.clone();
-          ghost.transparent = true;
-          ghost.opacity = maxOpacity;
-          ghost.depthWrite = false;
-          ghost.depthTest = false;
-          ghost.blending = THREE.AdditiveBlending;
-          ghost.side = THREE.DoubleSide;
-          if (ghost instanceof THREE.MeshStandardMaterial) {
-            // Strip the original texture so the entire posed silhouette reads
-            // as a bright afterimage even against a similarly colored arena.
-            ghost.map = null;
-            ghost.normalMap = null;
-            ghost.roughnessMap = null;
-            ghost.metalnessMap = null;
-            ghost.color.set(ghostColors[echoIndex]);
-            ghost.emissive.set(ghostColors[echoIndex]);
-            ghost.emissiveIntensity = 2.8 - echoIndex * 0.4;
-            ghost.roughness = 0;
-          }
-          materials.push(ghost);
-          return ghost;
-        });
-        node.material = Array.isArray(node.material) ? ghosts : ghosts[0];
-      });
-
-      const root = new THREE.Group();
-      root.add(posedClone);
-      root.position.copy(group.current.position);
-      root.position.x -= trailX * echoIndex * 0.09;
-      root.position.z -= trailZ * echoIndex * 0.09;
-      root.quaternion.copy(group.current.quaternion);
-      root.scale.copy(group.current.scale).multiplyScalar(growthVisualScale(growthStage));
-      afterimageRoot.add(root);
-      afterimages.current.push({
-        root,
-        materials,
-        baseScale: root.scale.clone(),
-        age: echoIndex * -0.025,
-        duration: 0.42 + echoIndex * 0.06,
-        maxOpacity,
-      });
-    }
-
-    // Keep the pool bounded even if several perfect dodges occur back-to-back.
-    while (afterimages.current.length > 9) disposeAfterimage(afterimages.current.shift()!);
+    ghost.posePairs.forEach(({ source, ghost: poseNode }) => {
+      poseNode.position.copy(source.position);
+      poseNode.quaternion.copy(source.quaternion);
+      poseNode.scale.copy(source.scale);
+    });
+    ghost.root.position.copy(group.current.position);
+    ghost.root.position.x -= trailX * 0.035;
+    ghost.root.position.z -= trailZ * 0.035;
+    ghost.root.quaternion.copy(group.current.quaternion);
+    ghost.root.scale.copy(group.current.scale).multiplyScalar(growthVisualScale(growthStage));
+    ghost.baseScale.copy(ghost.root.scale);
+    ghost.age = 0;
+    ghost.material.opacity = ghost.maxOpacity;
+    ghost.active = true;
+    ghost.root.visible = true;
   };
 
   const updateDodgeAfterimages = (dt: number) => {
-    afterimages.current = afterimages.current.filter((afterimage) => {
-      afterimage.age += dt;
-      const progress = Math.max(0, Math.min(1, afterimage.age / afterimage.duration));
-      const opacity = afterimage.maxOpacity * (1 - progress) * (1 - progress * 0.75);
-      afterimage.materials.forEach((material) => { material.opacity = opacity; });
-      // A slight directional smear sells speed while the pose itself remains
-      // a frozen snapshot rather than becoming a second animated fighter.
-      afterimage.root.scale.set(
-        afterimage.baseScale.x * (1 + progress * 0.12),
-        afterimage.baseScale.y * (1 - progress * 0.04),
-        afterimage.baseScale.z * (1 + progress * 0.12)
-      );
-      if (progress < 1) return true;
-      disposeAfterimage(afterimage);
-      return false;
-    });
+    const ghost = afterimageRef.current;
+    if (!ghost?.active) return;
+    ghost.age += dt;
+    const progress = Math.max(0, Math.min(1, ghost.age / ghost.duration));
+    ghost.material.opacity = ghost.maxOpacity * (1 - progress) * (1 - progress * 0.75);
+    // A slight directional smear sells speed while the pose remains frozen.
+    ghost.root.scale.set(
+      ghost.baseScale.x * (1 + progress * 0.12),
+      ghost.baseScale.y * (1 - progress * 0.04),
+      ghost.baseScale.z * (1 + progress * 0.12)
+    );
+    if (progress < 1) return;
+    ghost.active = false;
+    ghost.root.visible = false;
   };
 
   useFrame((state, delta) => {
@@ -974,7 +977,7 @@ export function ChickenModel({
       </group>
       {showWingTrajectory && <primitive object={wingTrails.left.line} />}
       {showWingTrajectory && <primitive object={wingTrails.right.line} />}
-      <primitive object={afterimageRoot} />
+      <primitive object={afterimage.root} />
     </>
   );
 }
