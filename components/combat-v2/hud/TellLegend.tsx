@@ -21,7 +21,7 @@ const LEGEND_ENTRIES: Array<{ icon: string; label: string }> = [
 // Secondary/reference panel — the live read now surfaces next to the fighter
 // via TellIndicator, so this starts collapsed to keep focus on the fight.
 export function TellLegend({ dimmed }: { dimmed: boolean }) {
-  const [collapsed, setCollapsed] = useState(true);
+  const [collapsed, setCollapsed] = useState(false);
 
   if (collapsed) {
     return (
@@ -37,7 +37,7 @@ export function TellLegend({ dimmed }: { dimmed: boolean }) {
   }
 
   return (
-    <div className={`pointer-events-auto absolute right-4 top-1/2 z-20 w-[168px] -translate-y-1/2 rounded-lg border border-[rgba(185,155,95,0.24)] bg-[rgba(12,12,11,0.68)] p-2.5 backdrop-blur-md transition-opacity duration-200 ${dimmed ? 'opacity-25' : 'opacity-100'}`}>
+    <div className={`pointer-events-auto absolute right-5 top-[44%] z-20 hidden w-[160px] -translate-y-1/2 rounded-lg border border-[rgba(185,155,95,0.2)] bg-[rgba(12,12,11,0.68)] p-2.5 backdrop-blur-md transition-opacity duration-200 md:block ${dimmed ? 'opacity-25' : 'opacity-100'}`}>
       <div className="mb-1.5 flex items-center justify-between">
         <p className="text-[9px] uppercase tracking-[.16em] text-(--color-text-muted)">Tell Indicators</p>
         <button type="button" onClick={() => setCollapsed(true)} aria-label="Collapse tell legend" className="text-(--color-text-muted) hover:text-(--color-gold-bright)">

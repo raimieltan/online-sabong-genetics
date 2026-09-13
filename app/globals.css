@@ -878,7 +878,13 @@ body {
 .animate-command-queued { animation: command-queued 900ms ease-in-out infinite; }
 @keyframes command-ignored { 0%, 100% { background-color: rgba(165,67,55,.08); } 50% { background-color: rgba(165,67,55,.22); } }
 .animate-command-ignored { animation: command-ignored 500ms ease-in-out 2; }
+.combat-command-top { clip-path: polygon(18% 0,82% 0,100% 100%,0 100%); border-radius:48% 48% 12% 12% / 18% 18% 10% 10%; }
+.combat-command-left { clip-path:polygon(0 12%,100% 0,88% 100%,10% 88%); border-radius:45% 10% 18% 45%; }
+.combat-command-right { clip-path:polygon(0 0,100% 12%,90% 88%,12% 100%); border-radius:10% 45% 45% 18%; }
+.combat-command-bottom { clip-path:polygon(0 0,100% 0,82% 100%,18% 100%); border-radius:12% 12% 48% 48% / 10% 10% 18% 18%; }
+@keyframes damage-counter { 0% { opacity:0; transform:translate(-50%,8px) scale(.72); } 14% { opacity:1; transform:translate(-50%,-5px) scale(1.15); } 70% { opacity:1; transform:translate(-50%,-28px) scale(1); } 100% { opacity:0; transform:translate(-50%,-48px) scale(.94); } }
+.animate-damage-counter { animation:damage-counter 950ms cubic-bezier(.18,.82,.25,1) both; }
 @media (prefers-reduced-motion: reduce) {
-  .animate-tell-in, .animate-command-queued, .animate-command-ignored { animation: none; }
+  .animate-tell-in, .animate-command-queued, .animate-command-ignored, .animate-damage-counter { animation: none; }
 }
 @media (max-width: 640px) { .tournament-frame { width: min(100% - 1rem, 1180px); padding-top: .6rem; } .tournament-topline { min-height: 2.8rem; } .tournament-context { font-size: .55rem; } .tournament-bracket { padding: .8rem; } .tournament-footer { justify-content: stretch; } .tournament-footer > * { flex: 1; text-align: center; } }

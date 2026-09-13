@@ -2,346 +2,56 @@ import { ChickenThumbnail } from '@/components/chicken3d/ChickenThumbnail';
 import type { Chicken } from '@/lib/types';
 import type { TacticalMode } from '@/lib/combat-v2';
 
-export type CommandFeedback = {
-  mode: TacticalMode;
-  status: 'queued' | 'acknowledged' | 'ignored';
-};
+export type CommandFeedback = { mode: TacticalMode; status: 'queued' | 'acknowledged' | 'ignored' };
+export type CommandCardDef = { mode: TacticalMode; title: string; subtitle: string; icon: string; hotkey: string };
 
-export type CommandCardDef = {
-  mode: TacticalMode;
-  title: string;
-  subtitle: string;
-  icon: string;
-  hotkey: string;
-};
-
-/**
- * Fixed symmetrical six-command layout.
- *
- * Important:
- * Positioning is applied to an OUTER wrapper.
- * Hover/press transforms are applied to the INNER button.
- *
- * This prevents absolute positioning transforms from fighting
- * Tailwind hover/scale transforms.
- */
-const COMMAND_POSITIONS = [
-  { x: 0, y: -105 }, // top
-  { x: 145, y: -55 }, // upper-right
-  { x: 145, y: 70 }, // lower-right
-  { x: 0, y: 120 }, // bottom
-  { x: -145, y: 70 }, // lower-left
-  { x: -145, y: -55 }, // upper-left
+const SEGMENTS = [
+  { position: 'left-1/2 top-0 -translate-x-1/2', shape: 'combat-command-top' },
+  { position: 'left-0 top-[79px]', shape: 'combat-command-left' },
+  { position: 'right-0 top-[79px]', shape: 'combat-command-right' },
+  { position: 'bottom-0 left-1/2 -translate-x-1/2', shape: 'combat-command-bottom' },
 ] as const;
 
-export function CommandWheel({
-  chicken,
-  cards,
-  activeMode,
-  disabledAll,
-  locked,
-  decisionWindow,
-  feedback,
-  onSelect,
-}: {
+export function CommandWheel({ chicken, cards, activeMode, disabledAll, locked, feedback, onSelect }: {
   chicken: Chicken;
   cards: CommandCardDef[];
   activeMode: TacticalMode | undefined;
   disabledAll: boolean;
-  /** docs/combat/tell-revamped.md §6 — the opponent has committed, so
-   * coaching is locked for this exchange until the next readable window. */
   locked: boolean;
-  decisionWindow: boolean;
   feedback: CommandFeedback | null;
   onSelect: (mode: TacticalMode) => void;
 }) {
   const disabled = disabledAll || locked;
-
   return (
-    <div className="relative mx-auto h-[330px] w-[420px] max-w-full">
-      {/* Decorative center glow / backing */}
-      <div
-        className="
-          pointer-events-none
-          absolute
-          left-1/2
-          top-1/2
-          h-[210px]
-          w-[300px]
-          -translate-x-1/2
-          -translate-y-1/2
-          rounded-[50%]
-          bg-[radial-gradient(ellipse_at_center,rgba(173,128,52,0.08)_0%,rgba(0,0,0,0)_68%)]
-        "
-      />
-
-      {cards.slice(0, 6).map((card, index) => {
-        const position = COMMAND_POSITIONS[index];
-        if (!position) return null;
-
+    <div className="relative mx-auto h-[238px] w-[450px] max-w-[96vw] drop-shadow-[0_18px_30px_rgba(0,0,0,.58)]">
+      <div className="pointer-events-none absolute inset-x-[82px] top-[48px] h-[142px] rounded-[50%] bg-[radial-gradient(ellipse_at_center,rgba(197,151,70,.2),rgba(8,7,6,.72)_48%,transparent_72%)]" />
+      {cards.slice(0, 4).map((card, index) => {
+        const segment = SEGMENTS[index];
+        if (!segment) return null;
         const active = activeMode === card.mode;
         const feedbackTarget = feedback?.mode === card.mode;
-
+        const feedbackCopy = feedbackTarget ? feedback.status === 'acknowledged' ? 'Acknowledged ✓' : feedback.status === 'ignored' ? 'Ignored' : 'Queued' : card.subtitle;
         return (
-          <div
-            key={card.mode}
-            className="absolute left-1/2 top-1/2 z-10"
-            style={{
-              transform: `translate(
-                calc(-50% + ${position.x}px),
-                calc(-50% + ${position.y}px)
-              )`,
-            }}
-          >
+          <div key={card.mode} className={`absolute z-10 ${segment.position}`}>
             <button
               type="button"
               aria-pressed={active}
               disabled={disabled}
               onClick={() => onSelect(card.mode)}
-              className={`
-                group
-                relative
-                flex
-                h-[76px]
-                w-[124px]
-                flex-col
-                items-center
-                justify-center
-                rounded-xl
-                border
-                px-3
-                text-center
-
-                backdrop-blur-md
-
-                transition-[transform,background-color,border-color,box-shadow,opacity]
-                duration-150
-                ease-out
-
-                ${
-                  disabled
-                    ? `
-                      cursor-not-allowed
-                      border-[rgba(190,160,100,0.12)]
-                      bg-black/30
-                      opacity-40
-                    `
-                    : `
-                      cursor-pointer
-                      border-[rgba(190,160,100,0.28)]
-                      bg-[rgba(15,14,12,0.78)]
-
-                      hover:-translate-y-1
-                      hover:border-[rgba(218,181,103,0.62)]
-                      hover:bg-[rgba(29,24,16,0.88)]
-                      hover:shadow-[0_10px_28px_rgba(0,0,0,0.38)]
-
-                      active:translate-y-0
-                      active:scale-[0.97]
-                    `
-                }
-
-                ${
-                  active
-                    ? `
-                      border-[rgba(226,188,103,0.8)]
-                      bg-[rgba(42,33,18,0.9)]
-                      shadow-[0_0_0_1px_rgba(226,188,103,0.2),0_0_24px_rgba(212,162,78,0.14)]
-                    `
-                    : ''
-                }
-
-                ${
-                  feedbackTarget && feedback?.status === 'ignored'
-                    ? `
-                      animate-command-ignored
-                      border-[rgba(165,67,55,0.7)]
-                    `
-                    : ''
-                }
-
-                ${
-                  feedbackTarget && feedback?.status === 'queued'
-                    ? 'animate-command-queued'
-                    : ''
-                }
-              `}
+              className={`group relative flex h-[80px] w-[176px] flex-col items-center justify-center border border-[rgba(190,160,100,.25)] bg-[linear-gradient(180deg,rgba(29,26,22,.91),rgba(11,10,9,.92))] px-4 text-center backdrop-blur-md transition-all duration-150 ${segment.shape} ${disabled ? 'cursor-not-allowed opacity-35' : 'hover:-translate-y-0.5 hover:border-[rgba(236,199,119,.7)] hover:bg-[linear-gradient(180deg,rgba(53,42,25,.94),rgba(15,13,11,.95))] active:scale-[.98]'} ${active ? 'border-[rgba(242,205,123,.85)] shadow-[inset_0_0_28px_rgba(190,137,50,.18),0_0_20px_rgba(212,162,78,.16)]' : ''} ${feedbackTarget && feedback?.status === 'ignored' ? 'animate-command-ignored border-red-700/70' : ''} ${feedbackTarget && feedback?.status === 'queued' ? 'animate-command-queued' : ''}`}
             >
-              {/* Hotkey */}
-              <span
-                className="
-                  absolute
-                  right-2
-                  top-1.5
-                  text-[9px]
-                  font-medium
-                  text-[rgba(232,224,208,0.35)]
-                "
-              >
-                {card.hotkey}
-              </span>
-
-              {/* Icon */}
-              <span
-                className="
-                  mb-1
-                  text-[20px]
-                  leading-none
-                  text-(--color-gold-bright)
-                  transition-transform
-                  duration-150
-                  group-hover:scale-110
-                "
-              >
-                {card.icon}
-              </span>
-
-              {/* Command */}
-              <span
-                className="
-                  font-display
-                  text-[14px]
-                  uppercase
-                  leading-none
-                  tracking-[0.08em]
-                  text-(--color-ivory,#e8e0d0)
-                "
-              >
-                {card.title}
-              </span>
-
-              {/* Description */}
-              <span
-                className="
-                  mt-1
-                  whitespace-nowrap
-                  text-[10px]
-                  leading-none
-                  text-(--color-text-muted)
-                "
-              >
-                {card.subtitle}
-              </span>
-
-              {/* Acknowledged */}
-              {feedbackTarget &&
-                feedback?.status === 'acknowledged' && (
-                  <span
-                    className="
-                      absolute
-                      -right-1.5
-                      -top-1.5
-                      flex
-                      h-5
-                      w-5
-                      items-center
-                      justify-center
-                      rounded-full
-                      border
-                      border-emerald-400/30
-                      bg-emerald-950/90
-                      text-[10px]
-                      text-emerald-300
-                      shadow-lg
-                    "
-                  >
-                    ✓
-                  </span>
-                )}
-
-              {/* Queued indicator */}
-              {feedbackTarget && feedback?.status === 'queued' && (
-                <span
-                  className="
-                    absolute
-                    bottom-1
-                    h-[2px]
-                    w-8
-                    rounded-full
-                    bg-(--color-gold-bright)
-                    opacity-80
-                  "
-                />
-              )}
+              <span className="absolute right-3 top-2 text-[9px] text-white/25">{card.hotkey}</span>
+              <span className="text-[22px] leading-none text-[#e5c27c] transition-transform group-hover:scale-110">{card.icon}</span>
+              <span className="mt-0.5 font-display text-[15px] uppercase leading-none tracking-[.08em] text-[#eee4d2]">{card.title}</span>
+              <span className="mt-1 text-[10px] leading-none text-[#92897c]">{feedbackCopy}</span>
             </button>
           </div>
         );
       })}
-
-      {/* Player rooster */}
-      <div
-        className="
-          absolute
-          left-1/2
-          top-1/2
-          z-20
-          flex
-          h-[76px]
-          w-[76px]
-          -translate-x-1/2
-          -translate-y-1/2
-          items-center
-          justify-center
-          rounded-full
-
-          border-2
-          border-[rgba(210,169,85,0.85)]
-
-          bg-[rgba(7,7,6,0.9)]
-
-          shadow-[
-            0_0_0_4px_rgba(0,0,0,0.35),
-            0_0_28px_rgba(212,162,78,0.22)
-          ]
-        "
-      >
-        <div
-          className="
-            h-[62px]
-            w-[62px]
-            overflow-hidden
-            rounded-full
-            border
-            border-[rgba(212,162,78,0.25)]
-            bg-black
-          "
-        >
-          <ChickenThumbnail
-            chicken={chicken}
-            className="h-full w-full"
-          />
+      <div className="absolute left-1/2 top-1/2 z-20 flex h-[78px] w-[78px] -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full border border-[rgba(239,199,112,.72)] bg-[#080706] shadow-[0_0_0_5px_rgba(5,4,3,.72),0_0_30px_rgba(212,162,78,.2)]">
+        <div className="h-[64px] w-[64px] overflow-hidden rounded-full border border-[rgba(212,162,78,.28)] bg-black">
+          <ChickenThumbnail chicken={chicken} className="h-full w-full" />
         </div>
-      </div>
-
-      {/* Decision state */}
-      <div
-        className={`
-          pointer-events-none
-          absolute
-          left-1/2
-          top-1/2
-          z-30
-          mt-[48px]
-          -translate-x-1/2
-
-          whitespace-nowrap
-          text-[9px]
-          uppercase
-          tracking-[0.18em]
-
-          transition-opacity
-          duration-200
-
-          ${
-            !disabledAll && locked
-              ? 'opacity-70 text-[rgba(190,160,100,0.65)]'
-              : decisionWindow && !disabled
-              ? 'opacity-100 text-emerald-300/75'
-              : 'opacity-0'
-          }
-        `}
-      >
-        {!disabledAll && locked ? 'Command locked' : 'Decision window open'}
       </div>
     </div>
   );

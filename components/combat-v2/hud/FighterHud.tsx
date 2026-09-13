@@ -2,8 +2,6 @@ import { ChickenThumbnail } from '@/components/chicken3d/ChickenThumbnail';
 import type { Chicken } from '@/lib/types';
 import type { StatusIconUi } from './uiAdapter';
 
-const bar = (value: number, max: number) => `${Math.max(0, Math.min(100, Math.round((value / max) * 100)))}%`;
-
 function conditionTone(pct: number): string {
   if (pct > 60) return 'linear-gradient(90deg, #3c5f4f, #4f7f69)';
   if (pct > 35) return 'linear-gradient(90deg, #55552f, #7a7a3f)';
@@ -79,7 +77,7 @@ export function FighterHud({
 
   return (
     <div
-      className="flex w-[45%] max-w-[520px] items-center gap-2.5 rounded-[10px] border border-[rgba(185,155,95,0.24)] bg-[rgba(12,12,11,0.68)] px-3 py-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.03),0_12px_32px_rgba(0,0,0,0.18)] backdrop-blur-md sm:gap-3 sm:px-4 sm:py-3"
+      className="flex w-[42%] max-w-[500px] min-w-0 items-center gap-2.5 rounded-[7px] border border-[rgba(185,155,95,0.24)] bg-[linear-gradient(90deg,rgba(8,8,7,.8),rgba(18,17,15,.62))] px-2.5 py-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] backdrop-blur-md sm:gap-3 sm:px-3 sm:py-2.5"
       style={{ flexDirection: isLeft ? 'row' : 'row-reverse' }}
     >
       {portrait}

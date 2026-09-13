@@ -19,6 +19,7 @@ import { TellIndicator } from '@/components/combat-v2/hud/TellIndicator';
 import { CoachCallout } from '@/components/combat-v2/hud/CoachCallout';
 import { CommandWheel, type CommandFeedback } from '@/components/combat-v2/hud/CommandWheel';
 import { TellLegend } from '@/components/combat-v2/hud/TellLegend';
+import { DamageCounters, type DamageCounterUi } from '@/components/combat-v2/hud/DamageCounters';
 import { engagementToUiPhase, describeReadTell, injuriesToStatusIcons, fighterSubtitle, type CombatUiPhase, type TellUiState } from '@/components/combat-v2/hud/uiAdapter';
 import type { ReadTellType } from '@/lib/combat-v2';
 import type { AuthoritativeCombatResult, CoachingCommand, PublicFighterState } from '@/lib/combat-v2/canonical';
@@ -28,14 +29,14 @@ const animation: Record<string, AnimState> = { neutral: 'ready', advancing: 'wal
 type FighterDisplay = { name: string; hp: number; maxHp: number; stamina: number; tactic: string; engagement: string; intent: string; compliance?: string; awakening?: string; awakeningRemaining?: number; awakeningAttempted: boolean };
 type MatchStats = { hits: [number, number]; damage: [number, number]; lastDamage: { id: number; amount: number; side: 'left' | 'right' } | null };
 const COMMAND_CARDS: Record<TacticalMode, { title: string; subtitle: string; icon: string; hotkey: string }> = {
-  pressure: { title: 'Sugod', subtitle: 'Apply pressure', icon: '↑', hotkey: '1' },
-  balanced: { title: 'Timbang', subtitle: 'Read the opening', icon: '◷', hotkey: '2' },
-  defensive: { title: 'Bantay', subtitle: 'Guard and counter', icon: '⛨', hotkey: '3' },
-  counter: { title: 'Abang', subtitle: 'Punish the miss', icon: '↶', hotkey: '4' },
-  recover: { title: 'Hinga', subtitle: 'Regain stamina', icon: '⬡', hotkey: '5' },
+  pressure: { title: 'Press', subtitle: 'Close distance', icon: '↑', hotkey: '1' },
+  balanced: { title: 'Wait', subtitle: 'Hold position', icon: '◷', hotkey: '2' },
+  defensive: { title: 'Wait', subtitle: 'Hold position', icon: '◷', hotkey: '2' },
+  counter: { title: 'Counter', subtitle: 'Read & react', icon: '↶', hotkey: '3' },
+  recover: { title: 'Recover', subtitle: 'Conserve stamina', icon: '⬡', hotkey: '4' },
   all_in: { title: 'Todo', subtitle: 'Risk everything', icon: '⚡', hotkey: '6' },
 };
-const COMMAND_ORDER: TacticalMode[] = ['pressure', 'balanced', 'defensive', 'counter', 'recover', 'all_in'];
+const COMMAND_ORDER: TacticalMode[] = ['pressure', 'defensive', 'counter', 'recover'];
 /** Minimum strength before a forming tell is worth showing in the HUD at all
  * (docs/combat/tell-revamped.md §22 — below this it's still "invisible" or
  * only physically hinted, not yet a real read). */
@@ -58,6 +59,18 @@ const TELL_LEAN: Partial<Record<ReadTellType, { rot?: number; scaleY?: number; y
   side_on_stance: { yaw: .18 },
 };
 const AWAKENING_LABELS: Record<string, string> = { unbreakable: 'Unbreakable', berserker: 'Berserker', 'flow-state': 'Flow State', 'second-wind': 'Second Wind', apex: 'Apex' };
+
+function coachCaption(phase: string | null, tellType?: string, command?: string): string {
+  if (tellType) {
+    const readable = describeReadTell(tellType as ReadTellType, 1);
+    const observation = readable.interpretation || 'Watch the movement';
+    return `${readable.label} — ${observation}.`;
+  }
+  if (phase === 'READ') return `Keep your eyes on him — Change ${command ?? 'the instruction'} before he commits.`;
+  if (phase === 'CLASH') return 'Stay with it — Let the exchange resolve.';
+  if (phase === 'DISENGAGE') return 'He is resetting — Read the next opening.';
+  return 'Watch the distance — Keep the corner calm.';
+}
 
 /** Production presentation for the deterministic V2 combat session. */
 type AuthoritativeView = {
@@ -101,6 +114,9 @@ function AuthoritativeContinuousBattle({ sessionId, initialView, onComplete, aud
   const [view, setView] = useState<AuthoritativeView | null>(initialView ?? null);
   const [sceneFighters, setSceneFighters] = useState<[Chicken, Chicken] | null>(() => initialView?.fighters ?? null);
   const [error, setError] = useState('');
+  const [damageCounters, setDamageCounters] = useState<DamageCounterUi[]>([]);
+  const [commandFeedback, setCommandFeedback] = useState<CommandFeedback | null>(null);
+  const [authoritativeTell, setAuthoritativeTell] = useState<TellUiState | null>(null);
   const cursor = useRef(initialView?.latestEventCursor ?? 0);
   const completed = useRef(false);
   const onCompleteRef = useRef(onComplete);
@@ -156,6 +172,14 @@ function AuthoritativeContinuousBattle({ sessionId, initialView, onComplete, aud
         // quick or repeated strikes visible even when both occur between two
         // projection samples.
         for (const event of newEvents) {
+          if (event.type === 'HEALTH_CHANGED') {
+            const defenderIndex = next.projection.findIndex(fighter => fighter.fighterId === event.payload.fighterId);
+            const amount = Math.max(0, Math.round(Number(event.payload.value ?? 0)));
+            if (defenderIndex >= 0 && amount > 0) {
+              const anchor = defenderIndex === 0 ? screenAnchorA.current : screenAnchorB.current;
+              setDamageCounters(previous => [...previous.slice(-4), { id: event.cursor, amount, side: defenderIndex === 0 ? 'left' : 'right', anchor: { ...anchor } }]);
+            }
+          }
           if (event.type !== 'ACTION_STARTED' && event.type !== 'ACTION_CHAINED') continue;
           const index = next.projection.findIndex(fighter => fighter.fighterId === event.payload.fighterId);
           if (index < 0) continue;
@@ -179,6 +203,11 @@ function AuthoritativeContinuousBattle({ sessionId, initialView, onComplete, aud
             if (index === 0) intentA.current = intent; else intentB.current = intent;
           }
         });
+        const observedTell = next.projection[1]?.readTells[0];
+        if (observedTell) {
+          const meta = describeReadTell(observedTell.type as ReadTellType, observedTell.strength);
+          setAuthoritativeTell({ id: observedTell.startedTick, fighterSide: 'right', strength: observedTell.strength, anchor: { ...screenAnchorB.current }, ...meta });
+        } else setAuthoritativeTell(null);
         setView(next);
         if (next.result && !completed.current) { completed.current = true; onCompleteRef.current?.(next.result, next.settlement); }
         // Keep authoritative targets frequent enough that the frame-rate
@@ -191,18 +220,24 @@ function AuthoritativeContinuousBattle({ sessionId, initialView, onComplete, aud
   }, [sceneFighters, sessionId]);
 
   const issue = useCallback(async (command: CoachingCommand) => {
+    const mode = commandModeForPresentation(command);
+    setCommandFeedback({ mode, status: 'queued' });
     const response = await fetch(`/api/combat/sessions/${sessionId}/commands`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ commandId: crypto.randomUUID(), command, observedRevision: view?.revision ?? 0 }) });
     if (!response.ok) {
       const body = await response.json().catch(() => ({}));
       setError(body.error === 'COMMAND_LOCKED' ? 'Instruction locked for this exchange.' : body.error ?? 'Command rejected');
+      setCommandFeedback({ mode, status: 'ignored' });
       return;
     }
     setError('');
+    setCommandFeedback({ mode, status: 'acknowledged' });
   }, [sessionId, view?.revision]);
 
   useEffect(() => {
     const commands = ['PRESS', 'WAIT', 'COUNTER', 'RECOVER'] as const;
     const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.isContentEditable || target?.matches('input, textarea, select, button')) return;
       const command = commands[Number(event.key) - 1];
       if (command && view?.allowedActions.command) { event.preventDefault(); void issue(command); }
     };
@@ -210,24 +245,39 @@ function AuthoritativeContinuousBattle({ sessionId, initialView, onComplete, aud
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [issue, view?.allowedActions.command]);
 
+  useEffect(() => {
+    if (!commandFeedback || commandFeedback.status === 'queued') return;
+    const timer = window.setTimeout(() => setCommandFeedback(null), 1400);
+    return () => window.clearTimeout(timer);
+  }, [commandFeedback]);
+
   if (!view || !sceneFighters) return <div className="flex min-h-screen items-center justify-center bg-(--color-ink) text-(--color-text-muted)">{error || 'Connecting to the authoritative arena…'}</div>;
   const [chickenA, chickenB] = sceneFighters;
   const [left, right] = view.projection;
-  const tell = right?.readTells[0];
-  return <section className="relative min-h-screen overflow-hidden bg-[#090706] text-white">
+  const readTell = right?.readTells[0];
+  const cards = COMMAND_ORDER.map(mode => ({ mode, ...COMMAND_CARDS[mode] }));
+  const activeMode = commandModeForPresentation(view.activeCommand);
+  const decisionWindow = view.phase === 'READ' && view.allowedActions.command;
+  const commandLocked = view.status === 'ACTIVE' && !view.allowedActions.command;
+  return <section className="relative h-[calc(100dvh-5.5rem)] min-h-[560px] overflow-hidden bg-[#090706] text-white">
     <div className="absolute inset-0"><AuthoritativeBattleStage chickenA={chickenA} chickenB={chickenB} animA={animA} animB={animB} intentA={intentA} intentB={intentB} screenAnchorA={screenAnchorA} screenAnchorB={screenAnchorB} /></div>
-    <div className="pointer-events-none absolute inset-x-4 top-4 z-20 flex justify-between gap-6">
+    <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_38%,rgba(7,5,3,.17)_72%,rgba(3,2,1,.64)_100%)]" />
+    <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/55 via-transparent to-black/65" />
+    <div className="pointer-events-none absolute inset-x-4 top-3 z-20 flex items-start justify-between gap-3 sm:inset-x-6">
       <FighterHud chicken={chickenA} subtitle={fighterSubtitle(chickenA)} hp={left?.health ?? 0} maxHp={left?.maxHealth ?? 1} stamina={left?.stamina ?? 0} maxStamina={100} statuses={injuriesToStatusIcons(chickenA.injuries)} side="left" />
-      <RoundHeader elapsedSeconds={view.logicalTick / 60} phase={view.phase ?? 'TERMINAL'} statusLabel={`● Authoritative · Exchange ${view.exchangeIndex + 1}`} />
+      <RoundHeader elapsedSeconds={view.logicalTick / 60} phase={view.phase ?? 'TERMINAL'} statusLabel={`Exchange ${view.exchangeIndex + 1}`} />
       <FighterHud chicken={chickenB} subtitle={fighterSubtitle(chickenB)} hp={right?.health ?? 0} maxHp={right?.maxHealth ?? 1} stamina={right?.stamina ?? 0} maxStamina={100} statuses={injuriesToStatusIcons(chickenB.injuries)} side="right" />
     </div>
-    {tell && <div className="pointer-events-none absolute left-1/2 top-1/4 z-30 -translate-x-1/2 rounded-lg border border-amber-300/50 bg-black/70 px-3 py-2 text-xs uppercase tracking-wider">{describeReadTell(tell.type as ReadTellType, tell.strength).label}</div>}
-    <div className="absolute inset-x-0 bottom-5 z-30 flex flex-col items-center gap-2">
-      <p className="text-xs uppercase tracking-[.2em] text-amber-200">{view.phase === 'READ' ? `Instruction: ${view.activeCommand} · Change freely until commit` : `Locked: ${view.activeCommand}`}</p>
-      <div className="flex flex-wrap justify-center gap-2">{(['PRESS', 'WAIT', 'COUNTER', 'RECOVER'] as const).map((command, index) => <button key={command} disabled={!view.allowedActions.command} onClick={() => void issue(command)} className={`rounded-lg border px-4 py-3 text-sm font-bold ${view.activeCommand === command ? 'border-amber-300 bg-amber-900/70' : 'border-white/25 bg-black/70'} disabled:opacity-40`}><span className="mr-2 text-[10px] text-white/50">{index + 1}</span>{command}</button>)}</div>
-      {error && <p className="rounded bg-red-950/80 px-3 py-1 text-xs text-red-200">{error}</p>}
+    <TellIndicator tell={authoritativeTell} />
+    <DamageCounters counters={damageCounters} />
+    <CoachCallout chicken={chickenA} caption={coachCaption(view.phase, readTell?.type, view.activeCommand)} dimmed={view.phase === 'CLASH'} />
+    <TellLegend dimmed={view.phase === 'CLASH'} />
+    <div className="pointer-events-auto absolute inset-x-0 bottom-3 z-30 flex flex-col items-center sm:bottom-4">
+      <p className={`mb-1 rounded-full border px-3 py-0.5 text-[9px] uppercase tracking-[.14em] ${decisionWindow ? 'border-emerald-300/30 bg-emerald-950/40 text-emerald-200' : 'border-amber-300/20 bg-black/50 text-amber-100/70'}`}>{decisionWindow ? `${view.activeCommand} selected · Change until commit` : `${view.activeCommand} locked for this exchange`}</p>
+      <CommandWheel chicken={chickenA} cards={cards} activeMode={activeMode} disabledAll={view.status !== 'ACTIVE'} locked={commandLocked} feedback={commandFeedback} onSelect={mode => void issue(mode === 'pressure' ? 'PRESS' : mode === 'counter' ? 'COUNTER' : mode === 'recover' ? 'RECOVER' : 'WAIT')} />
+      {error && <p role="alert" className="absolute bottom-1 rounded bg-red-950/85 px-3 py-1 text-xs text-red-200">{error}</p>}
     </div>
-    {onToggleAudio && <button type="button" onClick={onToggleAudio} className="absolute right-5 top-28 z-30 rounded-full bg-black/60 px-3 py-2">{audioEnabled ? '🔊' : '🔇'}</button>}
+    {onToggleAudio && <button type="button" onClick={onToggleAudio} aria-label={audioEnabled ? 'Mute arena audio' : 'Unmute arena audio'} className="absolute right-5 top-[108px] z-30 rounded-full border border-[#b99b5f]/30 bg-black/50 px-3 py-2 backdrop-blur-sm">{audioEnabled ? '🔊' : '🔇'}</button>}
   </section>;
 }
 
@@ -237,7 +287,8 @@ function commandModeForPresentation(command: CoachingCommand): TacticalMode {
 
 function SandboxContinuousBattle({ chickenA, chickenB, matchSeed = 81726354, autoStart = false, showControls = true, onComplete, audioEnabled = true, onToggleAudio }: { chickenA: Chicken; chickenB: Chicken; matchSeed?: number; autoStart?: boolean; showControls?: boolean; onComplete?: (result: MatchResult) => void; audioEnabled?: boolean; onToggleAudio?: () => void }) {
   const [display, setDisplay] = useState({ tick: 0, phase: 'paused', result: '', fighters: [] as FighterDisplay[] });
-  const [stats, setStats] = useState<MatchStats>({ hits: [0, 0], damage: [0, 0], lastDamage: null });
+  const [, setStats] = useState<MatchStats>({ hits: [0, 0], damage: [0, 0], lastDamage: null });
+  const [damageCounters, setDamageCounters] = useState<DamageCounterUi[]>([]);
   const [bursts, setBursts] = useState<CommentaryBurst[]>([]);
   const [caption, setCaption] = useState<string | null>('Handa na ang sabungan — sino ang mananaig?');
   const [hudVisibility, setHudVisibility] = useState<BattleHudVisibility>('FULL');
@@ -282,6 +333,7 @@ function SandboxContinuousBattle({ chickenA, chickenB, matchSeed = 81726354, aut
     sessionRef.current = session; completedRef.current = false;
     const resetFrame = requestAnimationFrame(() => {
       setStats({ hits: [0, 0], damage: [0, 0], lastDamage: null });
+      setDamageCounters([]);
       setBursts([]);
       setHudVisibility('FULL');
       setCaption(autoStart ? `Sugod! ${chickenA.name} laban kay ${chickenB.name}!` : 'Piliin ang taktika at simulan ang laban.');
@@ -334,6 +386,8 @@ function SandboxContinuousBattle({ chickenA, chickenB, matchSeed = 81726354, aut
             if (presentation.secondaryVfx) vfx.current?.spawn(presentation.secondaryVfx, impactPoint);
           }
           setStats(previous => ({ ...previous, damage: previous.damage.map((value, index) => index === targetIndex ? value + amount : value) as [number, number], lastDamage: { id: event.tick, amount, side: fighterIndex === 0 ? 'left' : 'right' } }));
+          const anchor = fighterIndex === 0 ? screenAnchorA.current : screenAnchorB.current;
+          setDamageCounters(previous => [...previous.slice(-4), { id: event.tick * 10 + burstId.current++, amount, side: fighterIndex === 0 ? 'left' : 'right', anchor: { ...anchor } }]);
         }
         if (event.type === 'STAGGER') { audioRef.current?.playCrit(); burst('BUWAL!', fighterIndex === 0 ? 'left' : 'right', 'crit'); setCaption('Nawalan ng balanse! Ito ang pagkakataon — sugod!'); }
         if (event.type === 'COMMAND_RESPONSE' && fighterIndex === 0) {
@@ -659,6 +713,8 @@ function SandboxContinuousBattle({ chickenA, chickenB, matchSeed = 81726354, aut
       ========================== */}
         <TellIndicator tell={tell} dimmed={dimForClash} />
 
+        <DamageCounters counters={damageCounters} />
+
         <CoachCallout
           chicken={chickenA}
           caption={caption}
@@ -827,7 +883,6 @@ function SandboxContinuousBattle({ chickenA, chickenB, matchSeed = 81726354, aut
               }
               disabledAll={display.phase !== 'active'}
               locked={commandLocked}
-              decisionWindow={decisionWindow}
               feedback={commandFeedback}
               onSelect={command}
             />
