@@ -78,7 +78,7 @@ type AuthoritativeView = {
   logicalTick: number; activeCommand: CoachingCommand; latestEventCursor: number; fighters: [Chicken, Chicken];
   projection: PublicFighterState[]; events: { cursor: number; type: string; payload: Record<string, unknown> }[];
   result: AuthoritativeCombatResult | null; settlement: Record<string, unknown> | null;
-  allowedActions: { command: boolean; sync: boolean };
+  allowedActions: { command: boolean; awakening: boolean; sync: boolean };
 };
 
 type ContinuousBattleProps = {
@@ -91,14 +91,15 @@ type ContinuousBattleProps = {
 // only consumes stable fighter assets and mutable animation refs. Memoizing
 // this boundary prevents every sync response from reconciling the full arena.
 const AuthoritativeBattleStage = memo(function AuthoritativeBattleStage({
-  chickenA, chickenB, animA, animB, intentA, intentB, screenAnchorA, screenAnchorB,
+  chickenA, chickenB, animA, animB, intentA, intentB, awakeningA, awakeningB, screenAnchorA, screenAnchorB,
 }: {
   chickenA: Chicken; chickenB: Chicken;
   animA: RefObject<FighterAnim>; animB: RefObject<FighterAnim>;
   intentA: RefObject<AnimIntent | null>; intentB: RefObject<AnimIntent | null>;
+  awakeningA: RefObject<AwakeningType | null>; awakeningB: RefObject<AwakeningType | null>;
   screenAnchorA: RefObject<ScreenAnchor>; screenAnchorB: RefObject<ScreenAnchor>;
 }) {
-  return <BattleStage3D simulationDriven fighterA={chickenA} fighterB={chickenB} animA={animA} animB={animB} intentA={intentA} intentB={intentB} screenAnchorA={screenAnchorA} screenAnchorB={screenAnchorB} />;
+  return <BattleStage3D simulationDriven fighterA={chickenA} fighterB={chickenB} animA={animA} animB={animB} intentA={intentA} intentB={intentB} awakeningA={awakeningA} awakeningB={awakeningB} screenAnchorA={screenAnchorA} screenAnchorB={screenAnchorB} />;
 });
 
 /** Production uses the durable authoritative player. The local engine remains
@@ -117,12 +118,15 @@ function AuthoritativeContinuousBattle({ sessionId, initialView, onComplete, aud
   const [damageCounters, setDamageCounters] = useState<DamageCounterUi[]>([]);
   const [commandFeedback, setCommandFeedback] = useState<CommandFeedback | null>(null);
   const [authoritativeTell, setAuthoritativeTell] = useState<TellUiState | null>(null);
+  const [awakeningPending, setAwakeningPending] = useState<AwakeningType | null>(null);
   const cursor = useRef(initialView?.latestEventCursor ?? 0);
   const completed = useRef(false);
   const onCompleteRef = useRef(onComplete);
   const animA = useRef(pose()), animB = useRef(pose());
   const targetA = useRef(pose()), targetB = useRef(pose());
   const intentA = useRef<AnimIntent | null>(null), intentB = useRef<AnimIntent | null>(null);
+  const awakeningA = useRef<AwakeningType | null>(initialView?.projection[0]?.awakening?.type ?? null);
+  const awakeningB = useRef<AwakeningType | null>(initialView?.projection[1]?.awakening?.type ?? null);
   const actionA = useRef<string | null>(null), actionB = useRef<string | null>(null);
   const screenAnchorA = useRef<ScreenAnchor>({ xPct: 14, yPct: 38, visible: true });
   const screenAnchorB = useRef<ScreenAnchor>({ xPct: 86, yPct: 38, visible: true });
@@ -204,6 +208,8 @@ function AuthoritativeContinuousBattle({ sessionId, initialView, onComplete, aud
           }
         });
         const observedTell = next.projection[1]?.readTells[0];
+        awakeningA.current = next.projection[0]?.awakening?.type ?? null;
+        awakeningB.current = next.projection[1]?.awakening?.type ?? null;
         if (observedTell) {
           const meta = describeReadTell(observedTell.type as ReadTellType, observedTell.strength);
           setAuthoritativeTell({ id: observedTell.startedTick, fighterSide: 'right', strength: observedTell.strength, anchor: { ...screenAnchorB.current }, ...meta });
@@ -233,6 +239,23 @@ function AuthoritativeContinuousBattle({ sessionId, initialView, onComplete, aud
     setCommandFeedback({ mode, status: 'acknowledged' });
   }, [sessionId, view?.revision]);
 
+  const awaken = useCallback(async (type: AwakeningType) => {
+    setAwakeningPending(type);
+    const response = await fetch(`/api/combat/sessions/${sessionId}/awakenings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ actionId: crypto.randomUUID(), type, observedRevision: view?.revision ?? 0 }),
+    });
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      setError(body.error ?? 'Awakening rejected');
+    } else {
+      setError('');
+      awakeningA.current = type;
+    }
+    setAwakeningPending(null);
+  }, [sessionId, view?.revision]);
+
   useEffect(() => {
     const commands = ['PRESS', 'WAIT', 'COUNTER', 'RECOVER'] as const;
     const onKeyDown = (event: KeyboardEvent) => {
@@ -259,8 +282,10 @@ function AuthoritativeContinuousBattle({ sessionId, initialView, onComplete, aud
   const activeMode = commandModeForPresentation(view.activeCommand);
   const decisionWindow = view.phase === 'READ' && view.allowedActions.command;
   const commandLocked = view.status === 'ACTIVE' && !view.allowedActions.command;
+  const unlockedAwakenings = left?.unlockedAwakenings ?? [];
+  const canAwaken = view.allowedActions.awakening && unlockedAwakenings.length > 0;
   return <section className="relative h-[calc(100dvh-5.5rem)] min-h-[560px] overflow-hidden bg-[#090706] text-white">
-    <div className="absolute inset-0"><AuthoritativeBattleStage chickenA={chickenA} chickenB={chickenB} animA={animA} animB={animB} intentA={intentA} intentB={intentB} screenAnchorA={screenAnchorA} screenAnchorB={screenAnchorB} /></div>
+    <div className="absolute inset-0"><AuthoritativeBattleStage chickenA={chickenA} chickenB={chickenB} animA={animA} animB={animB} intentA={intentA} intentB={intentB} awakeningA={awakeningA} awakeningB={awakeningB} screenAnchorA={screenAnchorA} screenAnchorB={screenAnchorB} /></div>
     <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_38%,rgba(7,5,3,.17)_72%,rgba(3,2,1,.64)_100%)]" />
     <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/55 via-transparent to-black/65" />
     <div className="pointer-events-none absolute inset-x-4 top-3 z-20 flex items-start justify-between gap-3 sm:inset-x-6">
@@ -274,6 +299,18 @@ function AuthoritativeContinuousBattle({ sessionId, initialView, onComplete, aud
     <TellLegend dimmed={view.phase === 'CLASH'} />
     <div className="pointer-events-auto absolute inset-x-0 bottom-3 z-30 flex flex-col items-center sm:bottom-4">
       <p className={`mb-1 rounded-full border px-3 py-0.5 text-[9px] uppercase tracking-[.14em] ${decisionWindow ? 'border-emerald-300/30 bg-emerald-950/40 text-emerald-200' : 'border-amber-300/20 bg-black/50 text-amber-100/70'}`}>{decisionWindow ? `${view.activeCommand} selected · Change until commit` : `${view.activeCommand} locked for this exchange`}</p>
+      {canAwaken && <div className="mb-2 flex flex-wrap justify-center gap-2">
+        {unlockedAwakenings.map(type => <button
+          key={type}
+          type="button"
+          disabled={awakeningPending !== null}
+          aria-busy={awakeningPending === type}
+          onClick={() => void awaken(type)}
+          className="rounded-full border border-[#f1cf77]/60 bg-black/45 px-3 py-1 text-[10px] font-semibold uppercase tracking-[.14em] text-[#f1cf77] backdrop-blur-sm transition-colors hover:bg-[#f1cf77]/15 disabled:cursor-wait disabled:opacity-60"
+        >
+          {awakeningPending === type ? 'Awakening…' : `Awaken · ${AWAKENING_LABELS[type] ?? type}`}
+        </button>)}
+      </div>}
       <CommandWheel chicken={chickenA} cards={cards} activeMode={activeMode} disabledAll={view.status !== 'ACTIVE'} locked={commandLocked} feedback={commandFeedback} onSelect={mode => void issue(mode === 'pressure' ? 'PRESS' : mode === 'counter' ? 'COUNTER' : mode === 'recover' ? 'RECOVER' : 'WAIT')} />
       {error && <p role="alert" className="absolute bottom-1 rounded bg-red-950/85 px-3 py-1 text-xs text-red-200">{error}</p>}
     </div>

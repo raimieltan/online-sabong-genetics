@@ -264,9 +264,9 @@
     "semantic_hash": ""
   },
   "app/battle/[chickenId]/page.tsx": {
-    "mtime": 1789285184.6088262,
-    "seen": 1789301068.973013,
-    "ast_hash": "6f341a87a57452b4e464dc9c6abf6c58",
+    "mtime": 1789302093.3584552,
+    "seen": 1789303011.785613,
+    "ast_hash": "79c89513ce59e6ff4667c715b8f0ad00",
     "semantic_hash": ""
   },
   "app/breed/OffspringPreview.tsx": {
@@ -630,9 +630,9 @@
     "semantic_hash": "d1d55b2007c4171fae496a4df7b17916"
   },
   "lib/__tests__/fight-route.test.ts": {
-    "mtime": 1789284733.934386,
-    "seen": 1789301068.9786592,
-    "ast_hash": "a7eb142c26e011edd0513b38a4b5407a",
+    "mtime": 1789302959.8591285,
+    "seen": 1789303011.792673,
+    "ast_hash": "cdb116cf8e5c362840f965dcef7b0cf4",
     "semantic_hash": ""
   },
   "lib/__tests__/genetics.test.ts": {
@@ -1950,9 +1950,9 @@
     "semantic_hash": ""
   },
   "components/combat-v2/ContinuousBattle.tsx": {
-    "mtime": 1789301121.5365322,
-    "seen": 1789301152.361783,
-    "ast_hash": "08cfb33fd999a2d3221c379cd3080dab",
+    "mtime": 1789302927.8581262,
+    "seen": 1789303011.7903612,
+    "ast_hash": "a362aeb36b0ae1f8d734f14a920a58ed",
     "semantic_hash": ""
   },
   "lib/__tests__/continuousCollision.test.ts": {
@@ -2586,21 +2586,21 @@
     "semantic_hash": ""
   },
   "components/combat-v2/hud/CoachCallout.tsx": {
-    "mtime": 1789204976.6821525,
-    "seen": 1789222881.1197922,
-    "ast_hash": "defee89752f8cd874dcfd7716a310993",
+    "mtime": 1789302184.5722075,
+    "seen": 1789303011.7903621,
+    "ast_hash": "459c4f38b582676f4a54ca44f02345b6",
     "semantic_hash": ""
   },
   "components/combat-v2/hud/CommandWheel.tsx": {
-    "mtime": 1789260178.3398817,
-    "seen": 1789262833.86479,
-    "ast_hash": "76b159349c0b471bb99dcb8c4ac8addb",
+    "mtime": 1789302390.5641963,
+    "seen": 1789303011.7903628,
+    "ast_hash": "41b5d6f4ded438a2b59d7eac5ff31a4f",
     "semantic_hash": ""
   },
   "components/combat-v2/hud/FighterHud.tsx": {
-    "mtime": 1789266819.0835736,
-    "seen": 1789277569.4019551,
-    "ast_hash": "0aeb16e9c0116b9df13b619725a9d9a1",
+    "mtime": 1789302184.6450415,
+    "seen": 1789303011.790366,
+    "ast_hash": "12cb8610b4351154b7913cae014e2fea",
     "semantic_hash": ""
   },
   "components/combat-v2/hud/RoundHeader.tsx": {
@@ -2610,15 +2610,15 @@
     "semantic_hash": ""
   },
   "components/combat-v2/hud/TellIndicator.tsx": {
-    "mtime": 1789277548.27546,
-    "seen": 1789277569.401983,
-    "ast_hash": "2360a43f349c0caa29da5eb528026379",
+    "mtime": 1789301744.5404809,
+    "seen": 1789303011.790399,
+    "ast_hash": "83583d336f2a3ed5c9032cef3a5400ed",
     "semantic_hash": ""
   },
   "components/combat-v2/hud/TellLegend.tsx": {
-    "mtime": 1789262813.7688885,
-    "seen": 1789262833.864864,
-    "ast_hash": "e4366aac5255cd01551ff61d56779c2a",
+    "mtime": 1789301744.6713715,
+    "seen": 1789303011.7904,
+    "ast_hash": "49f317575d5cc46a447ad8d661a60535",
     "semantic_hash": ""
   },
   "components/combat-v2/hud/uiAdapter.ts": {
@@ -2772,21 +2772,33 @@
     "semantic_hash": ""
   },
   "lib/combat-v2/canonical.ts": {
-    "mtime": 1789300882.9332285,
-    "seen": 1789301068.985077,
-    "ast_hash": "963fad527af0159ce2f76344e7b12c9d",
+    "mtime": 1789302823.417652,
+    "seen": 1789303011.796215,
+    "ast_hash": "afe202ed8cc5e804fa1f422889c6913d",
     "semantic_hash": ""
   },
   "lib/combat/service.ts": {
-    "mtime": 1789300767.5727437,
-    "seen": 1789301068.987029,
-    "ast_hash": "835c9d172c1e4852cced18c1482b154a",
+    "mtime": 1789302823.5219905,
+    "seen": 1789303011.797187,
+    "ast_hash": "01f4331f4b0a908571fb981fa4ac597d",
     "semantic_hash": ""
   },
   "docs/combat/COMBAT-CANONICAL.md": {
     "mtime": 1789283060.293259,
     "seen": 1789301068.9922,
     "ast_hash": "9ad72ecceded93f10111283410f6a71b",
+    "semantic_hash": ""
+  },
+  "app/api/combat/sessions/[sessionId]/awakenings/route.ts": {
+    "mtime": 1789302823.6883545,
+    "seen": 1789303011.78472,
+    "ast_hash": "a649fd6b3df977ae8ce18ea740f5cda7",
+    "semantic_hash": ""
+  },
+  "components/combat-v2/hud/DamageCounters.tsx": {
+    "mtime": 1789301912.7976918,
+    "seen": 1789303011.790365,
+    "ast_hash": "e6336d05b9b9bef802f957bfbeaf8844",
     "semantic_hash": ""
   }
 }

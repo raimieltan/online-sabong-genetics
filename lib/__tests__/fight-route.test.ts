@@ -4,7 +4,8 @@ import test from "node:test";
 
 import { POST } from "../../app/api/chickens/[id]/fight/route";
 import { generateRandomChicken } from "../chickenGenerator";
-import { createCombatEncounter, createSession, getSession, issueCommand, syncSession } from "../combat/service";
+import { createCombatEncounter, createSession, getSession, issueCommand, syncSession, triggerSessionAwakening } from "../combat/service";
+import { emptyCombatCareer } from "../combat/evolution";
 import { prisma } from "../db";
 import { getOrCreatePlayer } from "../player";
 import { GENETIC_STAT_KEYS, type GrowthStage, type StatBlock } from "../types";
@@ -15,9 +16,11 @@ function statBlock(value: number): StatBlock {
   return block;
 }
 
-async function seedChicken(playerId: string, overrides: { growthStage?: GrowthStage; injured?: boolean } = {}) {
+async function seedChicken(playerId: string, overrides: { growthStage?: GrowthStage; injured?: boolean; awakening?: "unbreakable" } = {}) {
   const id = randomUUID();
-  await prisma.chicken.create({ data: { id, playerId, name: "Test", sex: "rooster", generation: 0, bloodlineId: id, iv: statBlock(80), ev: statBlock(50), traits: [], age: 1, health: 100, energy: 100, record: { wins: 0, losses: 0, championships: 0, koTko: 0, decisions: 0 }, status: "active", growthStage: overrides.growthStage ?? "adult", injured: overrides.injured ?? false } });
+  const combatCareer = emptyCombatCareer();
+  if (overrides.awakening) combatCareer.awakenings.find(item => item.id === overrides.awakening)!.unlocked = true;
+  await prisma.chicken.create({ data: { id, playerId, name: "Test", sex: "rooster", generation: 0, bloodlineId: id, iv: statBlock(80), ev: statBlock(50), traits: [], age: 1, health: 100, energy: 100, record: { wins: 0, losses: 0, championships: 0, koTko: 0, decisions: 0 }, combatCareer, status: "active", growthStage: overrides.growthStage ?? "adult", injured: overrides.injured ?? false } });
   return id;
 }
 
@@ -94,6 +97,25 @@ test("command ids deduplicate and commands lock at commitment", async () => {
     }
   }
   assert.fail("session never reached commitment");
+});
+
+test("manual awakening is authoritative, visible in projections, and idempotent", async () => {
+  const player = await getOrCreatePlayer();
+  const fighterId = await seedChicken(player.id, { awakening: "unbreakable" });
+  const encounter = await createCombatEncounter({ ownerPlayerId: player.id, fighterId, opponent: generateRandomChicken({ name: "NPC" }), mode: "NORMAL" });
+  const view = await createSession({ fighterId, encounterId: encounter.id, coachingMode: "MANUAL", openingCommand: "WAIT", disconnectPolicy: "KEEP_INSTRUCTION", idempotencyKey: randomUUID() }, player.id);
+  assert.deepEqual(view.projection[0].unlockedAwakenings, ["unbreakable"]);
+  assert.equal(view.allowedActions.awakening, true);
+
+  const actionId = randomUUID();
+  const first = await triggerSessionAwakening(view.sessionId, { actionId, type: "unbreakable", observedRevision: view.revision }, player.id);
+  const duplicate = await triggerSessionAwakening(view.sessionId, { actionId, type: "unbreakable", observedRevision: view.revision }, player.id);
+  assert.deepEqual(duplicate, first);
+
+  const awakened = await getSession(view.sessionId, player.id);
+  assert.equal(awakened.projection[0].awakening?.type, "unbreakable");
+  assert.equal(awakened.allowedActions.awakening, false);
+  assert.ok(awakened.events.some(event => event.type === "AWAKENING_STARTED" && event.payload.detail === "unbreakable"));
 });
 
 test("terminal retries return one settlement and never duplicate consequences", async () => {

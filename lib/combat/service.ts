@@ -16,6 +16,7 @@ import {
   type CanonicalCombatEvent, type CoachingCommand, type CoachingMode, type CombatMode,
   type DisconnectPolicy, isCoachingCommand, publicFighters,
 } from "../combat-v2/canonical";
+import type { AwakeningType } from "../combat-v2/types";
 
 const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 const eventData = (event: CanonicalCombatEvent) => ({ id: event.id, sessionId: event.sessionId, cursor: event.cursor, logicalTick: event.logicalTick, exchangeIndex: event.exchangeIndex, type: event.type, payload: json(event.payload) });
@@ -43,7 +44,7 @@ export type CombatView = {
   events: CanonicalCombatEvent[];
   result: AuthoritativeCombatResult | null;
   settlement: Record<string, unknown> | null;
-  allowedActions: { command: boolean; sync: boolean };
+  allowedActions: { command: boolean; awakening: boolean; sync: boolean };
 };
 
 export async function createCombatEncounter(input: {
@@ -76,7 +77,11 @@ function rowView(row: {
     projection: publicFighters(checkpoint.state), events,
     result: row.terminalResult as AuthoritativeCombatResult | null,
     settlement: row.postFightPayload as Record<string, unknown> | null,
-    allowedActions: { command: row.status === "ACTIVE" && row.phase === "READ", sync: row.status === "ACTIVE" },
+    allowedActions: {
+      command: row.status === "ACTIVE" && row.phase === "READ",
+      awakening: row.status === "ACTIVE" && !checkpoint.state.fighters[0].awakening && !checkpoint.state.fighters[0].awakeningAttempted && checkpoint.state.fighters[0].snapshot.evolution.awakenings.length > 0,
+      sync: row.status === "ACTIVE",
+    },
   };
 }
 
@@ -219,6 +224,41 @@ export async function issueCommand(sessionId: string, input: { commandId: string
       if (write.count !== 1) return false;
       if (events.length) await tx.combatEventRecord.createMany({ data: events.map(eventData) });
       await tx.combatCommandRecord.create({ data: { sessionId, commandId: input.commandId, command, receipt: json(receipt) } });
+      return true;
+    });
+    if (committed) return receipt;
+  }
+  throw new CombatServiceError("STALE_SESSION", 409);
+}
+
+const AWAKENING_TYPES: readonly AwakeningType[] = ["unbreakable", "berserker", "flow-state", "second-wind", "apex"];
+
+export async function triggerSessionAwakening(sessionId: string, input: { actionId: string; type: unknown; observedRevision: number }, actorPlayerId: string) {
+  if (!input.actionId || typeof input.type !== "string" || !AWAKENING_TYPES.includes(input.type as AwakeningType)) {
+    throw new CombatServiceError("INVALID_AWAKENING", 400);
+  }
+  const owned = await prisma.combatSessionRecord.findUnique({ where: { id: sessionId } });
+  if (!owned || owned.ownerPlayerId !== actorPlayerId) throw new CombatServiceError("SESSION_NOT_OWNED", 404);
+  const duplicate = await prisma.combatCommandRecord.findUnique({ where: { sessionId_commandId: { sessionId, commandId: input.actionId } } });
+  if (duplicate) return duplicate.receipt;
+  const type = input.type as AwakeningType;
+  const advanced = await advanceSession(sessionId, actorPlayerId);
+  if (advanced.status !== "ACTIVE") throw new CombatServiceError(advanced.status === "EXPIRED" ? "SESSION_EXPIRED" : "SESSION_TERMINAL", 409);
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const row = await prisma.combatSessionRecord.findUnique({ where: { id: sessionId } });
+    if (!row || row.ownerPlayerId !== actorPlayerId) throw new CombatServiceError("SESSION_NOT_OWNED", 404);
+    if (row.status !== "ACTIVE") throw new CombatServiceError(row.status === "EXPIRED" ? "SESSION_EXPIRED" : "SESSION_TERMINAL", 409);
+    const runtime = CanonicalCombatRuntime.restore(row.engineCheckpoint as unknown as CanonicalCheckpoint);
+    try { runtime.triggerPlayerAwakening(type); }
+    catch (error) { throw new CombatServiceError(error instanceof Error ? error.message : "AWAKENING_REJECTED", 409); }
+    const events = runtime.drainEvents();
+    const checkpoint = runtime.checkpoint;
+    const receipt = { status: "ACCEPTED", actionId: input.actionId, type, revision: row.revision + 1, acceptedAtTick: checkpoint.state.tick };
+    const committed = await prisma.$transaction(async tx => {
+      const write = await tx.combatSessionRecord.updateMany({ where: { id: row.id, revision: row.revision, status: "ACTIVE" }, data: { revision: { increment: 1 }, latestEventCursor: checkpoint.nextCursor - 1, engineCheckpoint: json(checkpoint), lastAdvancedAt: new Date() } });
+      if (write.count !== 1) return false;
+      if (events.length) await tx.combatEventRecord.createMany({ data: events.map(eventData) });
+      await tx.combatCommandRecord.create({ data: { sessionId, commandId: input.actionId, command: `AWAKEN:${type}`, receipt: json(receipt) } });
       return true;
     });
     if (committed) return receipt;

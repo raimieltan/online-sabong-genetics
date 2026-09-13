@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 
 import { COMBAT_VERSION } from "./constants";
-import { createMatch, queueCommand, stepCombat } from "./engine";
-import type { CombatEvent as EngineEvent, CombatMatchState, EngagementPhase } from "./types";
+import { createMatch, queueCommand, stepCombat, triggerAwakening as triggerEngineAwakening } from "./engine";
+import type { AwakeningType, CombatEvent as EngineEvent, CombatMatchState, EngagementPhase } from "./types";
 import { toCombatV2Snapshot } from "../combatV2Snapshot";
 import type { Chicken, InjuryLocation, InjurySeverity } from "../types";
 
@@ -43,6 +43,9 @@ export type PublicFighterState = {
   actionId: string | null;
   engagement: EngagementPhase;
   readTells: readonly { type: string; strength: number; confidence: number; startedTick: number }[];
+  unlockedAwakenings: readonly AwakeningType[];
+  awakening: { type: AwakeningType; startedTick: number } | null;
+  awakeningAttempted: boolean;
 };
 
 export type CanonicalInjuryEvent = {
@@ -128,6 +131,9 @@ export function publicFighters(state: CombatMatchState): PublicFighterState[] {
     actionId: fighter.currentAction?.id ?? null,
     engagement: fighter.engagement.phase,
     readTells: fighter.readTells.map(tell => ({ ...tell })),
+    unlockedAwakenings: [...fighter.snapshot.evolution.awakenings],
+    awakening: fighter.awakening ? { ...fighter.awakening } : null,
+    awakeningAttempted: fighter.awakeningAttempted,
   }));
 }
 
@@ -180,6 +186,22 @@ export class CanonicalCombatRuntime {
     this.checkpoint.activeCommand = command;
     this.checkpoint.commandSummary.accepted++;
     this.emit("COMMAND_ACCEPTED", { command, eligibleExchangeIndex: this.checkpoint.exchangeIndex });
+  }
+
+  triggerPlayerAwakening(type: AwakeningType): void {
+    const fighter = this.checkpoint.state.fighters[0];
+    const priorEventCount = this.checkpoint.state.eventBuffer.length;
+    triggerEngineAwakening(this.checkpoint.state, fighter.snapshot.fighterId, type);
+    for (const event of this.checkpoint.state.eventBuffer.slice(priorEventCount)) {
+      this.emit(canonicalEventType(event), {
+        engineType: event.type,
+        fighterId: event.fighterId,
+        targetId: event.targetId,
+        actionId: event.actionId,
+        value: event.value,
+        detail: event.detail,
+      });
+    }
   }
 
   selectAutoCommand(): CoachingCommand {
