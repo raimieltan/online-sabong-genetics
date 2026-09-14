@@ -1,7 +1,7 @@
-import { createMatch, stepCombat } from './engine';
+import { createMatch, queueCommand, stepCombat } from './engine';
 import { COMBAT_VERSION } from './constants';
 import { toCombatV2Snapshot } from '../combatV2Snapshot';
-import type { PlayerCommand } from '../combat/command';
+import type { CoachingCommand } from '../combat/command';
 import type { Chicken, CombatLogEntry, CombatResult } from '../types';
 import { emptyExperience, gainExperience } from '../combat/experience';
 import { fighterStrength } from '../combat/evolution';
@@ -14,13 +14,16 @@ import type { TacticalMode } from './types';
 export const MAX_TURNS = 300;
 const TICKS_PER_STEP = 60;
 
-function commandMode(command: PlayerCommand | null | undefined): TacticalMode | null {
+function commandMode(command: CoachingCommand | null | undefined): TacticalMode | null {
   if (command === 'PRESS') return 'pressure';
   if (command === 'COUNTER') return 'counter';
-  if (command === 'GUARD') return 'defensive';
   if (command === 'WAIT') return 'defensive';
   if (command === 'RECOVER') return 'recover';
   return null;
+}
+
+function modeCommand(mode: TacticalMode): CoachingCommand {
+  return mode === 'pressure' ? 'PRESS' : mode === 'counter' ? 'COUNTER' : mode === 'recover' ? 'RECOVER' : 'WAIT';
 }
 
 export class LiveCombatV2Session {
@@ -64,20 +67,22 @@ export class LiveCombatV2Session {
     return { hp: f.health, maxHp: f.snapshot.maxHealth, stamina: f.stamina, maxStamina: 100, momentum: f.balance,
       mentalState: f.state, engagementPhase: f.engagement.phase, intent: f.currentIntent,
       commandCompliance: f.coaching?.compliance ?? null, awakening: f.awakening?.type ?? null,
-      commandPoints: !priorCommand || this.state.tick >= priorCommand.effectiveTick + 120 ? 3 : 0, pendingCommand: null as PlayerCommand | null };
+      commandWindowOpen: this.state.phase === 'active' && f.engagement.phase === 'stalking',
+      activeCommand: priorCommand ? modeCommand(priorCommand.command) : null };
   }
 
-  step(command?: PlayerCommand | null, _autoCoach?: unknown) {
+  step(command?: CoachingCommand | null, _autoCoach?: unknown) {
     void _autoCoach;
     const logStart = this.log.length;
     const mode = commandMode(command);
-    if (mode && this.state.phase === 'active') {
+    let commandAccepted = false;
+    if (mode && this.state.phase === 'active' && this.state.fighters[0].engagement.phase === 'stalking') {
       const prior = this.state.commands.filter((c) => c.fighterId === this.chickenA.id).at(-1);
-      // Command scheduling and cooldown validation remain engine-owned.
-      if (!prior || this.state.tick + 12 - prior.effectiveTick >= 120) this.state.commands.push({
+      queueCommand(this.state, {
         playerId: 'player-a', fighterId: this.chickenA.id, command: mode, issuedTick: this.state.tick,
-        effectiveTick: this.state.tick + 12, sequence: (prior?.sequence ?? -1) + 1,
+        effectiveTick: this.state.tick + 1, sequence: (prior?.sequence ?? -1) + 1,
       });
+      commandAccepted = true;
     }
     const startTick = this.state.tick;
     while (this.state.phase === 'active' && this.state.tick - startTick < TICKS_PER_STEP) {
@@ -86,7 +91,7 @@ export class LiveCombatV2Session {
     }
     this.turn += 1;
     this.fightOver = this.state.phase === 'finished';
-    return { turn: this.turn, entries: this.log.slice(logStart), fightOver: this.fightOver, durationMs: (this.state.tick - startTick) * (1000 / 60) };
+    return { turn: this.turn, entries: this.log.slice(logStart), fightOver: this.fightOver, durationMs: (this.state.tick - startTick) * (1000 / 60), commandAccepted };
   }
 
   private recordEvents() {
@@ -142,7 +147,7 @@ export class LiveCombatV2Session {
       if (event.type === 'ATTACK_MISSED' && event.actionId === 'wing_counter') addTelemetry(event.fighterId, 'failedCounters');
       if (event.type === 'DAMAGE') {
         addTelemetry(event.fighterId, (event.value ?? 0) >= 9 ? 'heavyHitsTaken' : 'lightHitsTaken');
-        if (fighter?.tacticalMode === 'pressure' || fighter?.tacticalMode === 'all_in') addTelemetry(event.fighterId, 'damageTakenWhilePressing', event.value ?? 0);
+        if (fighter?.tacticalMode === 'pressure') addTelemetry(event.fighterId, 'damageTakenWhilePressing', event.value ?? 0);
         if (fighter?.state === 'retreating' || fighter?.engagement.phase === 'breaking') addTelemetry(event.fighterId, 'damageTakenWhileRetreating', event.value ?? 0);
         if (fighter?.state === 'advancing' || fighter?.tacticalMode === 'pressure') addTelemetry(event.fighterId, 'punishedChases');
         this.lastDamageTaken.set(event.fighterId, event.tick);

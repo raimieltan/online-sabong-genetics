@@ -14,8 +14,8 @@ export function applyTacticalPosture(mode: TacticalMode, state: AnimState, ctx: 
   const actionWeight = FULL_POSTURE_STATES.includes(state) ? 1 : .3;
   const k = TEMPORARY_COMBAT_EXAGGERATION * actionWeight;
 
-  if (mode === 'pressure' || mode === 'all_in') {
-    const force = mode === 'all_in' ? k * 1.2 : k;
+  if (mode === 'pressure') {
+    const force = k;
     add(out, 'Hips', { px: .08 * force, py: -.025 * force, rx: .035 * force });
     add(out, 'Spine', { rx: -.08 * force });
     add(out, 'Chest', { rx: -.14 * force, px: .045 * force });

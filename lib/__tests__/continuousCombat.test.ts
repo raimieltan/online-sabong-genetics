@@ -159,6 +159,21 @@ test('active windows permit simultaneous hits and double KO', () => {
   assert.equal(s.result?.finishReason, 'double_KO'); assert.equal(s.result?.winnerId, null);
   const final = JSON.stringify(s); stepCombat(s); assert.equal(JSON.stringify(s), final); check(s);
 });
+test('a surviving fighter wins a knockout regardless of judging score', () => {
+  const s = createMatch(config());
+  const [down, survivor] = s.fighters;
+  down.health = 0;
+  survivor.health = 18;
+  down.judging.damageDealt = 1_000;
+  down.judging.initiativeTicks = 10_000;
+  s.fighters.forEach(fighter => { fighter.nextDecisionTick = 10_000; });
+
+  stepCombat(s);
+
+  assert.equal(s.result?.finishReason, 'KO');
+  assert.equal(s.result?.winnerId, survivor.snapshot.fighterId);
+});
+
 test('startup cannot hit and heavy startup can be interrupted', () => {
   const s = createMatch(config()); pairedAttack(s, 'spur_lunge', 6); stepCombat(s);
   assert.equal(s.eventBuffer.filter(e => e.type === 'DAMAGE').length, 0);

@@ -15,8 +15,7 @@ import { makeCombatantState, type CombatantState } from "./state";
 import { selectTell } from "./tells";
 import { exchangeDurationMs } from "./timeline";
 import { resolvePhysicalProfile } from "../physicalProfile";
-import { isDevModeEnabled } from "../dev";
-import { COMMAND_ACTIVE_TURNS, COMMAND_POINTS_MAX, COMMAND_POINT_REGEN_TURNS, commandTargetsAction, type PlayerCommand } from "./command";
+import { commandTargetsAction, type CombatInstruction } from "./command";
 import type {
   Chicken,
   CombatAction,
@@ -63,7 +62,7 @@ function initiativeScore(chicken: Chicken, action: CombatAction, physicalMobilit
   return spd * (1 - ACTION_DEFINITIONS[action].commitment * 0.2) + rng() * 10;
 }
 
-/** What a coach (player or Auto-Coach) sees before deciding whether to spend a CommandPoint this turn. */
+/** What a coach (player or Auto-Coach) can see before choosing an instruction. */
 export type CoachObservation = {
   turn: number;
   own: {
@@ -73,13 +72,12 @@ export type CoachObservation = {
     maxStamina: number;
     momentum: number;
     mentalState: CombatantState["mentalState"];
-    commandPoints: number;
   };
   opponentContextState: CombatContextState;
   opponentRecentActions: readonly CombatAction[];
 };
 
-export type CoachFn = (obs: CoachObservation) => PlayerCommand | null;
+export type CoachFn = (obs: CoachObservation) => CombatInstruction | null;
 
 export type SimulateBattleOptions = {
   coachA?: CoachFn;
@@ -92,9 +90,9 @@ export type SimulateBattleOptions = {
  * `BattleSession.step` accepts either so the same stepping path serves a
  * human clicking buttons in real time and an automated coach policy.
  */
-export type CommandSource = PlayerCommand | null | undefined | CoachFn;
+export type CommandSource = CombatInstruction | null | undefined | CoachFn;
 
-function resolveCommandSource(source: CommandSource, obs: CoachObservation): PlayerCommand | null {
+function resolveCommandSource(source: CommandSource, obs: CoachObservation): CombatInstruction | null {
   if (typeof source === "function") return source(obs);
   return source ?? null;
 }
@@ -111,8 +109,8 @@ export type TurnStepResult = {
 
 /**
  * One fully-resolved V2 turn-based battle, steppable one turn at a time so a
- * real player can watch state (HP, CommandPoints, mental state) and issue a
- * `PlayerCommand` between turns instead of only ever pre-supplying a `CoachFn`
+ * real player can watch state (HP and mental state) and issue a
+ * coaching instruction between turns instead of only ever pre-supplying a `CoachFn`
  * up front. `simulateBattle` below is just this run to completion in a tight
  * loop with `options.coachA`/`coachB` as the per-turn command source, so both
  * paths share one implementation and can never drift.
@@ -151,28 +149,26 @@ export class BattleSession {
     return this.log;
   }
 
-  /** CommandPoints/mental-state snapshot for side A, for a UI to render between steps without waiting on a turn result. */
-  snapshotA(): CoachObservation["own"] & { pendingCommand: PlayerCommand | null } {
+  /** Read-only state for coaching and presentation between steps. */
+  snapshotA(): CoachObservation["own"] & { pendingCommand: CombatInstruction | null } {
     return {
       hp: this.stateA.hp, maxHp: this.stateA.maxHp, stamina: this.stateA.stamina, maxStamina: this.stateA.maxStamina,
-      momentum: this.stateA.momentum, mentalState: this.stateA.mentalState, commandPoints: this.stateA.commandPoints,
+      momentum: this.stateA.momentum, mentalState: this.stateA.mentalState,
       pendingCommand: this.stateA.pendingCommand,
     };
   }
 
-  snapshotB(): CoachObservation["own"] & { pendingCommand: PlayerCommand | null } {
+  snapshotB(): CoachObservation["own"] & { pendingCommand: CombatInstruction | null } {
     return {
       hp: this.stateB.hp, maxHp: this.stateB.maxHp, stamina: this.stateB.stamina, maxStamina: this.stateB.maxStamina,
-      momentum: this.stateB.momentum, mentalState: this.stateB.mentalState, commandPoints: this.stateB.commandPoints,
+      momentum: this.stateB.momentum, mentalState: this.stateB.mentalState,
       pendingCommand: this.stateB.pendingCommand,
     };
   }
 
   /**
-   * Resolves exactly one turn. `sourceA`/`sourceB` are only consulted once
-   * this turn's CommandPoints regen has landed, same as the old inline
-   * `options.coachA` check — a manual command supplied when CP < 1 is simply
-   * ignored (mirrors "imperfect command compliance" never being free).
+   * Resolves exactly one legacy turn. A supplied instruction replaces the
+   * previous one without points, regeneration, or cooldowns.
    */
   step(sourceA?: CommandSource, sourceB?: CommandSource): TurnStepResult {
     const { chickenA, chickenB, rng } = this;
@@ -269,26 +265,11 @@ export class BattleSession {
     const effectiveProfileA = withIdentity(stateA.behavior, identityA);
     const effectiveProfileB = withIdentity(stateB.behavior, identityB);
 
-    stateA.commandPoints = Math.min(COMMAND_POINTS_MAX, stateA.commandPoints + 1 / COMMAND_POINT_REGEN_TURNS);
-    stateB.commandPoints = Math.min(COMMAND_POINTS_MAX, stateB.commandPoints + 1 / COMMAND_POINT_REGEN_TURNS);
-
-    // Dev-mode cheat: keep the player's (side A) CommandPoints topped off so commands
-    // are never gated behind regen while testing. Never active in production
-    // (see lib/dev.ts) — side B (NPC/opponent) is untouched.
-    if (isDevModeEnabled()) {
-      stateA.commandPoints = COMMAND_POINTS_MAX;
-    }
-
-    if (stateA.pendingCommandTurnsLeft > 0) stateA.pendingCommandTurnsLeft -= 1;
-    else stateA.pendingCommand = null;
-    if (stateB.pendingCommandTurnsLeft > 0) stateB.pendingCommandTurnsLeft -= 1;
-    else stateB.pendingCommand = null;
-
     const observationA: CoachObservation = {
       turn,
       own: {
         hp: stateA.hp, maxHp: stateA.maxHp, stamina: stateA.stamina, maxStamina: stateA.maxStamina,
-        momentum: stateA.momentum, mentalState: stateA.mentalState, commandPoints: stateA.commandPoints,
+        momentum: stateA.momentum, mentalState: stateA.mentalState,
       },
       opponentContextState: contextB,
       opponentRecentActions: stateA.opponentModel.recentActions,
@@ -297,32 +278,26 @@ export class BattleSession {
       turn,
       own: {
         hp: stateB.hp, maxHp: stateB.maxHp, stamina: stateB.stamina, maxStamina: stateB.maxStamina,
-        momentum: stateB.momentum, mentalState: stateB.mentalState, commandPoints: stateB.commandPoints,
+        momentum: stateB.momentum, mentalState: stateB.mentalState,
       },
       opponentContextState: contextA,
       opponentRecentActions: stateB.opponentModel.recentActions,
     };
 
-    if (stateA.commandPoints >= 1) {
-      const cmd = resolveCommandSource(sourceA, observationA);
-      if (cmd) {
-        stateA.pendingCommand = cmd;
-        stateA.pendingCommandTurnsLeft = COMMAND_ACTIVE_TURNS;
-        stateA.commandPoints -= 1;
-      }
-    }
-    if (stateB.commandPoints >= 1) {
-      const cmd = resolveCommandSource(sourceB, observationB);
-      if (cmd) {
-        stateB.pendingCommand = cmd;
-        stateB.pendingCommandTurnsLeft = COMMAND_ACTIVE_TURNS;
-        stateB.commandPoints -= 1;
-      }
-    }
+    const commandA = resolveCommandSource(sourceA, observationA);
+    if (commandA && commandA !== "FORCE_ENGAGEMENT") stateA.pendingCommand = commandA;
+    const commandB = resolveCommandSource(sourceB, observationB);
+    if (commandB && commandB !== "FORCE_ENGAGEMENT") stateB.pendingCommand = commandB;
+
+    // Instructions persist until replaced, matching authoritative combat.
+    // The stalemate breaker is scoped to this decision and never becomes a
+    // fifth public command or overwrites the coach's active instruction.
+    decisionCtxA.pendingCommand = stateA.pendingCommand;
+    decisionCtxB.pendingCommand = stateB.pendingCommand;
 
     if (shouldForceEngagement(this.noDamageStreak)) {
-      if (!stateA.pendingCommand) { stateA.pendingCommand = "FORCE_ENGAGEMENT"; stateA.pendingCommandTurnsLeft = 1; }
-      if (!stateB.pendingCommand) { stateB.pendingCommand = "FORCE_ENGAGEMENT"; stateB.pendingCommandTurnsLeft = 1; }
+      if (!stateA.pendingCommand) decisionCtxA.pendingCommand = "FORCE_ENGAGEMENT";
+      if (!stateB.pendingCommand) decisionCtxB.pendingCommand = "FORCE_ENGAGEMENT";
     }
 
     let actionA = chooseAction(effectiveProfileA, legalA, decisionCtxA);

@@ -15,7 +15,8 @@
     "seed:redblack": "node --import ./scripts/test-ts-loader.mjs scripts/seed-deep-red-black-roster.ts",
     "seed:strategy": "node --import ./scripts/test-ts-loader.mjs scripts/seed-strategy-fighter-roster.ts",
     "backfill:colors": "node --import ./scripts/test-ts-loader.mjs scripts/backfill-color-jitter.ts",
-    "postinstall": "prisma generate"
+    "postinstall": "prisma generate",
+    "verify:launch-commands": "node --import ./scripts/test-ts-loader.mjs scripts/verify-launch-commands.ts"
   },
   "dependencies": {
     "@prisma/client": "^6",

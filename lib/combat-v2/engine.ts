@@ -36,7 +36,9 @@ export function createMatch(input: MatchConfig): CombatMatchState {
   const fighter = (snapshot: MatchConfig['fighterA'], x: number): Fighter => {
     const b = snapshot.behavior;
     const preferred = clamp(5.1 + b.caution * 1.35 + b.patience * .8 + b.counterPreference * .75 - b.aggression * .9 - b.pressurePreference * .6, 4.1, 7.3);
-    return { snapshot, state: 'circling', previousState: 'neutral', stateEnteredTick: 0, position: { x, y: 0, z: 0 }, velocity: { x: 0, y: 0, z: 0 }, grounded: true, wasGrounded: true, justLanded: false, groundedTicks: 1, locomotion: 'GROUNDED', facing: x < 0 ? 0 : Math.PI, health: snapshot.maxHealth, stamina: 100, balance: 100, combatMomentum: 0, mentalState: 'CALM', mentalStateEnteredTick: 0, currentIntent: 'probe', tacticalMode: 'balanced', awakeningAttempted: false, lastSignatureTick: -1000, nextDecisionTick: Math.round(18 + snapshot.behavior.patience * 20), lastCommandTick: -COMMAND_COOLDOWN_TICKS, lastSequence: -1, openingUntil: 0, cooldowns: {}, engagement: { phase: 'stalking', enteredTick: 0, clashUntil: 0, breakUntil: 0, resetUntil: 0, desiredRange: preferred, orbitDirection: x < 0 ? 1 : -1, lastCollisionTick: -1000 }, observedTellTick: -1, memory: { attacks: {}, successfulCounters: 0, failedCounters: 0, recentDamageTaken: 0 }, utilities: {}, readTells: [] };
+    const initialMental = (snapshot.stress ?? 0) > .75 ? 'NERVOUS' : (snapshot.confidence ?? .5) > .78 ? 'CONFIDENT' : 'CALM';
+    const injuryBalance = (snapshot.activeInjuries ?? []).reduce((penalty, injury) => penalty + (injury.location === 'leg' || injury.location === 'foot' || injury.location === 'joint' ? injury.severity === 'career_altering' ? 18 : injury.severity === 'serious' ? 10 : 4 : 0), 0);
+    return { snapshot, state: 'circling', previousState: 'neutral', stateEnteredTick: 0, position: { x, y: 0, z: 0 }, velocity: { x: 0, y: 0, z: 0 }, grounded: true, wasGrounded: true, justLanded: false, groundedTicks: 1, locomotion: 'GROUNDED', facing: x < 0 ? 0 : Math.PI, health: clamp(snapshot.startingHealth ?? snapshot.maxHealth, 1, snapshot.maxHealth), stamina: clamp(snapshot.startingStamina ?? 100, 1, 100), balance: clamp(100 - injuryBalance - (snapshot.trainingFatigue ?? 0) * 18, 20, 100), combatMomentum: 0, mentalState: initialMental, mentalStateEnteredTick: 0, currentIntent: 'probe', tacticalMode: 'balanced', awakeningAttempted: false, lastSignatureTick: -1000, nextDecisionTick: Math.round(18 + snapshot.behavior.patience * 20), lastCommandTick: -COMMAND_COOLDOWN_TICKS, lastSequence: -1, openingUntil: 0, cooldowns: {}, engagement: { phase: 'stalking', enteredTick: 0, clashUntil: 0, breakUntil: 0, resetUntil: 0, desiredRange: preferred, orbitDirection: x < 0 ? 1 : -1, lastCollisionTick: -1000 }, observedTellTick: -1, memory: { attacks: {}, successfulCounters: 0, failedCounters: 0, recentDamageTaken: 0 }, utilities: {}, judging: { damageDealt: 0, initiativeTicks: 0, controlTicks: 0, knockdowns: 0, inactivityPenalties: 0 }, readTells: [] };
   };
   const openingHalfGap = Math.min(input.arena.radius * .55, 4.6);
   const state: CombatMatchState = { config, tick: 0, phase: 'active', rngState: input.seed >>> 0, fighters: [fighter(config.fighterA, -openingHalfGap), fighter(config.fighterB, openingHalfGap)], commands: [], eventBuffer: [], lastContactTick: 0 };
@@ -104,8 +106,9 @@ function commandAlignment(f: Fighter, command: TacticalMode) {
     : command === 'counter' ? (b.counterPreference + b.patience + b.caution) / 3
     : command === 'defensive' ? (b.caution + b.patience + (1 - b.riskTolerance)) / 3
     : command === 'recover' ? (b.recoveryPreference + b.caution + (1 - b.aggression)) / 3
-    : command === 'all_in' ? (b.aggression + b.riskTolerance + b.persistence) / 3 : .65;
-  const discipline = f.snapshot.experience * .15 + f.snapshot.evolution.rivalryFamiliarity / 1000;
+    : .65;
+  const discipline = f.snapshot.experience * .15 + f.snapshot.evolution.rivalryFamiliarity / 1000
+    + ((f.snapshot.confidence ?? .5) - .5) * .16 + ((f.snapshot.morale ?? .75) - .5) * .08 - (f.snapshot.stress ?? 0) * .12;
   const physical = command === 'recover' ? (100 - f.stamina) / 500 : f.balance < 30 ? -.08 : 0;
   return clamp(temperament + discipline + physical, .05, .95);
 }
@@ -190,7 +193,7 @@ function normalizePhysicsState(s: CombatMatchState, f: Fighter) {
 }
 function start(s: CombatMatchState, f: Fighter, id: string) {
   const a = ACTIONS[id];
-  const rushCost = f.snapshot.evolution.signatures.includes('relentless-rush') && (f.tacticalMode === 'pressure' || f.tacticalMode === 'all_in') ? 1.14 : 1;
+  const rushCost = f.snapshot.evolution.signatures.includes('relentless-rush') && f.tacticalMode === 'pressure' ? 1.14 : 1;
   const awakeningCost = awakeningModifiers(f.awakening?.type)?.staminaCost ?? 1;
   const staminaCost = a.staminaCost * rushCost * awakeningCost;
   if (!free(f) || f.stamina < staminaCost || (f.cooldowns[id] ?? 0) > s.tick) return false;
@@ -200,6 +203,7 @@ function start(s: CombatMatchState, f: Fighter, id: string) {
   // allowing a fighter to return to that move during the same clash.
   f.cooldowns[id] = s.tick + a.startupTicks + a.activeTicks + a.recoveryTicks + (a.aerial ? 16 : id === 'peck_strike' ? 10 : 8);
   f.stamina = q(f.stamina - staminaCost);
+  emit(s, f, 'STAMINA_CHANGED', { value: -staminaCost, detail: 'action_cost' });
   f.currentAction = { id, startedTick: s.tick, hit: false, phase: 'startup' };
   if (a.aerial) {
     f.aerial = { phase: 'PRELOAD', phaseTick: s.tick, launchedTick: -1, followups: 0,
@@ -232,7 +236,7 @@ function perceive(s: CombatMatchState, f: Fighter, other: Fighter, rng: ReturnTy
   const delay = Math.round(clamp(17 - f.snapshot.stats.speed / 18 - f.snapshot.stats.agility / 36 - f.snapshot.experience * 4 + (100 - f.stamina) / 10 - (flowState ? 6 : 0), 5, 25));
   const b = f.snapshot.behavior;
   const meetChance = clamp(.35 + b.aggression * .35 + b.riskTolerance * .25 - b.caution * .15
-    + (f.tacticalMode === 'pressure' || f.tacticalMode === 'all_in' ? .2 : 0)
+    + (f.tacticalMode === 'pressure' ? .2 : 0)
     - (f.tacticalMode === 'recover' || f.tacticalMode === 'defensive' ? .3 : 0)
     + (flowState ? .35 : 0), .05, .85);
   const canMeet = (flowState || f.engagement.phase === 'stalking') && f.stamina >= (flowState ? 20 : 35) && f.balance >= (flowState ? 30 : 45);
@@ -282,7 +286,7 @@ function decide(s: CombatMatchState, f: Fighter, other: Fighter, rng: ReturnType
   const reading = f.engagement.phase === 'stalking' && s.tick - f.engagement.enteredTick < readTicks(f);
   const opening = other.openingUntil > s.tick;
   const patternRead = Math.max(0, ...Object.values(f.memory.attacks)) >= 3 ? .15 + f.snapshot.experience * .5 + f.snapshot.evolution.rivalryFamiliarity / 180 : 0;
-  const aggressive = mode === 'pressure' || mode === 'all_in';
+  const aggressive = mode === 'pressure';
   const behind = f.health / f.snapshot.maxHealth < other.health / other.snapshot.maxHealth - .12;
   const ahead = f.health / f.snapshot.maxHealth > other.health / other.snapshot.maxHealth + .15;
   const battleHardened = traitLevel(f, 'battle-hardened');
@@ -294,9 +298,9 @@ function decide(s: CombatMatchState, f: Fighter, other: Fighter, rng: ReturnType
   const lateFight = s.tick > s.config.maxTicks * .55;
   const scores: Record<string, number> = {
     peck_strike: d < 1.25 * f.snapshot.physical.reach ? .25 + b.aggression * .4 + pressure * .3 + (mode === 'pressure' ? coaching * .55 : 0) - tired : 0,
-    spur_lunge: d < 1.65 * f.snapshot.physical.reach ? .2 + b.riskTolerance * .5 + pressure + (mode === 'all_in' ? 1 + coaching : mode === 'pressure' ? coaching : 0) - tired : 0,
+    spur_lunge: d < 1.65 * f.snapshot.physical.reach ? .2 + b.riskTolerance * .5 + pressure + (mode === 'pressure' ? coaching : 0) - tired : 0,
     jump_kick: d > .9 && d < 1.8 ? .7 + b.aggression * .5 + f.snapshot.stats.agility / 120 + (opening ? .4 : 0) + (mode === 'pressure' ? coaching * .6 : 0) - tired : 0,
-    flying_spur: d > 2.2 && d < 7.4 ? 1 + b.riskTolerance + b.pressurePreference + pressure + (mode === 'pressure' || mode === 'all_in' ? coaching * 1.2 : 0) - tired * 1.5 : 0,
+    flying_spur: d > 2.2 && d < 7.4 ? 1 + b.riskTolerance + b.pressurePreference + pressure + (mode === 'pressure' ? coaching * 1.2 : 0) - tired * 1.5 : 0,
     wing_counter: opening && d < 1.6 ? 1 + b.counterPreference * 2 + (mode === 'counter' ? 2.2 * coaching + .5 : 0) + f.snapshot.experience + patternRead + traitLevel(f, 'counter-instinct') * .18 : 0,
     guard: .05 + (mode === 'defensive' ? .65 + coaching : mode === 'counter' ? coaching * .35 : 0) + b.caution * .2 + patternRead - pressure,
     feint: d < 1.5 ? .1 + b.patience * .2 + b.counterPreference * .2 - tired : 0,
@@ -343,7 +347,7 @@ function decide(s: CombatMatchState, f: Fighter, other: Fighter, rng: ReturnType
   // utilities; this only widens the tactical separation between them.
   const exaggeration = TEMPORARY_COMBAT_EXAGGERATION * Math.max(.35, coaching);
   const initiatingAttacks = ['peck_strike', 'spur_lunge', 'jump_kick', 'flying_spur'];
-  if (mode === 'pressure' || mode === 'all_in') {
+  if (mode === 'pressure') {
     for (const id of initiatingAttacks) scores[id] *= 1 + exaggeration * 1.5;
     scores.advance *= 1 + exaggeration * 2;
     for (const id of ['guard', 'retreat', 'circle', 'recover']) scores[id] /= 1 + exaggeration * 3;
@@ -374,7 +378,7 @@ function decide(s: CombatMatchState, f: Fighter, other: Fighter, rng: ReturnType
   for (const [id, score] of Object.entries(scores)) { roll -= score; if (score > 0 && roll <= 0) { choice = id; break; } }
   f.currentIntent = choice; emit(s, f, 'INTENT_CHANGED', { detail: choice });
   if (f.coaching) {
-    const follows = f.coaching.command === 'pressure' || f.coaching.command === 'all_in' ? ['advance', 'peck_strike', 'spur_lunge', 'jump_kick', 'flying_spur'].includes(choice)
+    const follows = f.coaching.command === 'pressure' ? ['advance', 'peck_strike', 'spur_lunge', 'jump_kick', 'flying_spur'].includes(choice)
       : f.coaching.command === 'counter' ? ['circle', 'retreat', 'guard', 'sidestep', 'wing_counter'].includes(choice)
       : f.coaching.command === 'defensive' ? ['circle', 'retreat', 'guard', 'sidestep'].includes(choice)
       : f.coaching.command === 'recover' ? ['recover', 'retreat', 'circle', 'guard'].includes(choice) : true;
@@ -391,6 +395,7 @@ function timeline(s: CombatMatchState, f: Fighter) {
   }
   const a = ACTIONS[runtime.id], age = s.tick - runtime.startedTick;
   if (age >= a.startupTicks + a.activeTicks + a.recoveryTicks) {
+    emit(s, f, 'ATTACK_ENDED', { actionId: a.id });
     f.currentAction = undefined; transition(s, f, 'neutral'); f.nextDecisionTick = s.tick + 3; return;
   }
   if (age >= a.startupTicks + a.activeTicks && runtime.phase !== 'recovery') {
@@ -442,7 +447,7 @@ function move(s: CombatMatchState) {
       } else if (forward > 0 && d < f.engagement.desiredRange - .35) forward = 0;
     }
     if (!action) {
-      if ((f.tacticalMode === 'pressure' || f.tacticalMode === 'all_in') && d > 1.05) {
+      if (f.tacticalMode === 'pressure' && d > 1.05) {
         forward = Math.max(forward, TEMPORARY_COMBAT_EXAGGERATION);
       } else if (f.tacticalMode === 'counter' && forward > 0) {
         forward /= 1 + TEMPORARY_COMBAT_EXAGGERATION * 2;
@@ -529,7 +534,7 @@ export function stepCombat(s: CombatMatchState): CombatMatchState {
       aerialImpact(s, fighterB, fighterA, 'body', 3);
     }
   }
-  const hits: { attacker: Fighter; target: Fighter; actionId: string; damage: number; blocked: boolean; zone: string; interrupt: boolean; medicalStop: boolean }[] = [];
+  const hits: { attacker: Fighter; target: Fighter; actionId: string; damage: number; blocked: boolean; zone: string; interrupt: boolean; medicalStop: boolean; injurySeverity: 'minor' | 'serious' | 'career_altering' | null }[] = [];
   s.fighters.forEach((f, i) => {
     const rt = f.currentAction, target = s.fighters[1 - i];
     if (!rt || rt.phase !== 'active' || rt.hit) return;
@@ -578,11 +583,14 @@ export function stepCombat(s: CombatMatchState): CombatMatchState {
         || target.currentAction.meetingCommitment && target.currentAction.phase === 'startup');
     const medicalStop = !blocked && (zone === 'head' || zone === 'neck') && damage >= 8
       && rng.chance(clamp(.015 + damage / 500 + (100 - target.stamina) / 2000 + (100 - target.balance) / 3000, .015, .12));
-    hits.push({ attacker: f, target, actionId: a.id, damage, blocked, zone, medicalStop, interrupt: !blocked && !followingThrough && a.interruptPower / target.snapshot.physical.stability > resistance });
+    const incidentalInjury = !blocked && !medicalStop && damage >= 6 && rng.chance(clamp(.018 + damage / 350 + (100 - target.stamina) / 1800, .018, .11));
+    const injurySeverity = medicalStop ? 'serious' : incidentalInjury ? damage >= 15 && rng.chance(.12) ? 'career_altering' : damage >= 10 ? 'serious' : 'minor' : null;
+    hits.push({ attacker: f, target, actionId: a.id, damage, blocked, zone, medicalStop, injurySeverity, interrupt: !blocked && !followingThrough && a.interruptPower / target.snapshot.physical.stability > resistance });
   });
   for (const h of hits) {
     const { attacker: f, target, actionId, damage, blocked, zone } = h;
     target.health = q(Math.max(0, target.health - damage)); target.balance = q(Math.max(0, target.balance - damage * 2 / target.snapshot.physical.stability));
+    f.judging.damageDealt = q(f.judging.damageDealt + damage);
     target.memory.recentDamageTaken = q(target.memory.recentDamageTaken + damage);
     target.memory.attacks[actionId] = (target.memory.attacks[actionId] ?? 0) + 1;
     s.lastContactTick = s.tick;
@@ -590,7 +598,10 @@ export function stepCombat(s: CombatMatchState): CombatMatchState {
     target.combatMomentum = q(clamp(target.combatMomentum - Math.min(18, damage * 1.2), -100, 100));
     emit(s, f, blocked ? 'BLOCK' : actionId === 'wing_counter' ? 'COUNTER_LANDED' : 'ATTACK_LANDED', { targetId: target.snapshot.fighterId, actionId, value: damage, detail: zone });
     emit(s, target, 'DAMAGE', { targetId: f.snapshot.fighterId, value: damage, detail: zone });
-    if (h.medicalStop) emit(s, target, 'INJURY_SUSTAINED', { targetId: f.snapshot.fighterId, actionId, value: damage, detail: `${zone}:fight_ending` });
+    emit(s, target, 'BALANCE_CHANGED', { targetId: f.snapshot.fighterId, value: target.balance, detail: 'impact' });
+    emit(s, f, 'MOMENTUM_CHANGED', { value: f.combatMomentum, detail: 'impact_won' });
+    emit(s, target, 'MOMENTUM_CHANGED', { value: target.combatMomentum, detail: 'impact_lost' });
+    if (h.injurySeverity) emit(s, target, 'INJURY_SUSTAINED', { targetId: f.snapshot.fighterId, actionId, value: damage, detail: `${zone}:${h.injurySeverity}:${h.medicalStop ? 'fight_ending' : 'active'}` });
     aerialImpact(s, target, f, zone, damage);
     if (f.aerial && !f.grounded) emit(s, f, 'COLLISION', { targetId: target.snapshot.fighterId,
       detail: hits.some(other => other.attacker === target) ? 'AIR_KICK_TRADE' : ACTIONS[actionId].category === 'counter' ? 'AIR_KICK_COUNTERED' : 'AIR_KICK_HIT' });
@@ -603,7 +614,9 @@ export function stepCombat(s: CombatMatchState): CombatMatchState {
     const dx = h.target.position.x - h.attacker.position.x, dz = h.target.position.z - h.attacker.position.z, length = Math.hypot(dx, dz) || 1;
     const recoil = clamp(h.damage / 4, .6, 2.8) / h.target.snapshot.physical.mass;
     h.target.velocity.x = q(dx / length * recoil); h.target.velocity.z = q(dz / length * recoil);
-    emit(s, h.target, 'STAGGER', { value: h.damage });
+      emit(s, h.target, 'STAGGER', { value: h.damage });
+      h.attacker.judging.knockdowns++;
+      emit(s, h.target, 'KNOCKDOWN', { targetId: h.attacker.snapshot.fighterId, value: h.damage });
     h.attacker.combatMomentum = q(clamp(h.attacker.combatMomentum + 12, -100, 100));
     h.target.combatMomentum = q(clamp(h.target.combatMomentum - 12, -100, 100));
   }
@@ -631,9 +644,11 @@ export function stepCombat(s: CombatMatchState): CombatMatchState {
     f.memory.recentDamageTaken = q(Math.max(0, f.memory.recentDamageTaken - .035));
     f.combatMomentum = q(f.combatMomentum * .998);
     updateMentalState(s, f);
+    if ((f.currentAction && ACTIONS[f.currentAction.id].damage > 0) || f.state === 'advancing') f.judging.initiativeTicks++;
+    if (f.engagement.phase === 'clashing' && (f.state === 'attacking' || f.state === 'countering')) f.judging.controlTicks++;
   }
   const inactiveTicks = s.tick - s.lastContactTick;
-  if (inactiveTicks === 600) for (const f of s.fighters) emit(s, f, 'FORCE_ENGAGEMENT_WARNING', { detail: 'two_inactive_exchanges' });
+  if (inactiveTicks === 600) for (const f of s.fighters) { f.judging.inactivityPenalties++; emit(s, f, 'FORCE_ENGAGEMENT_WARNING', { detail: 'two_inactive_exchanges' }); }
   if (inactiveTicks >= 900 && inactiveTicks % 120 === 60) {
     for (const f of s.fighters) {
       f.engagement.desiredRange = Math.max(1.4, f.engagement.desiredRange - .8);
@@ -645,8 +660,18 @@ export function stepCombat(s: CombatMatchState): CombatMatchState {
   const [a, b] = s.fighters;
   if (a.health <= 0 || b.health <= 0 || s.tick >= s.config.maxTicks) {
     const dead = a.health <= 0 || b.health <= 0;
-    const scoreA = a.health / a.snapshot.maxHealth, scoreB = b.health / b.snapshot.maxHealth;
-    s.result = { winnerId: scoreA === scoreB ? null : scoreA > scoreB ? a.snapshot.fighterId : b.snapshot.fighterId, finishReason: a.health <= 0 && b.health <= 0 ? 'double_KO' : dead ? 'KO' : 'time_limit', durationTicks: s.tick };
+    const judge = (fighter: Fighter) => fighter.health / fighter.snapshot.maxHealth * 100 + fighter.judging.damageDealt * .25
+      + fighter.judging.initiativeTicks / 60 * .3 + fighter.judging.controlTicks / 60 * .2
+      + fighter.judging.knockdowns * 5 - fighter.judging.inactivityPenalties * 3;
+    const bothDown = a.health <= 0 && b.health <= 0;
+    let winnerId: string | null;
+    if (bothDown) winnerId = null;
+    else if (dead) winnerId = a.health > 0 ? a.snapshot.fighterId : b.snapshot.fighterId;
+    else {
+      const scoreA = judge(a), scoreB = judge(b);
+      winnerId = scoreA === scoreB ? null : scoreA > scoreB ? a.snapshot.fighterId : b.snapshot.fighterId;
+    }
+    s.result = { winnerId, finishReason: bothDown ? 'double_KO' : dead ? 'KO' : 'time_limit', durationTicks: s.tick };
     for (const f of s.fighters) { f.currentAction = undefined; f.reaction = undefined; f.velocity = { x: 0, y: 0, z: 0 }; f.position.y = 0; transition(s, f, f.health <= 0 ? 'down' : 'finished'); }
     s.phase = 'finished'; emit(s, a, 'MATCH_FINISHED', { detail: s.result.finishReason, targetId: s.result.winnerId ?? undefined });
   }

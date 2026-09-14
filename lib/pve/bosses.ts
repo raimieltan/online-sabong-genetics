@@ -803,10 +803,10 @@ export const PVE_BOSSES: Record<PveBossId, PveBossDefinition> = {
     styleLabel: "Perfected Fighter",
     behaviorLabel: "Master Adaptive",
     description:
-      "The ultimate PvE opponent. A perfected fighter with elite genetics, immense experience and the ability to adapt to almost any strategy.",
+      "The launch champion combines every prior lesson through patience, pressure, recovery and adaptation—not an impossible stat wall.",
     fightingStyle: "balanced",
-    iv: stats(100, 100, 100, 100, 100, 100),
-    ev: stats(100, 100, 100, 100, 100, 100),
+    iv: stats(82, 82, 84, 82, 84, 82),
+    ev: stats(35, 35, 40, 35, 40, 35),
     behaviorOverrides: {
       aggression: 0.65,
       caution: 0.7,
@@ -828,12 +828,12 @@ export const PVE_BOSSES: Record<PveBossId, PveBossDefinition> = {
     },
     condition: 100,
     preview: {
-      strength: 10,
-      speed: 10,
-      endurance: 10,
+      strength: 8,
+      speed: 8,
+      endurance: 8,
     },
     recommendation:
-      "An endgame fighter capable of answering almost any strategy.",
+      "A complete fighter who demands all four coaching commands.",
     rewards: {
       firstClearCredits: 5000,
       repeatCredits: 1250,

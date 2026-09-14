@@ -9,8 +9,8 @@ import { LiveCombatV2Session, MAX_TURNS } from "../combat-v2/liveSession";
 import { createChicken } from "../chickenGenerator";
 import { prisma } from "../db";
 import type { BehavioralProfile, Chicken, CombatExperience } from "../types";
-import { PVE_BOSSES, PVE_BOSS_LIST, bossPreview, getBoss, previousBossId } from "./bosses";
-import { PVE_CIRCUITS } from "./campaign";
+import { PVE_BOSSES, bossPreview, getBoss } from "./bosses";
+import { isLaunchOptionalEncounterId, isLaunchPveBossId, LAUNCH_PVE_BOSS_ORDER, LAUNCH_PVE_CIRCUITS, previousLaunchBossId } from "./launch";
 import { endBossFightSession, getBossFightSession } from "./bossFightSessions";
 import { PveError } from "./errors";
 import { escalateBoss, type PveOpponentHistorySummary } from "./escalation";
@@ -108,13 +108,17 @@ function historySummary(row: PveOpponentHistory | undefined): PveOpponentHistory
 }
 
 function isUnlocked(bossId: PveBossId, rows: Map<string, PveProgress>): boolean {
-  const prev = previousBossId(bossId);
+  const prev = previousLaunchBossId(bossId);
   if (!prev) return true;
   return (rows.get(prev)?.clearCount ?? 0) > 0;
 }
 
 function completedCircuitIds(rows: Map<string, PveProgress>): string[] {
-  return PVE_CIRCUITS.filter((c) => (rows.get(c.championshipBossId)?.clearCount ?? 0) > 0).map((c) => c.id);
+  const completed: string[] = [];
+  if ((rows.get('wall')?.clearCount ?? 0) > 0) completed.push('backyard');
+  if ((rows.get('feint-master')?.clearCount ?? 0) > 0) completed.push('provincial');
+  if ((rows.get('apex')?.clearCount ?? 0) > 0) completed.push(...LAUNCH_PVE_CIRCUITS.map(circuit => circuit.id));
+  return completed;
 }
 
 function toCampaignEventView(row: { id: string; kind: string; bossId: string | null; headline: string; detail: string; seen: boolean; createdAt: Date }): CampaignEventView {
@@ -146,7 +150,7 @@ export async function markCampaignEventsSeen(playerId: string, ids: string[]): P
 
 export async function listBosses(playerId: string): Promise<BossListEntry[]> {
   const [rows, historyRows] = await Promise.all([progressRows(playerId), opponentHistoryRows(playerId)]);
-  return PVE_BOSS_LIST.map((boss) => {
+  return LAUNCH_PVE_BOSS_ORDER.map((id) => PVE_BOSSES[id]).map((boss) => {
     const history = historySummary(historyRows.get(boss.id));
     return {
       boss: bossPreview(boss),
@@ -172,7 +176,7 @@ export async function listSideEncounters(playerId: string): Promise<BossListEntr
     totalLossesAcrossHistory: [...historyRows.values()].reduce((sum, r) => sum + r.losses, 0),
     rivalryDeciderBossIds: PVE_BOSS_ORDER.filter((id) => rivalryStatus(historySummary(historyRows.get(id))).deciderDue),
   };
-  return PVE_SIDE_ENCOUNTERS.filter((encounter) => isSideEncounterUnlocked(encounter, ctx)).map((encounter) => {
+  return PVE_SIDE_ENCOUNTERS.filter((encounter) => isLaunchOptionalEncounterId(encounter.id) && isSideEncounterUnlocked(encounter, ctx)).map((encounter) => {
     const history = historySummary(historyRows.get(encounter.id));
     const def = encounter as unknown as PveBossDefinition;
     return {
@@ -188,11 +192,11 @@ export async function listSideEncounters(playerId: string): Promise<BossListEntr
  * presentation layer extensible without a second, competing progression store. */
 export async function campaignProgress(playerId: string): Promise<CampaignProgressView> {
   const [rows, state] = await Promise.all([progressRows(playerId), prisma.pveCampaignState.findUnique({ where: { playerId } })]);
-  const completed = PVE_BOSS_ORDER.filter((id) => (rows.get(id)?.clearCount ?? 0) > 0);
-  const unlockedCircuitIds = PVE_CIRCUITS.filter((c) => c.order === 1 || c.bossIds.some((id) => isUnlocked(id, rows))).map((c) => c.id);
+  const completed = LAUNCH_PVE_BOSS_ORDER.filter((id) => (rows.get(id)?.clearCount ?? 0) > 0);
+  const unlockedCircuitIds = LAUNCH_PVE_CIRCUITS.filter((c) => c.order === 1 || c.bossIds.some((id) => isUnlocked(id, rows))).map((c) => c.id);
   return {
     completedCount: completed.length,
-    totalCount: PVE_BOSS_ORDER.length,
+    totalCount: LAUNCH_PVE_BOSS_ORDER.length,
     reputation: state?.reputation ?? completed.reduce((sum, id) => sum + Math.round(PVE_BOSSES[id].rewards.firstClearCredits / 10), 0),
     rank: Math.max(1, 100 - completed.length * 5),
     unlockedCircuitIds,
@@ -247,11 +251,13 @@ export async function startBossFight(
   playerId: string,
   bossIdRaw: string,
   chickenId: string,
+  combatConfig: { coachingMode?: "MANUAL" | "AUTO"; openingCommand?: "PRESS" | "WAIT" | "COUNTER" | "RECOVER"; disconnectPolicy?: "KEEP_INSTRUCTION" | "AUTO_COACH" } = {},
 ): Promise<StartBossFightResult> {
   const boss = getBoss(bossIdRaw);
   if (!boss) throw new PveError("BOSS_NOT_FOUND");
 
   const sideEncounter = PVE_SIDE_ENCOUNTERS.find((e) => e.id === boss.id);
+  if (sideEncounter ? !isLaunchOptionalEncounterId(sideEncounter.id) : !isLaunchPveBossId(boss.id)) throw new PveError("BOSS_NOT_FOUND");
   const [rows, historyRows] = await Promise.all([progressRows(playerId), opponentHistoryRows(playerId)]);
   if (sideEncounter) {
     const campaignState = await prisma.pveCampaignState.findUnique({ where: { playerId } });
@@ -276,7 +282,7 @@ export async function startBossFight(
   const history = historySummary(historyRows.get(boss.id));
   const bossFighter = buildBossFighter(boss, history);
   const encounter = await createCombatEncounter({ ownerPlayerId: playerId, fighterId: chickenId, opponent: bossFighter, mode: sideEncounter ? "SIDE_ENCOUNTER" : "BOSS", modeContextId: boss.id });
-  const combatView = await createSession({ fighterId: chickenId, encounterId: encounter.id, coachingMode: "MANUAL", openingCommand: "WAIT", disconnectPolicy: "KEEP_INSTRUCTION", idempotencyKey: encounter.id }, playerId);
+  const combatView = await createSession({ fighterId: chickenId, encounterId: encounter.id, coachingMode: combatConfig.coachingMode ?? "MANUAL", openingCommand: combatConfig.openingCommand ?? "WAIT", disconnectPolicy: combatConfig.disconnectPolicy ?? "KEEP_INSTRUCTION", idempotencyKey: encounter.id }, playerId);
 
   return {
     sessionId: combatView.sessionId,
@@ -421,7 +427,7 @@ export async function finishBossFight(playerId: string, sessionId: string): Prom
       rivalryDeciderBossIds: PVE_BOSS_ORDER.filter((id) => rivalryStatus(historySummary(historyRowsAfterMap.get(id))).deciderDue),
     };
     const newlyUnlockedSideEncounters = PVE_SIDE_ENCOUNTERS.filter(
-      (encounter) => !isSideEncounterUnlocked(encounter, unlockCtxBefore) && isSideEncounterUnlocked(encounter, unlockCtxAfter),
+      (encounter) => isLaunchOptionalEncounterId(encounter.id) && !isSideEncounterUnlocked(encounter, unlockCtxBefore) && isSideEncounterUnlocked(encounter, unlockCtxAfter),
     );
 
     const events = deriveCampaignEvents({
@@ -474,7 +480,7 @@ export async function runDevPveAction(playerId: string, body: DevPveAction) {
       const now = new Date();
       const rows = await progressRows(playerId);
       // Clearing every boss except the last unlocks the whole ladder.
-      for (const id of PVE_BOSS_ORDER.slice(0, -1)) {
+      for (const id of LAUNCH_PVE_BOSS_ORDER.slice(0, -1)) {
         if ((rows.get(id)?.clearCount ?? 0) > 0) continue;
         await prisma.pveProgress.upsert({
           where: { playerId_bossId: { playerId, bossId: id } },
@@ -489,7 +495,7 @@ export async function runDevPveAction(playerId: string, body: DevPveAction) {
       return listBosses(playerId);
     }
     case "COMPLETE_BOSS": {
-      if (!getBoss(body.bossId)) throw new PveError("BOSS_NOT_FOUND");
+      if (!isLaunchPveBossId(body.bossId) && !isLaunchOptionalEncounterId(body.bossId)) throw new PveError("BOSS_NOT_FOUND");
       const now = new Date();
       await prisma.pveProgress.upsert({
         where: { playerId_bossId: { playerId, bossId: body.bossId } },
@@ -499,7 +505,7 @@ export async function runDevPveAction(playerId: string, body: DevPveAction) {
       return listBosses(playerId);
     }
     case "RESET_BOSS": {
-      if (!getBoss(body.bossId)) throw new PveError("BOSS_NOT_FOUND");
+      if (!isLaunchPveBossId(body.bossId) && !isLaunchOptionalEncounterId(body.bossId)) throw new PveError("BOSS_NOT_FOUND");
       await prisma.pveProgress.deleteMany({ where: { playerId, bossId: body.bossId } });
       return listBosses(playerId);
     }

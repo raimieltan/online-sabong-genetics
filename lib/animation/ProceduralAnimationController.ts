@@ -17,6 +17,7 @@ import { ANIMATIONS } from "./animations/index";
 import { aerialAttack } from './animations/aerial';
 import { applyAttackVariation } from "./animations/attackVariation";
 import { applyTacticalPosture } from './animations/tacticalPosture';
+import { applyTellPosture, TellPostureBlender } from './tellPosture';
 import { LayerRig } from "./layers";
 import { clamp, clamp01, smoothstep } from "./math";
 import { AnimationStateMachine } from "./stateMachine";
@@ -67,6 +68,7 @@ export class ProceduralAnimationController {
   private poseBase = makePose();
   private poseBlendFrom = makePose();
   private poseOut = makePose();
+  private readonly tellPosture = new TellPostureBlender();
 
   private playbackSpeed = 1;
   private locoPhase = 0;
@@ -247,6 +249,10 @@ export class ProceduralAnimationController {
     if (!simulation?.aerial && !simulation?.fatal) applyAttackVariation(state, ctx.t, ctx, this.poseBase);
     if (simulation?.tacticalMode && !simulation.aerial && !simulation.fatal) {
       applyTacticalPosture(simulation.tacticalMode, state, ctx, this.poseBase);
+    }
+    const tellLayers = this.tellPosture.update(simulation?.tellPosture, dt);
+    if (!simulation?.fatal) {
+      for (const tell of tellLayers) applyTellPosture(this.poseBase, tell.type, tell.strength, this.facing);
     }
 
     const transitionT = simulation ? this.simulationBlend : this.sm.transitionT;

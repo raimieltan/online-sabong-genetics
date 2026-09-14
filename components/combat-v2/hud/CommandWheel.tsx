@@ -2,7 +2,7 @@ import { ChickenThumbnail } from '@/components/chicken3d/ChickenThumbnail';
 import type { Chicken } from '@/lib/types';
 import type { TacticalMode } from '@/lib/combat-v2';
 
-export type CommandFeedback = { mode: TacticalMode; status: 'queued' | 'acknowledged' | 'ignored' };
+export type CommandFeedback = { mode: TacticalMode; status: 'queued' | 'acknowledged' | 'partial' | 'ignored' };
 export type CommandCardDef = { mode: TacticalMode; title: string; subtitle: string; icon: string; hotkey: string };
 
 const SEGMENTS = [
@@ -30,7 +30,7 @@ export function CommandWheel({ chicken, cards, activeMode, disabledAll, locked, 
         if (!segment) return null;
         const active = activeMode === card.mode;
         const feedbackTarget = feedback?.mode === card.mode;
-        const feedbackCopy = feedbackTarget ? feedback.status === 'acknowledged' ? 'Acknowledged ✓' : feedback.status === 'ignored' ? 'Ignored' : 'Queued' : card.subtitle;
+      const feedbackCopy = feedbackTarget ? feedback.status === 'acknowledged' ? 'Followed ✓' : feedback.status === 'partial' ? 'Partially followed' : feedback.status === 'ignored' ? 'Instinct resisted' : 'Queued' : card.subtitle;
         return (
           <div key={card.mode} className={`absolute z-10 ${segment.position}`}>
             <button

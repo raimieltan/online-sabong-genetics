@@ -12,7 +12,7 @@ import { startBossFight } from "@/lib/pve/service";
  */
 export async function POST(request: Request, { params }: { params: Promise<{ bossId: string }> }) {
   const { bossId } = await params;
-  const { chickenId } = (await request.json().catch(() => ({}))) as { chickenId?: string };
+  const { chickenId, ...combatConfig } = (await request.json().catch(() => ({}))) as { chickenId?: string; coachingMode?: "MANUAL" | "AUTO"; openingCommand?: "PRESS" | "WAIT" | "COUNTER" | "RECOVER"; disconnectPolicy?: "KEEP_INSTRUCTION" | "AUTO_COACH" };
 
   if (!chickenId) {
     return NextResponse.json({ error: "MISSING_CHICKEN" }, { status: 400 });
@@ -21,7 +21,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ bos
   const player = await getOrCreatePlayer();
 
   try {
-    const started = await startBossFight(player.id, bossId, chickenId);
+    const started = await startBossFight(player.id, bossId, chickenId, combatConfig);
     return NextResponse.json(started);
   } catch (err) {
     if (err instanceof PveError) {

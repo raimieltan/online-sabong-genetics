@@ -6,6 +6,7 @@ import { effectiveStat, type PveEncounterDefinition } from "@/lib/combat";
 import { RARITY_GEM, topRarity } from "@/lib/rarity";
 import { ChickenViewer } from "@/components/chicken3d/ChickenViewer";
 import { normalizeCombatCareer } from "@/lib/combat/evolution";
+import { describeIdentityContrast, presentFighterIdentity } from "@/lib/combat/identityPresenter";
 
 const STAT_LABEL: Record<GeneticStatKey, string> = {
   power: "Power",
@@ -97,6 +98,7 @@ export function FighterPlate({
   align: "left" | "right";
 }) {
   const rarity = topRarity(fighter.traits);
+  const identity = presentFighterIdentity(fighter);
 
   return (
     <div
@@ -109,7 +111,7 @@ export function FighterPlate({
         {align === "left" && <span className="text-sm">{RARITY_GEM[rarity]}</span>}
       </p>
       <p className="text-[11px] font-bold uppercase tracking-[0.18em]" style={{ color: corner }}>
-        {fighter.fightingStyle} · Gen {fighter.generation}
+        {identity.primaryLabel} · Gen {fighter.generation}
       </p>
       <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-(--color-gold-bright)">
         {rankTitle(record.wins)}
@@ -127,6 +129,7 @@ function FighterHud({ fighter, corner, record, align, recordKnown = true }: { fi
   const knownTraits = career.evolutionTraits.filter(entry => entry.active).slice(0, 2);
   const signature = career.signatures.find(entry => entry.developed);
   const unlockedAwakenings = career.awakenings.filter(entry => entry.unlocked);
+  const identity = presentFighterIdentity(fighter);
   // Both HUDs keep the numeric value at the outside edge, followed by the
   // flexible bar track and a fixed-width label column. The right HUD only
   // differs in text alignment; reordering its grid children would put the
@@ -139,16 +142,17 @@ function FighterHud({ fighter, corner, record, align, recordKnown = true }: { fi
       <p className="font-display text-2xl font-semibold tracking-wide text-(--foreground) sm:text-4xl">
         {align === "right" && <span className="mr-2 text-base">{RARITY_GEM[rarity]}</span>}{fighter.name}{align === "left" && <span className="ml-2 text-base">{RARITY_GEM[rarity]}</span>}
       </p>
-      <p className="mt-1 text-xs font-semibold uppercase tracking-[0.16em] text-(--color-text-muted)">{fighter.fightingStyle} bloodline · Gen {fighter.generation}</p>
+      <p className="mt-1 text-xs font-semibold uppercase tracking-[0.12em] text-(--color-text-muted)">{identity.primaryLabel} · {identity.careerStage}</p>
+      <p className="mt-2 text-[11px] text-(--color-text-muted)">{identity.strengths[0]}</p>
       <div className={`mt-3 flex flex-wrap gap-1.5 ${align === "right" ? "justify-end" : ""}`}>
         <span className="matchup-badge">{recordKnown ? rankTitle(record.wins) : "Unscouted"}</span>
-        <span className="matchup-badge">{fighter.fightingStyle}</span>
+        {identity.temperament.slice(0, 2).map((trait) => <span key={trait} className="matchup-badge">{trait}</span>)}
         <span className="matchup-badge">{recordKnown ? `${record.wins}W · ${record.losses}L` : "Record unknown"}</span>
         {knownTraits.map(trait => <span key={trait.id} className="matchup-badge">{trait.name} {trait.level > 1 ? trait.level : ''}</span>)}
         {signature && <span className="matchup-badge">Signature · {signature.name}</span>}
         {unlockedAwakenings.map(awakening => <span key={awakening.id} className="matchup-badge">Awakening · {awakening.name}</span>)}
       </div>
-      <div className="mt-4 space-y-1.5">
+      <details className="mt-4 text-left"><summary className="cursor-pointer text-[9px] uppercase tracking-wider text-(--color-text-muted)">Advanced ratings</summary><div className="mt-2 space-y-1.5">
         {GENETIC_STAT_KEYS.map((stat) => {
           const value = Math.round(effectiveStat(fighter, stat));
           return <div className={`grid ${statRowColumns} items-center gap-2 text-[10px] uppercase tracking-wide`} key={stat}>
@@ -157,7 +161,7 @@ function FighterHud({ fighter, corner, record, align, recordKnown = true }: { fi
             <span>{value}</span>
           </div>;
         })}
-      </div>
+      </div></details>
     </section>
   );
 }
@@ -188,6 +192,7 @@ export function MatchupScreen({
   onCombatConfigChange?: (config: { coachingMode: "MANUAL" | "AUTO"; openingCommand: "PRESS" | "WAIT" | "COUNTER" | "RECOVER"; disconnectPolicy: "KEEP_INSTRUCTION" | "AUTO_COACH" }) => void;
 }) {
   const opponentRecord = mockOpponentRecord(opponent);
+  const contrast = describeIdentityContrast(chicken, opponent);
 
   return <div className="matchup-scene">
     <div className="matchup-header text-center">
@@ -203,7 +208,8 @@ export function MatchupScreen({
     <div className="matchup-center">
       <div className="relative"><div className="vs-burst" /><span className="vs-mark font-display text-6xl sm:text-8xl">VS</span></div>
       <p className="mt-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-(--color-gold-bright)">{matchInfo ?? "Exhibition match"}</p>
-      <div className="matchup-comparison mt-3">{GENETIC_STAT_KEYS.map((key) => <StatCompareRow key={key} statKey={key} a={chicken} b={opponent} />)}</div>
+      <p className="mt-3 max-w-md text-xs leading-relaxed text-(--color-text-muted)">{contrast}</p>
+      <details className="matchup-comparison mt-3"><summary className="cursor-pointer text-[9px] uppercase tracking-wider text-(--color-text-muted)">Advanced stat comparison</summary><div className="mt-2 space-y-2">{GENETIC_STAT_KEYS.map((key) => <StatCompareRow key={key} statKey={key} a={chicken} b={opponent} />)}</div></details>
       {combatConfig && onCombatConfigChange && <div className="mt-4 grid gap-2 text-left text-[10px] uppercase tracking-wider sm:grid-cols-3">
         <label>Coach<select value={combatConfig.coachingMode} onChange={event => onCombatConfigChange({ ...combatConfig, coachingMode: event.target.value as "MANUAL" | "AUTO" })} className="mt-1 block w-full rounded bg-black/60 p-2"><option value="MANUAL">Manual</option><option value="AUTO">Auto-Coach</option></select></label>
         <label>Opening<select value={combatConfig.openingCommand} onChange={event => onCombatConfigChange({ ...combatConfig, openingCommand: event.target.value as typeof combatConfig.openingCommand })} className="mt-1 block w-full rounded bg-black/60 p-2">{["PRESS", "WAIT", "COUNTER", "RECOVER"].map(command => <option key={command}>{command}</option>)}</select></label>

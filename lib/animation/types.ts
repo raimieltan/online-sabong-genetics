@@ -240,6 +240,8 @@ export interface AnimIntent {
   simulationProgress?: number;
   /** V2-only tactical silhouette layered over the authoritative action pose. */
   tacticalMode?: import('../combat-v2/types').TacticalMode;
+  /** Observable tell posture, shared by authoritative and sandbox presentation. */
+  tellPosture?: { type: import('../combat-v2/types').ReadTellType; strength: number } | null;
   /** One-shot simulation tick for a successful Flow State dodge snapshot. */
   afterimageKey?: number;
   state: AnimState;

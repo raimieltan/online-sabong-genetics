@@ -6,7 +6,7 @@ import { canFight, applyFightOutcome } from "../combat";
 import { buildBattleReport } from "./battleReport";
 import { BATTLE_WIN_CREDITS, earnCredits } from "../economy";
 import type { Chicken, CombatResult, InjuryRecord } from "../types";
-import { resolveRound } from "../tournament";
+import { getTournamentDefinition, resolveRound } from "../tournament";
 import { stateFromRow, toView as tournamentToView } from "../tournament/service";
 import { simulateFight } from "../combat";
 import { getBoss } from "../pve/bosses";
@@ -17,6 +17,8 @@ import {
   type DisconnectPolicy, isCoachingCommand, publicFighters,
 } from "../combat-v2/canonical";
 import type { AwakeningType } from "../combat-v2/types";
+import { launchSurfaceAllowsAwakening } from "../combat-v2/launchSurface";
+import { readTicks } from "../combat-v2/rhythm";
 
 const json = (value: unknown) => JSON.parse(JSON.stringify(value)) as Prisma.InputJsonValue;
 const eventData = (event: CanonicalCombatEvent) => ({ id: event.id, sessionId: event.sessionId, cursor: event.cursor, logicalTick: event.logicalTick, exchangeIndex: event.exchangeIndex, type: event.type, payload: json(event.payload) });
@@ -37,6 +39,8 @@ export type CombatView = {
   phase: string | null;
   exchangeIndex: number;
   logicalTick: number;
+  phaseDeadlineTick: number | null;
+  phaseDeadlineAt: string | null;
   activeCommand: CoachingCommand;
   latestEventCursor: number;
   fighters: [Chicken, Chicken];
@@ -64,14 +68,19 @@ export async function createCombatEncounter(input: {
 }
 
 function rowView(row: {
-  id: string; status: string; revision: number; phase: string | null; exchangeIndex: number;
+  id: string; mode: string; status: string; revision: number; phase: string | null; exchangeIndex: number;
   logicalTick: number; activeCommand: string; latestEventCursor: number; fighterASnapshot: unknown;
   fighterBSnapshot: unknown; engineCheckpoint: unknown; terminalResult: unknown; postFightPayload: unknown;
 }, events: CanonicalCombatEvent[]): CombatView {
   const checkpoint = row.engineCheckpoint as CanonicalCheckpoint;
+  const fighter = checkpoint.state.fighters[0];
+  const phaseDeadlineTick = row.phase === "READ" ? fighter.engagement.enteredTick + readTicks(fighter)
+    : row.phase === "CLASH" ? fighter.engagement.clashUntil
+      : row.phase === "DISENGAGE" ? Math.max(fighter.engagement.breakUntil, fighter.engagement.resetUntil) : null;
   return {
     sessionId: row.id, serverTime: new Date().toISOString(), status: row.status as BattleSessionStatus,
     revision: row.revision, phase: row.phase, exchangeIndex: row.exchangeIndex, logicalTick: row.logicalTick,
+    phaseDeadlineTick, phaseDeadlineAt: phaseDeadlineTick === null ? null : new Date(Date.now() + Math.max(0, phaseDeadlineTick - row.logicalTick) * 1000 / 60).toISOString(),
     activeCommand: row.activeCommand as CoachingCommand, latestEventCursor: row.latestEventCursor,
     fighters: [row.fighterASnapshot as Chicken, row.fighterBSnapshot as Chicken],
     projection: publicFighters(checkpoint.state), events,
@@ -79,7 +88,7 @@ function rowView(row: {
     settlement: row.postFightPayload as Record<string, unknown> | null,
     allowedActions: {
       command: row.status === "ACTIVE" && row.phase === "READ",
-      awakening: row.status === "ACTIVE" && !checkpoint.state.fighters[0].awakening && !checkpoint.state.fighters[0].awakeningAttempted && checkpoint.state.fighters[0].snapshot.evolution.awakenings.length > 0,
+      awakening: launchSurfaceAllowsAwakening(row.mode as CombatMode) && row.status === "ACTIVE" && !checkpoint.state.fighters[0].awakening && !checkpoint.state.fighters[0].awakeningAttempted && checkpoint.state.fighters[0].snapshot.evolution.awakenings.length > 0,
       sync: row.status === "ACTIVE",
     },
   };
@@ -96,6 +105,8 @@ export async function createSession(input: {
 }, actorPlayerId: string): Promise<CombatView> {
   if (!input.idempotencyKey) throw new CombatServiceError("IDEMPOTENCY_KEY_REQUIRED", 400);
   if (!isCoachingCommand(input.openingCommand)) throw new CombatServiceError("INVALID_COMMAND", 400);
+  if (input.coachingMode !== "MANUAL" && input.coachingMode !== "AUTO") throw new CombatServiceError("INVALID_COACHING_MODE", 400);
+  if (input.disconnectPolicy !== "KEEP_INSTRUCTION" && input.disconnectPolicy !== "AUTO_COACH") throw new CombatServiceError("INVALID_DISCONNECT_POLICY", 400);
   const existing = await prisma.combatSessionRecord.findUnique({ where: { ownerPlayerId_createIdempotencyKey: { ownerPlayerId: actorPlayerId, createIdempotencyKey: input.idempotencyKey } } });
   if (existing) return rowView(existing, await eventRows(existing.id));
 
@@ -145,7 +156,7 @@ export async function createSession(input: {
 
 function elapsedTicks(lastAdvancedAt: Date | null): number {
   if (!lastAdvancedAt) return 1;
-  return Math.max(1, Math.min(300, Math.floor((Date.now() - lastAdvancedAt.getTime()) * 60 / 1000)));
+  return Math.max(1, Math.min(60 * 120, Math.floor((Date.now() - lastAdvancedAt.getTime()) * 60 / 1000)));
 }
 
 async function advanceSession(sessionId: string, actorPlayerId: string): Promise<CombatView> {
@@ -164,8 +175,8 @@ async function advanceSession(sessionId: string, actorPlayerId: string): Promise
       continue;
     }
     const runtime = CanonicalCombatRuntime.restore(row.engineCheckpoint as unknown as CanonicalCheckpoint);
-    if (row.coachingMode === "AUTO" || row.disconnectPolicy === "AUTO_COACH" && row.lastAdvancedAt && Date.now() - row.lastAdvancedAt.getTime() > 5_000) runtime.selectAutoCommand();
-    runtime.advance(elapsedTicks(row.lastAdvancedAt));
+    const autoCoach = row.coachingMode === "AUTO" || row.disconnectPolicy === "AUTO_COACH" && row.lastAdvancedAt !== null && Date.now() - row.lastAdvancedAt.getTime() > 5_000;
+    runtime.advance(elapsedTicks(row.lastAdvancedAt), { autoCoach });
     const events = runtime.drainEvents();
     const checkpoint = runtime.checkpoint;
     const priorEvents = checkpoint.state.phase === "finished" ? await eventRows(row.id) : [];
@@ -203,6 +214,9 @@ export async function issueCommand(sessionId: string, input: { commandId: string
   if (!input.commandId) throw new CombatServiceError("INVALID_COMMAND", 400);
   const owned = await prisma.combatSessionRecord.findUnique({ where: { id: sessionId } });
   if (!owned || owned.ownerPlayerId !== actorPlayerId) throw new CombatServiceError("SESSION_NOT_OWNED", 404);
+  if (!Number.isSafeInteger(input.observedRevision) || input.observedRevision > owned.revision || input.observedRevision < owned.revision && owned.phase !== "READ") throw new CombatServiceError("STALE_SESSION", 409);
+  const recentCommands = await prisma.combatCommandRecord.count({ where: { sessionId, createdAt: { gte: new Date(Date.now() - 60_000) } } });
+  if (recentCommands >= 30) throw new CombatServiceError("RATE_LIMITED", 429);
   const duplicate = await prisma.combatCommandRecord.findUnique({ where: { sessionId_commandId: { sessionId, commandId: input.commandId } } });
   if (duplicate) return duplicate.receipt;
   if (!isCoachingCommand(input.command)) throw new CombatServiceError("INVALID_COMMAND", 400);
@@ -241,6 +255,7 @@ export async function triggerSessionAwakening(sessionId: string, input: { action
   if (!owned || owned.ownerPlayerId !== actorPlayerId) throw new CombatServiceError("SESSION_NOT_OWNED", 404);
   const duplicate = await prisma.combatCommandRecord.findUnique({ where: { sessionId_commandId: { sessionId, commandId: input.actionId } } });
   if (duplicate) return duplicate.receipt;
+  if (!launchSurfaceAllowsAwakening(owned.mode as CombatMode)) throw new CombatServiceError("AWAKENING_UNAVAILABLE", 409);
   const type = input.type as AwakeningType;
   const advanced = await advanceSession(sessionId, actorPlayerId);
   if (advanced.status !== "ACTIVE") throw new CombatServiceError(advanced.status === "EXPIRED" ? "SESSION_EXPIRED" : "SESSION_TERMINAL", 409);
@@ -268,6 +283,14 @@ export async function triggerSessionAwakening(sessionId: string, input: { action
 
 function legacyResult(result: AuthoritativeCombatResult): CombatResult {
   const finalHealth = Object.fromEntries(result.finalState.fighters.map(fighter => [fighter.fighterId, { current: fighter.health, max: fighter.maxHealth, percent: Math.round(fighter.health / fighter.maxHealth * 100) }]));
+  const damageRatio = (fighter: AuthoritativeCombatResult["finalState"]["fighters"][number]) =>
+    Math.max(0, Math.min(1, (fighter.startingHealth - fighter.health) / fighter.maxHealth));
+  const conditionDelta = Object.fromEntries(result.finalState.fighters.map(fighter => {
+    const damage = damageRatio(fighter);
+    if (result.isDraw) return [fighter.fighterId, -Math.min(22, 5 + damage * 20)];
+    if (fighter.fighterId === result.winnerId) return [fighter.fighterId, -Math.min(15, damage * 20)];
+    return [fighter.fighterId, -Math.min(30, 8 + damage * 25)];
+  }));
   const newInjuries = result.injuryEvents.reduce<Record<string, InjuryRecord[]>>((byFighter, injury) => {
     (byFighter[injury.fighterId] ??= []).push({
       id: injury.id,
@@ -283,7 +306,7 @@ function legacyResult(result: AuthoritativeCombatResult): CombatResult {
   }, {});
   return { winnerId: result.winnerId, loserId: result.loserId, isDraw: result.isDraw, finishReason: result.finishReason,
     log: [], totalTurns: Math.ceil(result.terminalTick / 60), outcomeReason: result.finishReason.includes("MEDICAL") ? "critical_injury" : result.finishReason.includes("TIME_LIMIT") ? "timeout" : "ko",
-    injuredChickenId: result.injuryEvents[0]?.fighterId ?? null, newInjuries, conditionDelta: {}, matchSeed: Number(result.seed), finalHealth } as unknown as CombatResult;
+    injuredChickenId: result.injuryEvents[0]?.fighterId ?? null, newInjuries, conditionDelta, experienceGained: result.experienceGained, combatCareerGained: result.careerGained, matchSeed: Number(result.seed), finalHealth } as unknown as CombatResult;
 }
 
 export async function settleSession(sessionId: string, actorPlayerId: string): Promise<CombatView> {
@@ -299,21 +322,30 @@ export async function settleSession(sessionId: string, actorPlayerId: string): P
   const fighter = await prisma.chicken.findUnique({ where: { id: row.fighterId } });
   if (!fighter) throw new CombatServiceError("FIGHTER_NOT_FOUND", 404);
   const canonicalLegacy = legacyResult(result);
-  const outcome = applyFightOutcome(fighter as unknown as Chicken, canonicalLegacy);
-  const battleReport = buildBattleReport(fighter as unknown as Chicken, canonicalLegacy, fighter.id, outcome);
   const tournamentRow = row.mode === "TOURNAMENT" && row.modeContextId ? await prisma.tournament.findUnique({ where: { id: row.modeContextId } }) : null;
   const tournamentPlan = tournamentRow && !result.isDraw ? resolveRound(stateFromRow(tournamentRow), fighter as unknown as Chicken, (a, b) => a.id === fighter.id || b.id === fighter.id ? canonicalLegacy : simulateFight(a, b)) : null;
+  const tournamentWon = tournamentPlan?.state.status === "complete" && tournamentPlan.state.placement === 1;
+  const tournamentPrize = tournamentWon && tournamentRow ? getTournamentDefinition(tournamentRow.definitionId)?.championPrize ?? 0 : 0;
   const boss = (row.mode === "BOSS" || row.mode === "PVE" || row.mode === "SIDE_ENCOUNTER") && row.modeContextId ? getBoss(row.modeContextId) : null;
+  const experienceMultiplier = boss?.rewards.experienceMultiplier ?? 1;
+  if (experienceMultiplier !== 1 && canonicalLegacy.experienceGained) {
+    canonicalLegacy.experienceGained = Object.fromEntries(Object.entries(canonicalLegacy.experienceGained).map(([fighterId, gained]) => [fighterId, Object.fromEntries(Object.entries(gained).map(([category, amount]) => [category, Math.round(amount * experienceMultiplier)]))])) as typeof canonicalLegacy.experienceGained;
+  }
+  const outcome = applyFightOutcome(fighter as unknown as Chicken, canonicalLegacy);
+  const battleReport = buildBattleReport(fighter as unknown as Chicken, canonicalLegacy, fighter.id, outcome);
   const bossProgress = boss ? await prisma.pveProgress.findUnique({ where: { playerId_bossId: { playerId: actorPlayerId, bossId: boss.id } } }) : null;
   const bossWon = Boolean(boss && result.winnerId === fighter.id);
   const bossFirstClear = bossWon && (bossProgress?.clearCount ?? 0) === 0;
-  const creditsEarned = row.mode === "NORMAL" && result.winnerId === fighter.id ? BATTLE_WIN_CREDITS
-    : bossWon && boss ? (bossFirstClear ? boss.rewards.firstClearCredits : boss.rewards.repeatCredits) : 0;
-  const { newTraits: _newTraits, ...persistedOutcome } = outcome;
+  const creditsEarned = tournamentPrize || (row.mode === "NORMAL" && result.winnerId === fighter.id ? BATTLE_WIN_CREDITS
+    : bossWon && boss ? (bossFirstClear ? boss.rewards.firstClearCredits : boss.rewards.repeatCredits) : 0);
+  const { newTraits: _newTraits, ...basePersistedOutcome } = outcome;
+  const persistedOutcome = tournamentWon
+    ? { ...basePersistedOutcome, record: { ...basePersistedOutcome.record, championships: basePersistedOutcome.record.championships + 1 } }
+    : basePersistedOutcome;
   void _newTraits;
   const payload = { result, legacyResult: canonicalLegacy, battleReport, creditsEarned, mode: row.mode, modeContextId: row.modeContextId,
     chicken: { ...(fighter as unknown as Chicken), ...persistedOutcome },
-    rewards: { credits: creditsEarned, firstClear: bossFirstClear, experienceMultiplier: boss?.rewards.experienceMultiplier ?? 1 },
+    rewards: { credits: creditsEarned, tournamentTokens: tournamentPlan?.state.tokensAwarded ?? 0, championship: tournamentWon, firstClear: bossFirstClear, experienceMultiplier },
     tournament: tournamentPlan ? { ...tournamentPlan.state, id: tournamentRow!.id, chickenId: tournamentRow!.chickenId, definitionId: tournamentRow!.definitionId } : tournamentRow ? tournamentToView(tournamentRow) : null,
     tournamentRematchRequired: Boolean(tournamentRow && result.isDraw),
     campaign: boss ? { bossId: boss.id, won: bossWon, firstClear: bossFirstClear, credits: creditsEarned, experienceMultiplier: boss.rewards.experienceMultiplier } : null };

@@ -7,7 +7,8 @@ export interface AerialRuntime {
   followups: number; wingOffset: number;
   recoil?: { tick: number; zone: string; strength: number; side: number };
 }
-export type TacticalMode = 'balanced' | 'pressure' | 'defensive' | 'counter' | 'recover' | 'all_in';
+/** Internal engine posture. Public coaching uses PRESS/WAIT/COUNTER/RECOVER. */
+export type TacticalMode = 'balanced' | 'pressure' | 'defensive' | 'counter' | 'recover';
 export type CommandCompliance = 'ignore' | 'resist' | 'partial' | 'obey' | 'commit';
 export type CanonicalMentalState = 'CALM' | 'CONFIDENT' | 'NERVOUS' | 'FRUSTRATED' | 'DESPERATE' | 'EXHAUSTED';
 export type AwakeningType = 'unbreakable' | 'berserker' | 'flow-state' | 'second-wind' | 'apex';
@@ -17,7 +18,7 @@ export type EngagementPhase = 'stalking' | 'committing' | 'clashing' | 'breaking
  * from the AI-vs-AI `TELL_DETECTED`/`reaction` perception system below — these are
  * read during `stalking`/`resetting`, before any action commits. */
 export type ReadTellType = 'weight_forward' | 'closing_distance' | 'wing_adjust' | 'head_low' | 'guard_open' | 'rear_leg_loaded' | 'hesitating' | 'recovering' | 'angle_shift' | 'side_on_stance' | 'overextended' | 'resetting';
-export interface ActiveReadTell { type: ReadTellType; strength: number; confidence: number; startedTick: number; }
+export interface ActiveReadTell { id?: string; type: ReadTellType; family?: 'FORWARD_LOAD' | 'LOW_LINE_LOAD' | 'REAR_LOAD' | 'WING_LOAD' | 'BACK_LOAD' | 'LATERAL_LOAD' | 'BREATH_LOAD' | 'BALANCE_LOAD'; displayName?: string; strength: number; confidence: number; startedTick: number; commitsAtTick?: number; isFeint?: boolean; }
 export type Behavior = Record<'aggression' | 'caution' | 'patience' | 'persistence' | 'riskTolerance' | 'counterPreference' | 'pressurePreference' | 'recoveryPreference', number>;
 export interface FighterCombatSnapshot {
   readonly fighterId: string;
@@ -29,6 +30,13 @@ export interface FighterCombatSnapshot {
   readonly experience: number;
   readonly condition: number;
   readonly maxHealth: number;
+  readonly startingHealth?: number;
+  readonly startingStamina?: number;
+  readonly trainingFatigue?: number;
+  readonly stress?: number;
+  readonly morale?: number;
+  readonly confidence?: number;
+  readonly activeInjuries?: readonly Readonly<{ id: string; location?: string; severity: 'minor' | 'serious' | 'career_altering'; permanent: boolean }>[];
   readonly evolution: Readonly<{
     traitLevels: Readonly<Record<string, number>>;
     signatures: readonly ('relentless-rush' | 'sky-counter' | 'ghost-step' | 'second-wind')[];
@@ -92,11 +100,12 @@ export interface FighterRuntimeState {
   observedTellTick: number;
   memory: { attacks: Record<string, number>; successfulCounters: number; failedCounters: number; recentDamageTaken: number };
   utilities: Record<string, number>;
+  judging: { damageDealt: number; initiativeTicks: number; controlTicks: number; knockdowns: number; inactivityPenalties: number };
   /** Currently readable body-language tells, primary first, capped at 2 (docs/combat/tell-revamped.md §26). */
   readTells: ActiveReadTell[];
 }
 export interface CombatCommand { playerId: string; fighterId: string; command: TacticalMode; issuedTick: number; effectiveTick: number; sequence: number }
-export interface CombatEvent { type: 'ENGAGEMENT_CHANGED' | 'CLASH_STARTED' | 'CLASH_ENDED' | 'COLLISION' | 'STATE_CHANGED' | 'MENTAL_STATE_CHANGED' | 'FORCE_ENGAGEMENT_WARNING' | 'FORCED_ENGAGEMENT' | 'INTENT_CHANGED' | 'TELL_STARTED' | 'TELL_DETECTED' | 'READ_TELL_STARTED' | 'READ_TELL_UPDATED' | 'READ_TELL_ENDED' | 'ATTACK_STARTED' | 'ATTACK_ACTIVE' | 'ATTACK_MISSED' | 'ATTACK_LANDED' | 'BLOCK' | 'EVADE' | 'COUNTER_LANDED' | 'DAMAGE' | 'INJURY_SUSTAINED' | 'MEDICAL_STOPPAGE' | 'STAGGER' | 'COMMAND' | 'COMMAND_RESPONSE' | 'SIGNATURE_TECHNIQUE' | 'AWAKENING_STARTED' | 'AWAKENING_ENDED' | 'MATCH_FINISHED'; tick: number; fighterId: string; targetId?: string; actionId?: string; value?: number; detail?: string }
+export interface CombatEvent { type: 'ENGAGEMENT_CHANGED' | 'CLASH_STARTED' | 'CLASH_ENDED' | 'COLLISION' | 'STATE_CHANGED' | 'MENTAL_STATE_CHANGED' | 'FORCE_ENGAGEMENT_WARNING' | 'FORCED_ENGAGEMENT' | 'INTENT_CHANGED' | 'TELL_STARTED' | 'TELL_DETECTED' | 'READ_TELL_STARTED' | 'READ_TELL_UPDATED' | 'READ_TELL_ENDED' | 'ATTACK_STARTED' | 'ATTACK_ACTIVE' | 'ATTACK_MISSED' | 'ATTACK_ENDED' | 'ATTACK_LANDED' | 'BLOCK' | 'EVADE' | 'COUNTER_LANDED' | 'DAMAGE' | 'STAMINA_CHANGED' | 'BALANCE_CHANGED' | 'MOMENTUM_CHANGED' | 'KNOCKDOWN' | 'INJURY_SUSTAINED' | 'MEDICAL_STOPPAGE' | 'STAGGER' | 'COMMAND' | 'COMMAND_RESPONSE' | 'SIGNATURE_TECHNIQUE' | 'AWAKENING_STARTED' | 'AWAKENING_ENDED' | 'MATCH_FINISHED'; tick: number; fighterId: string; targetId?: string; actionId?: string; value?: number; detail?: string }
 export interface MatchConfig { id: string; version: string; seed: number; fighterA: FighterCombatSnapshot; fighterB: FighterCombatSnapshot; arena: { radius: number }; maxTicks: number; commands?: CombatCommand[] }
 export interface MatchResult { winnerId: string | null; finishReason: 'KO' | 'double_KO' | 'medical_stoppage' | 'double_medical_stoppage' | 'time_limit'; durationTicks: number }
 export interface CombatMatchState { config: MatchConfig; tick: number; phase: 'active' | 'paused' | 'finished'; rngState: number; fighters: [FighterRuntimeState, FighterRuntimeState]; commands: CombatCommand[]; eventBuffer: CombatEvent[]; lastContactTick: number; result?: MatchResult }

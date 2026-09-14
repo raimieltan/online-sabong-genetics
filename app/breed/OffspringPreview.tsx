@@ -2,6 +2,7 @@ import type { Chicken, TraitRarity } from "@/lib/types";
 import { GENETIC_STAT_KEYS } from "@/lib/types";
 import { computeOffspringOdds } from "@/lib/breedingPreview";
 import { RARITY_GEM, RARITY_LABEL } from "@/lib/rarity";
+import { presentFighterIdentity } from "@/lib/combat/identityPresenter";
 
 const STAT_META: Record<(typeof GENETIC_STAT_KEYS)[number], { short: string; icon: string }> = {
   power: { short: "POW", icon: "⚔" }, speed: { short: "SPD", icon: "↯" }, stamina: { short: "STA", icon: "♥" },
@@ -23,11 +24,12 @@ function projectedRange(father: number, mother: number) {
 
 function pairingNotes(father: Chicken, mother: Chicken) {
   const sharedTraits = father.traits.filter((trait) => mother.traits.some((other) => other.id === trait.id));
-  const strongestGap = GENETIC_STAT_KEYS.map((stat) => ({ stat, gap: Math.abs(father.iv[stat] - mother.iv[stat]) })).sort((a, b) => b.gap - a.gap)[0];
+  const fatherIdentity = presentFighterIdentity(father);
+  const motherIdentity = presentFighterIdentity(mother);
   const carriers = new Set([...Object.keys(father.mutations), ...Object.keys(mother.mutations)]).size;
   return [
-    sharedTraits.length ? `Shared ${sharedTraits[0].name} lineage improves its pass-through opportunity` : "Distinct trait pools create a broader inheritance draw",
-    strongestGap.gap >= 8 ? `${STAT_META[strongestGap.stat].short} genetics complement a weaker parent line` : "Parent stat profiles are closely matched",
+    sharedTraits.length ? `Shared ${sharedTraits[0].name} lineage gives that trait two pass-through opportunities` : "Distinct trait pools create a broader inheritance draw",
+    `${father.name} brings a ${fatherIdentity.primaryLabel.toLowerCase()} history; ${mother.name} brings ${motherIdentity.strengths[0].toLowerCase()}`,
     carriers ? `${carriers} known mutation ${carriers === 1 ? "line" : "lines"} may be inherited` : "No known mutation carriers in this pairing",
   ];
 }
@@ -36,7 +38,7 @@ export function OffspringPreview({ father, mother }: { father?: Chicken; mother?
   const ready = Boolean(father && mother);
   const odds = father && mother ? computeOffspringOdds(father.traits, mother.traits) : null;
   const generation = father && mother ? Math.max(father.generation, mother.generation) + 1 : null;
-  const profile = father && mother ? (father.fightingStyle === mother.fightingStyle ? `${father.fightingStyle} tendency` : `${father.fightingStyle} × ${mother.fightingStyle}`) : "Awaiting parent lines";
+  const profile = father && mother ? `${presentFighterIdentity(father).primaryLabel} × ${presentFighterIdentity(mother).primaryLabel}` : "Awaiting parent lines";
   const emptyOdds = (["legendary", "epic", "rare", "uncommon", "common"] as TraitRarity[]).map((rarity) => ({ rarity, percent: 0 }));
 
   return (
@@ -53,18 +55,21 @@ export function OffspringPreview({ father, mother }: { father?: Chicken; mother?
 
       <div className="text-center">
         <p className="font-display text-base capitalize text-(--color-parchment)">{profile}</p>
-        <p className="mt-1 text-[9px] uppercase tracking-[0.16em] text-(--color-text-muted)">{generation ? `Generation ${generation} · Genetics unlocked` : "Select both parents to reveal the outlook"}</p>
+        <p className="mt-1 text-[9px] uppercase tracking-[0.16em] text-(--color-text-muted)">{generation ? `Generation ${generation} · lineage outlook, not a guaranteed fighting identity` : "Select both parents to reveal the outlook"}</p>
       </div>
 
-      <div className="mt-5 border-t border-(--color-gold)/15 pt-4">
-        <div className="mb-3 flex items-center justify-between gap-2"><p className="text-[9px] font-bold uppercase tracking-[0.2em] text-(--color-gold-bright)">Expected IV range</p><span className="text-right text-[8px] uppercase tracking-wider text-(--color-text-muted)">Mutation outliers possible</span></div>
+      {father && mother && <div className="mt-5 grid grid-cols-2 gap-2 border-t border-(--color-gold)/15 pt-4 text-[10px] text-(--color-text-muted)"><div className="rounded-lg border border-white/8 bg-black/20 p-3"><strong className="text-(--color-parchment)">{father.name}</strong><p className="mt-1">{presentFighterIdentity(father).strengths[0]}</p><small>{father.record.wins}W–{father.record.losses}L · {father.record.championships} titles</small></div><div className="rounded-lg border border-white/8 bg-black/20 p-3"><strong className="text-(--color-parchment)">{mother.name}</strong><p className="mt-1">{presentFighterIdentity(mother).strengths[0]}</p><small>{mother.record.wins}W–{mother.record.losses}L · {mother.record.championships} titles</small></div></div>}
+
+      <details className="mt-5 border-t border-(--color-gold)/15 pt-4">
+        <summary className="cursor-pointer text-[9px] font-bold uppercase tracking-[0.2em] text-(--color-text-muted)">Advanced inherited ranges</summary>
+        <div className="mb-3 mt-3 flex items-center justify-between gap-2"><p className="text-[9px] font-bold uppercase tracking-[0.2em] text-(--color-gold-bright)">Expected IV range</p><span className="text-right text-[8px] uppercase tracking-wider text-(--color-text-muted)">Mutation outliers possible</span></div>
         <div className="grid grid-cols-2 gap-x-4 gap-y-3">
           {GENETIC_STAT_KEYS.map((stat) => {
             const range = father && mother ? projectedRange(father.iv[stat], mother.iv[stat]) : null;
             return <div key={stat}><div className="flex items-center justify-between text-[9px]"><span className="font-bold tracking-wider text-(--color-text-muted)">{STAT_META[stat].icon} {STAT_META[stat].short}</span><strong className="font-mono text-(--color-parchment)">{range ? `${range.min}–${range.max}` : "—"}</strong></div><div className="mt-1 h-1 overflow-hidden rounded-full bg-black/50"><span className="block h-full rounded-full bg-gradient-to-r from-(--color-gold) to-(--color-gold-bright) transition-all duration-500" style={{ width: range ? `${Math.max(12, range.max)}%` : "0%" }} /></div></div>;
           })}
         </div>
-      </div>
+      </details>
 
       <div className="mt-5 border-t border-(--color-gold)/15 pt-4">
         <p className="mb-3 text-[9px] font-bold uppercase tracking-[0.2em] text-(--color-gold-bright)">Rarity outlook</p>

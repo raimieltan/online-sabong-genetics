@@ -1,6 +1,6 @@
 import { ACTION_DEFINITIONS } from "./actions";
 import { styleWeight } from "./stylePolicy";
-import { commandActionModifier, type PlayerCommand } from "./command";
+import { commandActionModifier, type CombatInstruction } from "./command";
 import { deriveCombatIdentity } from "./identity";
 import { inactivityPressureBonus } from "./inactivity";
 import type { PhysicalProfile } from "../physicalProfile";
@@ -143,7 +143,7 @@ export type DecisionContext = {
   /** This fighter's own PhysicalProfile — feeds the cost term below, never the "what do I want" term above. */
   physical: PhysicalProfile;
   /** A live player (or Auto-Coach) command biasing this turn's action choice — null when none is pending. */
-  pendingCommand: PlayerCommand | null;
+  pendingCommand: CombatInstruction | null;
   /** Consecutive no-damage turns this fight — drives inactivityPressureBonus's anti-stalemate ramp. */
   noDamageStreak: number;
   rng: Rng;

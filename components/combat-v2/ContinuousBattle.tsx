@@ -13,6 +13,7 @@ import type { CameraCue, ScreenAnchor, FighterPosture } from '@/components/chick
 import { ComicCommentary, type CommentaryBurst } from '@/components/live/ComicCommentary';
 import { AudioEngine } from '@/lib/audioEngine';
 import { BattleDirector, type BattleHudVisibility } from '@/lib/animation/battleDirector';
+import { tellPostureCue } from '@/lib/animation/tellPosture';
 import { FighterHud } from '@/components/combat-v2/hud/FighterHud';
 import { RoundHeader } from '@/components/combat-v2/hud/RoundHeader';
 import { TellIndicator } from '@/components/combat-v2/hud/TellIndicator';
@@ -20,6 +21,8 @@ import { CoachCallout } from '@/components/combat-v2/hud/CoachCallout';
 import { CommandWheel, type CommandFeedback } from '@/components/combat-v2/hud/CommandWheel';
 import { TellLegend } from '@/components/combat-v2/hud/TellLegend';
 import { DamageCounters, type DamageCounterUi } from '@/components/combat-v2/hud/DamageCounters';
+import { ExchangeRecap } from '@/components/combat-v2/hud/ExchangeRecap';
+import { createExchangeRecapQueue, dismissActiveExchangeRecap, enqueueExchangeRecaps, EXCHANGE_RECAP_DURATION_MS } from '@/components/combat-v2/hud/recapQueue';
 import { engagementToUiPhase, describeReadTell, injuriesToStatusIcons, fighterSubtitle, type CombatUiPhase, type TellUiState } from '@/components/combat-v2/hud/uiAdapter';
 import type { ReadTellType } from '@/lib/combat-v2';
 import type { AuthoritativeCombatResult, CoachingCommand, PublicFighterState } from '@/lib/combat-v2/canonical';
@@ -28,36 +31,19 @@ const pose = (): FighterAnim => ({ offsetX: 0, offsetY: 0, offsetZ: 0, rot: 0, y
 const animation: Record<string, AnimState> = { neutral: 'ready', advancing: 'walk', retreating: 'backstep', circling: 'walk', feinting: 'tell_risk', defending: 'ready', evading: 'backstep', recovering: 'recovery', staggered: 'stagger', down: 'death', finished: 'victory', peck_strike: 'peck_attack', spur_lunge: 'heavy_kick', jump_kick: 'jump_attack', flying_spur: 'flying_kick', wing_counter: 'wing_strike', guard: 'ready', sidestep: 'backstep', feint: 'tell_risk' };
 type FighterDisplay = { name: string; hp: number; maxHp: number; stamina: number; tactic: string; engagement: string; intent: string; compliance?: string; awakening?: string; awakeningRemaining?: number; awakeningAttempted: boolean };
 type MatchStats = { hits: [number, number]; damage: [number, number]; lastDamage: { id: number; amount: number; side: 'left' | 'right' } | null };
-const COMMAND_CARDS: Record<TacticalMode, { title: string; subtitle: string; icon: string; hotkey: string }> = {
+type PlayerTacticalMode = Exclude<TacticalMode, 'balanced'>;
+
+const COMMAND_CARDS: Record<PlayerTacticalMode, { title: string; subtitle: string; icon: string; hotkey: string }> = {
   pressure: { title: 'Press', subtitle: 'Close distance', icon: '↑', hotkey: '1' },
-  balanced: { title: 'Wait', subtitle: 'Hold position', icon: '◷', hotkey: '2' },
   defensive: { title: 'Wait', subtitle: 'Hold position', icon: '◷', hotkey: '2' },
   counter: { title: 'Counter', subtitle: 'Read & react', icon: '↶', hotkey: '3' },
   recover: { title: 'Recover', subtitle: 'Conserve stamina', icon: '⬡', hotkey: '4' },
-  all_in: { title: 'Todo', subtitle: 'Risk everything', icon: '⚡', hotkey: '6' },
 };
-const COMMAND_ORDER: TacticalMode[] = ['pressure', 'defensive', 'counter', 'recover'];
+const COMMAND_ORDER: PlayerTacticalMode[] = ['pressure', 'defensive', 'counter', 'recover'];
 /** Minimum strength before a forming tell is worth showing in the HUD at all
  * (docs/combat/tell-revamped.md §22 — below this it's still "invisible" or
  * only physically hinted, not yet a real read). */
 const TELL_HUD_THRESHOLD = 0.22;
-/** Subtle procedural lean/posture nudge per tell type, scaled by strength —
- * the physical cue the spec wants to read *before* the HUD label does
- * (§23). Purely additive on top of the existing combat animation root
- * transform; `rot`/`scaleY`/extra `yaw` are otherwise unused by the idle/
- * circling states. */
-const TELL_LEAN: Partial<Record<ReadTellType, { rot?: number; scaleY?: number; yaw?: number }>> = {
-  weight_forward: { rot: .05 },
-  closing_distance: { rot: .035 },
-  overextended: { rot: .08, scaleY: -.02 },
-  rear_leg_loaded: { scaleY: -.03, rot: -.02 },
-  head_low: { rot: .06 },
-  guard_open: { scaleY: -.015 },
-  recovering: { rot: -.03, scaleY: .015 },
-  resetting: { rot: -.02 },
-  angle_shift: { yaw: .12 },
-  side_on_stance: { yaw: .18 },
-};
 const AWAKENING_LABELS: Record<string, string> = { unbreakable: 'Unbreakable', berserker: 'Berserker', 'flow-state': 'Flow State', 'second-wind': 'Second Wind', apex: 'Apex' };
 
 function coachCaption(phase: string | null, tellType?: string, command?: string): string {
@@ -75,8 +61,8 @@ function coachCaption(phase: string | null, tellType?: string, command?: string)
 /** Production presentation for the deterministic V2 combat session. */
 type AuthoritativeView = {
   sessionId: string; status: string; revision: number; phase: string | null; exchangeIndex: number;
-  logicalTick: number; activeCommand: CoachingCommand; latestEventCursor: number; fighters: [Chicken, Chicken];
-  projection: PublicFighterState[]; events: { cursor: number; type: string; payload: Record<string, unknown> }[];
+  logicalTick: number; phaseDeadlineTick?: number | null; phaseDeadlineAt?: string | null; activeCommand: CoachingCommand; latestEventCursor: number; fighters: [Chicken, Chicken];
+  projection: PublicFighterState[]; events: { id: string; cursor: number; exchangeIndex: number; type: string; payload: Record<string, unknown> }[];
   result: AuthoritativeCombatResult | null; settlement: Record<string, unknown> | null;
   allowedActions: { command: boolean; awakening: boolean; sync: boolean };
 };
@@ -91,23 +77,25 @@ type ContinuousBattleProps = {
 // only consumes stable fighter assets and mutable animation refs. Memoizing
 // this boundary prevents every sync response from reconciling the full arena.
 const AuthoritativeBattleStage = memo(function AuthoritativeBattleStage({
-  chickenA, chickenB, animA, animB, intentA, intentB, awakeningA, awakeningB, screenAnchorA, screenAnchorB, vfx,
+  chickenA, chickenB, animA, animB, intentA, intentB, awakeningA, awakeningB, screenAnchorA, screenAnchorB, postureA, postureB, vfx, cameraCue, hitStopScale,
 }: {
   chickenA: Chicken; chickenB: Chicken;
   animA: RefObject<FighterAnim>; animB: RefObject<FighterAnim>;
   intentA: RefObject<AnimIntent | null>; intentB: RefObject<AnimIntent | null>;
   awakeningA: RefObject<AwakeningType | null>; awakeningB: RefObject<AwakeningType | null>;
   screenAnchorA: RefObject<ScreenAnchor>; screenAnchorB: RefObject<ScreenAnchor>;
+  postureA: RefObject<FighterPosture | null>; postureB: RefObject<FighterPosture | null>;
   vfx: RefObject<ImpactVFXHandle | null>;
+  cameraCue: RefObject<CameraCue | null>; hitStopScale: RefObject<number>;
 }) {
-  return <BattleStage3D simulationDriven fighterA={chickenA} fighterB={chickenB} animA={animA} animB={animB} intentA={intentA} intentB={intentB} awakeningA={awakeningA} awakeningB={awakeningB} screenAnchorA={screenAnchorA} screenAnchorB={screenAnchorB} vfxRef={vfx} />;
+  return <BattleStage3D simulationDriven fighterA={chickenA} fighterB={chickenB} animA={animA} animB={animB} intentA={intentA} intentB={intentB} awakeningA={awakeningA} awakeningB={awakeningB} screenAnchorA={screenAnchorA} screenAnchorB={screenAnchorB} postureA={postureA} postureB={postureB} vfxRef={vfx} cameraCue={cameraCue} hitStopScaleRef={hitStopScale} />;
 });
 
 /** Production uses the durable authoritative player. The local engine remains
  * available only for explicitly supplied sandbox chickens and is labelled as
  * non-authoritative below. */
 export default function ContinuousBattle(props: ContinuousBattleProps) {
-  if (props.sessionId) return <AuthoritativeContinuousBattle {...props} sessionId={props.sessionId} />;
+  if (props.sessionId) return <AuthoritativeContinuousBattle key={props.sessionId} {...props} sessionId={props.sessionId} />;
   if (!props.chickenA || !props.chickenB) throw new Error('Authoritative combat requires a sessionId');
   return <SandboxContinuousBattle {...props} chickenA={props.chickenA} chickenB={props.chickenB} />;
 }
@@ -119,8 +107,18 @@ function AuthoritativeContinuousBattle({ sessionId, initialView, onComplete, aud
   const [damageCounters, setDamageCounters] = useState<DamageCounterUi[]>([]);
   const [commandFeedback, setCommandFeedback] = useState<CommandFeedback | null>(null);
   const [authoritativeTell, setAuthoritativeTell] = useState<TellUiState | null>(null);
+  const [recaps, setRecaps] = useState(createExchangeRecapQueue);
   const [awakeningPending, setAwakeningPending] = useState<AwakeningType | null>(null);
+  const [bursts, setBursts] = useState<CommentaryBurst[]>([]);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [tellLabels, setTellLabels] = useState(true);
+  const [highContrast, setHighContrast] = useState(false);
+  const [reducedEffects, setReducedEffects] = useState(() => typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  const [audioOverride, setAudioOverride] = useState<boolean | null>(null);
+  const localAudio = audioOverride ?? audioEnabled;
+  const reducedEffectsRef = useRef(reducedEffects);
   const cursor = useRef(initialView?.latestEventCursor ?? 0);
+  const revision = useRef(initialView?.revision ?? 0);
   const completed = useRef(false);
   const onCompleteRef = useRef(onComplete);
   const animA = useRef(pose()), animB = useRef(pose());
@@ -131,8 +129,25 @@ function AuthoritativeContinuousBattle({ sessionId, initialView, onComplete, aud
   const actionA = useRef<string | null>(null), actionB = useRef<string | null>(null);
   const screenAnchorA = useRef<ScreenAnchor>({ xPct: 14, yPct: 38, visible: true });
   const screenAnchorB = useRef<ScreenAnchor>({ xPct: 86, yPct: 38, visible: true });
+  const postureA = useRef<FighterPosture | null>(null);
+  const postureB = useRef<FighterPosture | null>(null);
   const vfx = useRef<ImpactVFXHandle | null>(null);
+  const audio = useRef<AudioEngine | null>(null);
+  const cameraCue = useRef<CameraCue | null>(null);
+  const hitStopScale = useRef(1);
+  const hitStopUntil = useRef(0);
+  const burstId = useRef(1);
   useEffect(() => { onCompleteRef.current = onComplete; }, [onComplete]);
+  useEffect(() => { reducedEffectsRef.current = reducedEffects; }, [reducedEffects]);
+  useEffect(() => {
+    if (!recaps.active) return;
+    const timer = window.setTimeout(() => setRecaps(dismissActiveExchangeRecap), EXCHANGE_RECAP_DURATION_MS);
+    return () => window.clearTimeout(timer);
+  }, [recaps.active]);
+  useEffect(() => {
+    const engine = new AudioEngine(localAudio); audio.current = engine; engine.playMusic();
+    return () => { engine.stopMusic(); audio.current = null; };
+  }, [localAudio]);
 
   // Network snapshots are authoritative targets, not animation frames. The
   // render loop eases mutable transforms toward those targets so a DB/network
@@ -143,11 +158,15 @@ function AuthoritativeContinuousBattle({ sessionId, initialView, onComplete, aud
     const animate = (now: number) => {
       const dt = Math.min(0.05, Math.max(0, (now - previous) / 1000));
       previous = now;
+      hitStopScale.current = now < hitStopUntil.current ? 0 : 1;
       const blend = 1 - Math.exp(-14 * dt);
       for (const [current, target] of [[animA.current, targetA.current], [animB.current, targetB.current]] as const) {
         current.offsetX += (target.offsetX - current.offsetX) * blend;
         current.offsetY += (target.offsetY - current.offsetY) * blend;
         current.offsetZ += (target.offsetZ - current.offsetZ) * blend;
+        current.rot += (target.rot - current.rot) * blend;
+        current.scaleX += (target.scaleX - current.scaleX) * blend;
+        current.scaleY += (target.scaleY - current.scaleY) * blend;
         const yawDelta = Math.atan2(Math.sin(target.yaw - current.yaw), Math.cos(target.yaw - current.yaw));
         current.yaw += yawDelta * blend;
       }
@@ -162,25 +181,49 @@ function AuthoritativeContinuousBattle({ sessionId, initialView, onComplete, aud
     let timer: number | undefined;
     const sync = async () => {
       try {
-        const response = await fetch(`/api/combat/sessions/${sessionId}/sync`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ afterCursor: cursor.current }) });
+        const response = await fetch(`/api/combat/sessions/${sessionId}/sync`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ afterCursor: cursor.current, observedRevision: revision.current }) });
         const body = await response.json();
         if (!response.ok) throw new Error(body.error ?? 'Combat sync failed');
         if (stopped) return;
         const next = body as AuthoritativeView;
-        const newEvents = next.events.filter(event => event.cursor > cursor.current).sort((a, b) => a.cursor - b.cursor);
+        revision.current = next.revision;
+        let newEvents = next.events.filter(event => event.cursor > cursor.current).sort((a, b) => a.cursor - b.cursor);
         if (newEvents.length && newEvents[0].cursor !== cursor.current + 1) {
           const recovery = await fetch(`/api/combat/sessions/${sessionId}?after=${cursor.current}`);
           if (!recovery.ok) throw new Error('Authoritative event gap could not be recovered');
           Object.assign(next, await recovery.json());
+          newEvents = next.events.filter(event => event.cursor > cursor.current).sort((a, b) => a.cursor - b.cursor);
         }
         cursor.current = next.latestEventCursor;
+        setRecaps(current => enqueueExchangeRecaps(current, newEvents));
         // Drive discrete clips from the ordered semantic stream. This keeps
         // quick or repeated strikes visible even when both occur between two
         // projection samples.
         for (const event of newEvents) {
+          const fighterIndex = next.projection.findIndex(fighter => fighter.fighterId === event.payload.fighterId);
+          const side = fighterIndex === 0 ? 'left' : 'right';
+          const burst = (text: string, kind: CommentaryBurst['kind']) => {
+            const id = burstId.current++; setBursts(previous => [...previous.slice(-3), { id, text, side, kind }]);
+            window.setTimeout(() => setBursts(previous => previous.filter(item => item.id !== id)), reducedEffectsRef.current ? 350 : 1100);
+          };
+          if (['HIT', 'COUNTER_TRIGGERED', 'HEALTH_CHANGED', 'STAGGER', 'KNOCKDOWN', 'SESSION_TERMINAL', 'AWAKENING_STARTED', 'ACTION_ENDED'].includes(event.type)) {
+            const major = event.type === 'COUNTER_TRIGGERED' || event.type === 'STAGGER' || event.type === 'KNOCKDOWN' || Number(event.payload.value ?? 0) >= 9;
+            cameraCue.current = { attacker: fighterIndex === 0 ? 'r1' : 'r2', startTime: performance.now(), isCrit: major, isMiss: event.type === 'ACTION_ENDED' && String(event.payload.engineType) === 'ATTACK_MISSED', stagger: major ? 'heavy' : 'light', seq: event.cursor, cueName: event.type === 'SESSION_TERMINAL' ? 'victory' : major ? 'critical' : 'impact_light', focus: event.type === 'SESSION_TERMINAL' ? 'midpoint' : fighterIndex === 0 ? 'r2' : 'r1' };
+            if (major && !reducedEffectsRef.current) hitStopUntil.current = performance.now() + 52;
+          }
+          if (event.type === 'ACTION_ENDED' && String(event.payload.engineType) === 'ATTACK_MISSED') { audio.current?.playMiss(); burst('LIHIS!', 'miss'); }
+          if (event.type === 'HIT' || event.type === 'COUNTER_TRIGGERED') { const majorHit = Number(event.payload.value ?? 0) >= 9 || event.type === 'COUNTER_TRIGGERED'; if (majorHit) audio.current?.playCrit(); else audio.current?.playHit(); burst(event.type === 'COUNTER_TRIGGERED' ? 'SAGOT!' : 'TAMA!', majorHit ? 'crit' : 'hit'); }
+          if (event.type === 'STAGGER' || event.type === 'KNOCKDOWN') { audio.current?.playCrit(); burst('BUWAL!', 'crit'); }
+          if (event.type === 'AWAKENING_STARTED') { audio.current?.playCrit(); burst('AWAKENING!', 'ko'); }
+          if (event.type === 'SESSION_TERMINAL') { audio.current?.playVictory(); burst('TAPOS NA!', 'ko'); }
+          if (event.type === 'COMMAND_RESOLVED' && fighterIndex === 0) {
+            const grade = String(event.payload.grade ?? 'PARTIAL');
+            const mode = commandModeForPresentation(String(event.payload.command ?? next.activeCommand) as CoachingCommand);
+            setCommandFeedback({ mode, status: grade === 'FULL' ? 'acknowledged' : grade === 'PARTIAL' ? 'partial' : 'ignored' });
+          }
           if (event.type === 'HEALTH_CHANGED') {
-            const defenderId = String(event.payload.targetId ?? event.payload.fighterId ?? '');
-            const attackerId = String(event.payload.fighterId ?? '');
+            const defenderId = String(event.payload.fighterId ?? '');
+            const attackerId = String(event.payload.targetId ?? '');
             const defenderIndex = next.projection.findIndex(fighter => fighter.fighterId === defenderId);
             const attackerIndex = next.projection.findIndex(fighter => fighter.fighterId === attackerId);
             const amount = Math.max(0, Math.round(Number(event.payload.value ?? 0)));
@@ -213,13 +256,38 @@ function AuthoritativeContinuousBattle({ sessionId, initialView, onComplete, aud
           target.offsetX = (fighter.position.x - (index === 0 ? -WORLD_HALF_GAP : WORLD_HALF_GAP)) / ANIM_PX_TO_WORLD;
           target.offsetY = -fighter.position.y / ANIM_PX_TO_WORLD;
           target.offsetZ = fighter.position.z / ANIM_PX_TO_WORLD;
-          target.yaw = -fighter.facing + (index === 0 ? 0 : Math.PI);
+          const primaryTell = fighter.readTells[0];
+          const cue = tellPostureCue(primaryTell?.type as ReadTellType | undefined, primaryTell?.strength ?? 0, index === 0 ? 'left' : 'right');
+          target.rot = cue.rot;
+          target.scaleX = 1;
+          target.scaleY = cue.scaleY;
+          target.yaw = -fighter.facing + (index === 0 ? 0 : Math.PI) + cue.yawOffset;
+          const posture: FighterPosture = {
+            mode: index === 0 ? commandModeForPresentation(next.activeCommand) : 'balanced',
+            hesitating: primaryTell?.type === 'hesitating',
+            strength: primaryTell?.strength ?? 0,
+            tellType: primaryTell ? primaryTell.type as ReadTellType : null,
+          };
+          if (index === 0) postureA.current = posture;
+          else postureB.current = posture;
           const state = animation[fighter.actionId ?? fighter.mentalState] ?? 'ready';
+          const tellPosture = primaryTell ? { type: primaryTell.type as ReadTellType, strength: primaryTell.strength } : null;
           const previousAction = index === 0 ? actionA : actionB;
+          const currentIntent = index === 0 ? intentA : intentB;
+          const recentMirageEvade = fighter.awakening?.type === 'flow-state'
+            && fighter.lastMirageEvadeTick !== null
+            && next.logicalTick - fighter.lastMirageEvadeTick <= 2
+            ? fighter.lastMirageEvadeTick * 10 + 2
+            : undefined;
           if (state !== previousAction.current) {
             previousAction.current = state;
-            const intent: AnimIntent = { state, startedAt: next.logicalTick, speed: 1, moveKind: fighter.actionId ?? fighter.mentalState, facing: index === 0 ? 'right' : 'left', tacticalMode: index === 0 ? commandModeForPresentation(next.activeCommand) : 'balanced', fatal: fighter.health <= 0 };
-            if (index === 0) intentA.current = intent; else intentB.current = intent;
+            currentIntent.current = { state, startedAt: next.logicalTick, speed: 1, moveKind: fighter.actionId ?? fighter.mentalState, facing: index === 0 ? 'right' : 'left', tacticalMode: index === 0 ? commandModeForPresentation(next.activeCommand) : 'balanced', tellPosture, fatal: fighter.health <= 0, afterimageKey: recentMirageEvade };
+          } else if (currentIntent.current) {
+            currentIntent.current = {
+              ...currentIntent.current,
+              tellPosture,
+              ...(recentMirageEvade !== undefined ? { afterimageKey: recentMirageEvade } : {}),
+            };
           }
         });
         const observedTell = next.projection[1]?.readTells[0];
@@ -299,8 +367,8 @@ function AuthoritativeContinuousBattle({ sessionId, initialView, onComplete, aud
   const commandLocked = view.status === 'ACTIVE' && !view.allowedActions.command;
   const unlockedAwakenings = left?.unlockedAwakenings ?? [];
   const canAwaken = view.allowedActions.awakening && unlockedAwakenings.length > 0;
-  return <section className="relative h-[calc(100dvh-5.5rem)] min-h-[560px] overflow-hidden bg-[#090706] text-white">
-    <div className="absolute inset-0"><AuthoritativeBattleStage chickenA={chickenA} chickenB={chickenB} animA={animA} animB={animB} intentA={intentA} intentB={intentB} awakeningA={awakeningA} awakeningB={awakeningB} screenAnchorA={screenAnchorA} screenAnchorB={screenAnchorB} vfx={vfx} /></div>
+  return <section className={`relative h-[calc(100dvh-5.5rem)] min-h-[560px] overflow-hidden bg-[#090706] text-white ${highContrast ? 'contrast-125 saturate-125' : ''}`}>
+    <div className="absolute inset-0"><AuthoritativeBattleStage chickenA={chickenA} chickenB={chickenB} animA={animA} animB={animB} intentA={intentA} intentB={intentB} awakeningA={awakeningA} awakeningB={awakeningB} screenAnchorA={screenAnchorA} screenAnchorB={screenAnchorB} postureA={postureA} postureB={postureB} vfx={vfx} cameraCue={cameraCue} hitStopScale={hitStopScale} /></div>
     <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_center,transparent_38%,rgba(7,5,3,.17)_72%,rgba(3,2,1,.64)_100%)]" />
     <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-black/55 via-transparent to-black/65" />
     <div className="pointer-events-none absolute inset-x-4 top-3 z-20 flex items-start justify-between gap-3 sm:inset-x-6">
@@ -308,8 +376,10 @@ function AuthoritativeContinuousBattle({ sessionId, initialView, onComplete, aud
       <RoundHeader elapsedSeconds={view.logicalTick / 60} phase={view.phase ?? 'TERMINAL'} statusLabel={`Exchange ${view.exchangeIndex + 1}`} />
       <FighterHud chicken={chickenB} subtitle={fighterSubtitle(chickenB)} hp={right?.health ?? 0} maxHp={right?.maxHealth ?? 1} stamina={right?.stamina ?? 0} maxStamina={100} statuses={injuriesToStatusIcons(chickenB.injuries)} side="right" />
     </div>
-    <TellIndicator tell={authoritativeTell} />
+    <TellIndicator tell={authoritativeTell ? { ...authoritativeTell, label: tellLabels ? authoritativeTell.label : '', interpretation: tellLabels ? authoritativeTell.interpretation : '' } : null} />
+    {recaps.active && <ExchangeRecap eventId={recaps.active.id} payload={recaps.active.payload} reducedMotion={reducedEffects} highContrast={highContrast} />}
     <DamageCounters counters={damageCounters} />
+    <ComicCommentary bursts={bursts} caption={null} />
     <CoachCallout chicken={chickenA} caption={coachCaption(view.phase, readTell?.type, view.activeCommand)} dimmed={view.phase === 'CLASH'} />
     <TellLegend dimmed={view.phase === 'CLASH'} />
     <div className="pointer-events-auto absolute inset-x-0 bottom-3 z-30 flex flex-col items-center sm:bottom-4">
@@ -329,7 +399,17 @@ function AuthoritativeContinuousBattle({ sessionId, initialView, onComplete, aud
       <CommandWheel chicken={chickenA} cards={cards} activeMode={activeMode} disabledAll={view.status !== 'ACTIVE'} locked={commandLocked} feedback={commandFeedback} onSelect={mode => void issue(mode === 'pressure' ? 'PRESS' : mode === 'counter' ? 'COUNTER' : mode === 'recover' ? 'RECOVER' : 'WAIT')} />
       {error && <p role="alert" className="absolute bottom-1 rounded bg-red-950/85 px-3 py-1 text-xs text-red-200">{error}</p>}
     </div>
-    {onToggleAudio && <button type="button" onClick={onToggleAudio} aria-label={audioEnabled ? 'Mute arena audio' : 'Unmute arena audio'} className="absolute right-5 top-[108px] z-30 rounded-full border border-[#b99b5f]/30 bg-black/50 px-3 py-2 backdrop-blur-sm">{audioEnabled ? '🔊' : '🔇'}</button>}
+    <div className="absolute right-5 top-[108px] z-40 flex gap-2">
+      <button type="button" onClick={() => { if (onToggleAudio) onToggleAudio(); else setAudioOverride(value => !(value ?? audioEnabled)); }} aria-label={localAudio ? 'Mute arena audio' : 'Unmute arena audio'} className="rounded-full border border-[#b99b5f]/30 bg-black/60 px-3 py-2 backdrop-blur-sm">{localAudio ? '🔊' : '🔇'}</button>
+      <button type="button" onClick={() => setSettingsOpen(value => !value)} aria-label="Combat accessibility settings" className="rounded-full border border-[#b99b5f]/30 bg-black/60 px-3 py-2 backdrop-blur-sm">⚙</button>
+    </div>
+    {settingsOpen && <div className="absolute right-5 top-[154px] z-40 w-56 rounded-lg border border-white/15 bg-black/85 p-3 text-xs backdrop-blur">
+      <p className="mb-2 font-semibold uppercase tracking-widest text-(--color-gold-bright)">Combat display</p>
+      <label className="mb-2 flex items-center justify-between gap-3">Tell labels<input type="checkbox" checked={tellLabels} onChange={event => setTellLabels(event.target.checked)} /></label>
+      <label className="mb-2 flex items-center justify-between gap-3">Reduced effects<input type="checkbox" checked={reducedEffects} onChange={event => setReducedEffects(event.target.checked)} /></label>
+      <label className="flex items-center justify-between gap-3">High contrast<input type="checkbox" checked={highContrast} onChange={event => setHighContrast(event.target.checked)} /></label>
+      <p className="mt-3 text-[10px] text-white/55">Keys 1–4: Press, Wait, Counter, Recover.</p>
+    </div>}
   </section>;
 }
 
@@ -477,13 +557,14 @@ function SandboxContinuousBattle({ chickenA, chickenB, matchSeed = 81726354, aut
         current.offsetX = (prior.x + (fighter.position.x - prior.x) * alpha - (index === 0 ? -WORLD_HALF_GAP : WORLD_HALF_GAP)) / ANIM_PX_TO_WORLD;
         current.offsetY = -(prior.y + (fighter.position.y - prior.y) * alpha) / ANIM_PX_TO_WORLD; current.offsetZ = (prior.z + (fighter.position.z - prior.z) * alpha) / ANIM_PX_TO_WORLD;
         current.yaw = -fighter.facing + (index === 0 ? 0 : Math.PI); current.flash = Math.max(0, 1 - (state.tick - damageTick[index]) / 8);
-        const primaryTell = fighter.readTells[0]; const lean = primaryTell && TELL_LEAN[primaryTell.type];
+        const primaryTell = fighter.readTells[0];
+        const cue = tellPostureCue(primaryTell?.type, primaryTell?.strength ?? 0, index === 0 ? 'left' : 'right');
         const posture: FighterPosture = { mode: fighter.tacticalMode, hesitating: primaryTell?.type === 'hesitating', strength: primaryTell?.strength ?? 0, tellType: primaryTell?.type ?? null };
         if (index === 0) postureA.current = posture; else postureB.current = posture;
-        current.rot = (lean?.rot ?? 0) * (primaryTell?.strength ?? 0);
-        current.scaleY = 1 + (lean?.scaleY ?? 0) * (primaryTell?.strength ?? 0);
+        current.rot = cue.rot;
+        current.scaleY = cue.scaleY;
         current.scaleX = 1;
-        if (lean?.yaw) current.yaw += lean.yaw * (primaryTell?.strength ?? 0) * (index === 0 ? 1 : -1);
+        current.yaw += cue.yawOffset;
         const runtime = fighter.currentAction, action = runtime && ACTIONS[runtime.id]; let progress = Math.min(1, (state.tick - fighter.stateEnteredTick) / 20);
         if (runtime && action) { const age = state.tick - runtime.startedTick; progress = runtime.phase === 'startup' ? age / action.startupTicks * .52 : runtime.phase === 'active' ? .52 + (age - action.startupTicks) / action.activeTicks * .2 : .72 + (age - action.startupTicks - action.activeTicks) / action.recoveryTicks * .28; }
         const aerial = fighter.aerial && (fighter.aerial.launchedTick < 0 || !fighter.grounded || fighter.aerial.phase === 'LAND') && fighter.groundedTicks <= 10 ? fighter.aerial : undefined;
@@ -493,7 +574,7 @@ function SandboxContinuousBattle({ chickenA, chickenB, matchSeed = 81726354, aut
         const flowStep = fighter.awakening?.type === 'flow-state' && (fighter.state === 'evading' || runtime?.id === 'sidestep')
           ? (runtime?.startedTick ?? fighter.stateEnteredTick) * 10 + 1
           : undefined;
-        const intent: AnimIntent = { state: animation[(aerial?.phase === 'LAND' ? undefined : runtime)?.id ?? fighter.state] ?? 'ready', startedAt: (runtime?.startedTick ?? fighter.stateEnteredTick) * 1000 / 60, speed: 1, moveKind: runtime?.id ?? fighter.state, facing: index === 0 ? 'right' : 'left', simulationProgress: progress, tacticalMode: fighter.tacticalMode, fatal: fighter.state === 'down', afterimageKey: recentMirageEvade ?? flowStep };
+        const intent: AnimIntent = { state: animation[(aerial?.phase === 'LAND' ? undefined : runtime)?.id ?? fighter.state] ?? 'ready', startedAt: (runtime?.startedTick ?? fighter.stateEnteredTick) * 1000 / 60, speed: 1, moveKind: runtime?.id ?? fighter.state, facing: index === 0 ? 'right' : 'left', simulationProgress: progress, tacticalMode: fighter.tacticalMode, tellPosture: primaryTell ? { type: primaryTell.type, strength: primaryTell.strength } : null, fatal: fighter.state === 'down', afterimageKey: recentMirageEvade ?? flowStep };
         if (aerial && state.phase !== 'finished') intent.aerial = { ...aerial, tick: state.tick + alpha, actionId: runtime?.id, strikeProgress: runtime?.phase === 'active' && action ? (state.tick + alpha - runtime.startedTick - action.startupTicks) / action.activeTicks : undefined, phaseProgress: (state.tick + alpha - aerial.phaseTick) / (aerial.phase === 'PRELOAD' ? action?.aerial?.takeoffTick ?? 6 : aerial.phase === 'STRIKE_ACTIVE' ? action?.activeTicks ?? 6 : 8) };
         if (index === 0) intentA.current = intent; else intentB.current = intent;
         if (index === 0) awakeningA.current = fighter.awakening?.type ?? null; else awakeningB.current = fighter.awakening?.type ?? null;
@@ -534,7 +615,7 @@ function SandboxContinuousBattle({ chickenA, chickenB, matchSeed = 81726354, aut
   function command(mode: TacticalMode) {
     try {
       sessionRef.current?.issueCommand(chickenA.id, mode);
-      setCaption(mode === 'pressure' || mode === 'all_in' ? 'Sugod! I-pressure natin siya!' : mode === 'defensive' || mode === 'counter' ? 'Bantay muna — hintayin ang butas!' : mode === 'recover' ? 'Hinga muna — balik ang stamina!' : 'Timbang lang, coach. Basahin ang galaw niya.');
+      setCaption(mode === 'pressure' ? 'Sugod! I-pressure natin siya!' : mode === 'defensive' || mode === 'counter' ? 'Bantay muna — hintayin ang butas!' : mode === 'recover' ? 'Hinga muna — balik ang stamina!' : 'Timbang lang, coach. Basahin ang galaw niya.');
       setError('');
       if (feedbackTimer.current) window.clearTimeout(feedbackTimer.current);
       setCommandFeedback({ mode, status: 'queued' });

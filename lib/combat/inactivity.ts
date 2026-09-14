@@ -13,7 +13,7 @@ export function inactivityPressureBonus(noDamageStreak: number): number {
   return Math.min(0.6, noDamageStreak * 0.04);
 }
 
-/** True once a stalemate has run long enough to unlock FORCE_ENGAGEMENT even at 0 CommandPoints. */
+/** True once a stalemate has run long enough to activate FORCE_ENGAGEMENT. */
 export function shouldForceEngagement(noDamageStreak: number): boolean {
   return noDamageStreak >= STALEMATE_TURNS;
 }

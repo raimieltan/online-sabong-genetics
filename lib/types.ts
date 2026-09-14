@@ -781,7 +781,7 @@ export type CombatLogEntry = {
   attackerTell?: TellKind | null;
   defenderTell?: TellKind | null;
   /**
-   * Whether the attacker/defender had a live PlayerCommand pending *and* the
+   * Whether the attacker/defender had a live coaching instruction and the
    * action they actually took this exchange is one that command biases
    * toward (combat/command.ts::commandTargetsAction) — lets the UI say "your
    * PRESS worked" instead of the command's only visible trace being a small

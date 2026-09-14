@@ -11,7 +11,7 @@ import type { BossListEntry } from "@/lib/pve/types";
 import type { BossFightResult } from "@/lib/pve/service";
 import { campaignConsequence } from "@/lib/pve/presentation";
 
-type Phase = "loading" | "tape" | "intro" | "battle" | "result" | "error";
+type Phase = "loading" | "configure" | "tape" | "intro" | "battle" | "result" | "error";
 type Start = {
   sessionId: string;
   matchSeed: number;
@@ -26,6 +26,7 @@ export default function BossFightPage({ params }: { params: Promise<{ bossId: st
   const { bossId, chickenId } = use(params);
   const router = useRouter();
   const [phase, setPhase] = useState<Phase>("loading"); const [entry, setEntry] = useState<BossListEntry | null>(null); const [start, setStart] = useState<Start | null>(null); const [outcome, setOutcome] = useState<BossFightResult | null>(null); const [presentationComplete, setPresentationComplete] = useState(false); const [error, setError] = useState<string | null>(null);
+  const [combatConfig, setCombatConfig] = useState<{ coachingMode: "MANUAL" | "AUTO"; openingCommand: "PRESS" | "WAIT" | "COUNTER" | "RECOVER"; disconnectPolicy: "KEEP_INSTRUCTION" | "AUTO_COACH" }>({ coachingMode: "MANUAL", openingCommand: "WAIT", disconnectPolicy: "KEEP_INSTRUCTION" });
   useEffect(() => {
     let cancelled = false; async function prepare() {
       const data = await fetch("/api/pve/bosses").then((r) => r.json());
@@ -39,12 +40,19 @@ export default function BossFightPage({ params }: { params: Promise<{ bossId: st
         (item) => item.boss.id === bossId
       );
 
-      if (cancelled) return; setEntry(found ?? null); if (!found?.progress.unlocked) { setError("This encounter is locked."); setPhase("error"); return; } const response = await fetch(`/api/pve/bosses/${bossId}/fight/start`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chickenId }) }); if (cancelled) return; if (!response.ok) { setError((await response.json().catch(() => ({}))).error ?? "Unable to prepare this fight."); setPhase("error"); return; } setStart(await response.json()); setPhase("tape");
+      if (cancelled) return; setEntry(found ?? null); if (!found?.progress.unlocked) { setError("This encounter is locked."); setPhase("error"); return; } setPhase("configure");
     } void prepare(); return () => { cancelled = true; };
   }, [bossId, chickenId]);
   useEffect(() => { if (phase !== "intro") return; const timer = window.setTimeout(() => setPhase("battle"), 5200); return () => window.clearTimeout(timer); }, [phase]);
+  async function prepareFight() {
+    setPhase("loading");
+    const response = await fetch(`/api/pve/bosses/${bossId}/fight/start`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chickenId, ...combatConfig }) });
+    if (!response.ok) { setError((await response.json().catch(() => ({}))).error ?? "Unable to prepare this fight."); setPhase("error"); return; }
+    setStart(await response.json()); setPhase("tape");
+  }
   if (phase === "loading") return <main className="min-h-screen bg-(--color-ink) py-20 text-center text-(--color-text-muted)">Preparing the event…</main>;
   if (phase === "error" || !entry) return <main className="min-h-screen bg-(--color-ink) py-20 text-center"><p className="text-red-300">{error ?? "Encounter unavailable."}</p><Link className="mt-4 inline-block text-(--color-gold-bright)" href={`/pve/${bossId}`}>Return to encounter</Link></main>;
+  if (phase === "configure") return <main className="flex min-h-screen items-center justify-center bg-(--color-ink) p-6 text-(--foreground)"><section className="panel-wood w-full max-w-xl rounded-xl p-7"><p className="text-xs uppercase tracking-[.25em] text-(--color-gold-bright)">{entry.boss.name}</p><h1 className="mt-2 font-display text-3xl">Set the corner</h1><div className="mt-6 grid gap-4 sm:grid-cols-3"><label className="text-xs uppercase">Coach<select className="mt-1 w-full rounded bg-black/50 p-2" value={combatConfig.coachingMode} onChange={event => setCombatConfig({ ...combatConfig, coachingMode: event.target.value as "MANUAL" | "AUTO" })}><option value="MANUAL">Manual</option><option value="AUTO">Auto-Coach</option></select></label><label className="text-xs uppercase">Opening<select className="mt-1 w-full rounded bg-black/50 p-2" value={combatConfig.openingCommand} onChange={event => setCombatConfig({ ...combatConfig, openingCommand: event.target.value as typeof combatConfig.openingCommand })}>{["PRESS", "WAIT", "COUNTER", "RECOVER"].map(command => <option key={command}>{command}</option>)}</select></label><label className="text-xs uppercase">Disconnect<select className="mt-1 w-full rounded bg-black/50 p-2" value={combatConfig.disconnectPolicy} onChange={event => setCombatConfig({ ...combatConfig, disconnectPolicy: event.target.value as "KEEP_INSTRUCTION" | "AUTO_COACH" })}><option value="KEEP_INSTRUCTION">Keep instruction</option><option value="AUTO_COACH">Auto-Coach</option></select></label></div><button type="button" onClick={() => void prepareFight()} className="mt-7 w-full rounded-lg bg-(--color-gold) px-4 py-3 font-display font-bold uppercase text-(--color-ink)">Prepare matchup</button></section></main>;
   const p = entry.boss.presentation;
   if (phase === "tape" && start) return <main className="pve-tape"><MatchupScreen chicken={start.chicken} opponent={start.bossFighter} fighting={false} onFight={() => setPhase("intro")} eyebrow={p.venue.name} title="Tale of the Tape" subtitle={start.rivalry.isRival ? `RIVALRY · ${start.rivalry.record.wins}–${start.rivalry.record.losses}${start.rivalry.deciderDue ? " · DECIDER" : ""}` : `${p.nodeType} · ${entry.boss.name}`} matchInfo={`${p.venue.location} · ${p.title}`} /></main>;
   if (!start) return null;

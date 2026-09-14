@@ -6,6 +6,7 @@ import type { Chicken } from "@/lib/types";
 import { ageUpRequirements, canAgeUp, canChickenAgeUp, canRetire } from "@/lib/growth";
 import { canFight, effectiveStat } from "@/lib/combat";
 import { isChampion } from "@/lib/coopVillage";
+import { presentFighterIdentity } from "@/lib/combat/identityPresenter";
 
 import { CoopIcon } from "./CoopIcons";
 import styles from "./coop.module.css";
@@ -19,13 +20,15 @@ export function CoopSelectionPanel({ chicken, onClose, onAgeUp, onRetire }: {
   const breedParam = chicken.sex === "rooster" ? `fatherId=${chicken.id}` : `motherId=${chicken.id}`;
   const readyToMature = canChickenAgeUp(chicken);
   const unmetRequirements = ageUpRequirements(chicken).filter((requirement) => !requirement.met);
+  const identity = presentFighterIdentity(chicken);
 
   return (
     <div className={`${styles.panel} pointer-events-auto w-full rounded-t-xl p-4 shadow-2xl shadow-black/50 sm:w-80 sm:rounded-xl`}>
       <div className="mb-3 flex items-start justify-between gap-2 border-b border-(--color-gold)/20 pb-3">
-        <div><p className={styles.eyebrow}>{isChampion(chicken) ? "Champion resident" : "Stable resident"}</p><h3 className="font-display text-lg text-(--color-gold-bright)">{chicken.name}</h3><p className="text-xs capitalize text-(--color-text-muted)">{chicken.fightingStyle} · {chicken.growthStage.replace("_", " ")} · Gen {chicken.generation}</p></div>
+        <div><p className={styles.eyebrow}>{isChampion(chicken) ? "Champion resident" : "Stable resident"}</p><h3 className="font-display text-lg text-(--color-gold-bright)">{chicken.name}</h3><p className="text-xs text-(--color-text-muted)">{identity.primaryLabel} · {identity.careerStage} · Gen {chicken.generation}</p></div>
         <button type="button" onClick={onClose} className="text-(--color-text-muted) transition hover:text-(--foreground)" aria-label="Close"><CoopIcon name="close" className="h-5 w-5" /></button>
       </div>
+      <div className="mb-3 rounded-md border border-(--color-gold)/15 bg-black/20 p-3 text-[11px] text-(--color-text-muted)"><p>{identity.strengths[0]}</p><p className="mt-1 text-amber-200/70">Tradeoff: {identity.weakness}</p></div>
       <div className={styles.selectedStats}>
         <div className={styles.selectedStat}><CoopIcon name="sword" /><div><span>Power</span><b>{Math.round(effectiveStat(chicken, "power"))}</b></div></div>
         <div className={styles.selectedStat}><CoopIcon name="bolt" /><div><span>Speed</span><b>{Math.round(effectiveStat(chicken, "speed"))}</b></div></div>

@@ -8,7 +8,6 @@ import type { CoachFn } from "./simulator";
  */
 export function autoCoachPolicy(): CoachFn {
   return (obs) => {
-    if (obs.own.commandPoints < 1) return null;
     if (obs.own.mentalState === "desperate" || obs.own.mentalState === "exhausted") return "RECOVER";
     if (obs.opponentContextState === "EXHAUSTED" || obs.opponentContextState === "VULNERABLE") return "PRESS";
     if (obs.opponentContextState === "DOMINANT" || obs.opponentContextState === "PRESSURING") return "WAIT";

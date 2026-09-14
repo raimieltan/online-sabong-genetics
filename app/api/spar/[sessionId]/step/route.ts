@@ -3,9 +3,9 @@ import { NextResponse } from "next/server";
 import { autoCoachPolicy } from "@/lib/combat/autoCoach";
 import { MAX_TURNS } from "@/lib/combat/simulator";
 import { endSparSession, getSparSession } from "@/lib/combat/sparSessions";
-import type { PlayerCommand } from "@/lib/combat/command";
+import type { CoachingCommand } from "@/lib/combat/command";
 
-type StepBody = { command?: PlayerCommand | null };
+type StepBody = { command?: CoachingCommand | null };
 
 /**
  * Advances a spar session by exactly one turn: side A takes whatever command

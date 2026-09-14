@@ -287,7 +287,7 @@ const DEFENSIVE_TELLS = new Set<ReadTellType>(["guard_open", "side_on_stance", "
 function postureColor(posture: FighterPosture | null): string {
   if (!posture) return "#b99b5f";
   if (posture.hesitating) return "#e8d34a";
-  if (posture.mode === "pressure" || posture.mode === "all_in") return "#e2542d";
+  if (posture.mode === "pressure") return "#e2542d";
   if (posture.mode === "defensive" || posture.mode === "counter" || posture.mode === "recover") return "#6f9bd8";
   if (posture.tellType && AGGRESSIVE_TELLS.has(posture.tellType)) return "#e2542d";
   if (posture.tellType && DEFENSIVE_TELLS.has(posture.tellType)) return "#6f9bd8";

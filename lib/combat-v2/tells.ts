@@ -19,6 +19,14 @@ export const READ_TELL_TYPES: readonly ReadTellType[] = [
 ];
 
 const MAX_VISIBLE_TELLS = 2;
+const TELL_META: Record<ReadTellType, { family: ActiveReadTell['family']; displayName: string }> = {
+  weight_forward: { family: 'FORWARD_LOAD', displayName: 'Weight Forward' }, closing_distance: { family: 'FORWARD_LOAD', displayName: 'Weight Forward' },
+  head_low: { family: 'LOW_LINE_LOAD', displayName: 'Head Low' }, rear_leg_loaded: { family: 'REAR_LOAD', displayName: 'Rear Foot Set' },
+  wing_adjust: { family: 'WING_LOAD', displayName: 'Wing Open' }, side_on_stance: { family: 'BACK_LOAD', displayName: 'Weight Back' },
+  angle_shift: { family: 'LATERAL_LOAD', displayName: 'Side Step' }, hesitating: { family: 'BREATH_LOAD', displayName: 'Chest Rising' },
+  recovering: { family: 'BREATH_LOAD', displayName: 'Chest Rising' }, guard_open: { family: 'BALANCE_LOAD', displayName: 'Feet Resetting' },
+  overextended: { family: 'BALANCE_LOAD', displayName: 'Feet Resetting' }, resetting: { family: 'BALANCE_LOAD', displayName: 'Feet Resetting' },
+};
 
 /** Ticks (@60/s) a tell can stay alive once it stops being a live candidate. */
 const TELL_LIFETIME: Record<ReadTellType, number> = {
@@ -50,7 +58,7 @@ function candidates(f: Fighter, other: Fighter, d: number): Candidate[] {
   const strike = (u.peck_strike ?? 0) + (u.spur_lunge ?? 0);
   const aerial = (u.jump_kick ?? 0) + (u.flying_spur ?? 0);
   const aggression = strike + aerial + (u.advance ?? 0);
-  const pressing = mode === 'pressure' || mode === 'all_in';
+  const pressing = mode === 'pressure';
 
   push('weight_forward', aggression * (pressing ? 1.3 : 1));
   if (intent === 'advance' && d > f.engagement.desiredRange - .3) push('closing_distance', (u.advance ?? 0) * 1.1 + aggression * .3);
@@ -103,7 +111,8 @@ export function updateReadTells(s: CombatMatchState, f: Fighter, other: Fighter,
     if (next.length >= MAX_VISIBLE_TELLS) break;
     if (!rng.chance(clamp(c.weight - battleHardened * .05))) continue;
     const confidence = clamp(.35 + f.snapshot.experience * .3 + f.snapshot.stats.accuracy / 250 - battleHardened * .06 - (d > 3.2 ? .15 : 0) + (rng.next() - .5) * .2, .1, .95);
-    next.push({ type: c.type, strength: 0, confidence, startedTick: s.tick });
+    const meta = TELL_META[c.type];
+    next.push({ id: `${f.snapshot.fighterId}:${c.type}:${s.tick}`, type: c.type, ...meta, strength: 0, confidence, startedTick: s.tick, commitsAtTick: s.tick + RAMP_TICKS[c.type], isFeint: c.type === 'hesitating' && (f.utilities.feint ?? 0) > .4 });
     s.eventBuffer.push({ type: 'READ_TELL_STARTED', tick: s.tick, fighterId: f.snapshot.fighterId, detail: c.type, value: confidence });
   }
   next.sort((a, b) => (b.strength * b.confidence) - (a.strength * a.confidence));

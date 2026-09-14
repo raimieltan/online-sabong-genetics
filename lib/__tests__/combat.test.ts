@@ -72,6 +72,10 @@ test("canFight excludes hens — hens do not fight per baseline spec", () => {
   );
 });
 
+test("canFight excludes a rooster at zero health", () => {
+  assert.equal(canFight(makeChicken({ health: 0 })), false);
+});
+
 test("healChicken clears the injured flag and restores health", () => {
   const result = healChicken();
   assert.equal(result.injured, false);
@@ -195,22 +199,19 @@ test("physical modifiers nudge but do not swamp equal-stat matchups", () => {
   assert.ok(sprinterWins >= 8 && sprinterWins <= trials - 8, `expected a competitive split, sprinter won ${sprinterWins}/${trials}`);
 });
 
-test("a head/neck crit can trigger a critical injury that ends the fight immediately", () => {
-  // rng sequence tuned to force: attacker picked, no miss, crit, head zone, then
-  // the critical-injury roll succeeding on the very first turn.
-  const values = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-  let i = 0;
-  const rng = () => values[Math.min(i++, values.length - 1)];
-
+test("a head/neck crit can trigger a critical injury that ends continuous combat", () => {
+  // simulateFight now consumes the injected RNG once to derive the replay
+  // seed. Seed 3 deterministically reaches a neck medical stoppage.
+  const rng = () => 3 / 0x1_0000_0000;
   const a = makeChicken({ id: "a", iv: statBlock(99), ev: statBlock(100) });
   const b = makeChicken({ id: "b", iv: statBlock(1), ev: statBlock(0) });
 
   const result = simulateFight(a, b, rng);
 
   assert.equal(result.outcomeReason, "critical_injury");
-  assert.equal(result.totalTurns, 1);
   assert.equal(result.injuredChickenId, "b");
   assert.equal(result.winnerId, "a");
-  assert.equal(result.log[0].isCritical, true);
-  assert.equal(result.log[0].hitZone, "head");
+  const criticalHit = result.log.find((entry) => entry.isCritical);
+  assert.ok(criticalHit);
+  assert.equal(criticalHit.hitZone, "neck");
 });

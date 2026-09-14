@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { simulateBattle } from "../combat/simulator";
+import { BattleSession, simulateBattle } from "../combat/simulator";
 import { makeChicken, statBlock } from "./testHelpers";
 
 test("a coach that always returns null behaves identically to no coach at all (same seed)", () => {
@@ -16,15 +16,29 @@ test("a coach that always returns null behaves identically to no coach at all (s
   assert.equal(withNullCoach.totalTurns, withoutCoach.totalTurns);
 });
 
-test("a coach is never called before its fighter has at least 1 CommandPoint", () => {
+test("a coach can choose an instruction from the first turn without a resource gate", () => {
   const a = makeChicken({ id: "a", iv: statBlock(70), fightingStyle: "aggressive" });
   const b = makeChicken({ id: "b", iv: statBlock(70), fightingStyle: "counter" });
-  let calledAtZeroCp = false;
+  let calls = 0;
   simulateBattle(a, b, () => 0.5, {
     coachA: (obs) => {
-      if (obs.own.commandPoints < 1) calledAtZeroCp = true;
+      calls += 1;
       return null;
     },
   });
-  assert.equal(calledAtZeroCp, false);
+  assert.ok(calls > 0);
+});
+
+test("a coaching instruction persists until it is replaced", () => {
+  const defensiveStats = { ...statBlock(50), power: 1, defense: 99 };
+  const a = makeChicken({ id: "a", iv: defensiveStats });
+  const b = makeChicken({ id: "b", iv: defensiveStats });
+  const session = new BattleSession(a, b, () => 0.99);
+
+  session.step("PRESS");
+  for (let turn = 0; turn < 4; turn += 1) session.step(null);
+  assert.equal(session.snapshotA().pendingCommand, "PRESS");
+
+  session.step("RECOVER");
+  assert.equal(session.snapshotA().pendingCommand, "RECOVER");
 });

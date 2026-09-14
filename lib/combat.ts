@@ -31,7 +31,10 @@ export type { PveEncounterDefinition, PveEncounterId } from "./combat/pveEncount
 
 /** Hens do not fight — only roosters enter combat, per the baseline mechanics spec. */
 export function canFight(chicken: Chicken): boolean {
-  return chicken.sex === "rooster" && canBattleStage(chicken.growthStage) && !chicken.injured;
+  return chicken.sex === "rooster"
+    && canBattleStage(chicken.growthStage)
+    && !chicken.injured
+    && chicken.health > 0;
 }
 
 export function healChicken(): { injured: false; health: number } {
@@ -101,7 +104,6 @@ export type FightOutcomeUpdate = {
 export function applyFightOutcome(chicken: Chicken, result: CombatResult): FightOutcomeUpdate {
   const won = result.winnerId === chicken.id;
   const drew = result.isDraw === true || result.winnerId === null;
-  const wasInjured = result.injuredChickenId === chicken.id;
   const record = chicken.record;
 
   const gained = result.experienceGained?.[chicken.id];
@@ -130,6 +132,7 @@ export function applyFightOutcome(chicken: Chicken, result: CombatResult): Fight
   const conditionDelta = result.conditionDelta?.[chicken.id] ?? 0;
   const condition = Math.max(0, Math.min(100, (chicken.condition ?? 100) + conditionDelta));
   const newInjuries = result.newInjuries?.[chicken.id] ?? [];
+  const wasInjured = result.injuredChickenId === chicken.id || newInjuries.length > 0;
   const injuries = [...(chicken.injuries ?? []), ...newInjuries];
   const hasActiveInjury = wasInjured || injuries.some((injury) => !injury.permanent && injury.recoveryRemaining > 0);
   const aftermath = battleAftermath(chicken, result, chicken.id, wasInjured, newInjuries);

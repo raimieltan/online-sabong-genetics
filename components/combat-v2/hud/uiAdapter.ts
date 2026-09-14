@@ -1,6 +1,7 @@
 import type { Chicken, InjuryRecord } from '@/lib/types';
 import type { ReadTellType } from '@/lib/combat-v2';
-import type { BattleHudVisibility } from '@/lib/animation/battleDirector';
+import type { ExchangeResolvedPayload } from '@/lib/combat-v2/interpretation';
+import { presentFighterIdentity } from '@/lib/combat/identityPresenter';
 
 /** UI-only phase label — a relabeling of `engagement.phase`, not a new state machine. */
 export type CombatUiPhase = 'circle' | 'read' | 'clash' | 'disengage';
@@ -86,5 +87,98 @@ export function injuriesToStatusIcons(injuries: InjuryRecord[] | undefined): Sta
 }
 
 export function fighterSubtitle(chicken: Chicken): string {
-  return chicken.breed ? `${chicken.breed} Line` : `Gen ${chicken.generation} Bloodline`;
+  return presentFighterIdentity(chicken).primaryLabel;
+}
+
+export type ExchangeRecapAssistance = 'onboarding' | 'standard' | 'advanced';
+export type ExchangeRecapTone = 'positive' | 'neutral' | 'negative';
+
+export type ExchangeRecapCopy = {
+  kicker: string | null;
+  action: string;
+  result: string | null;
+  detail: string | null;
+  resultTone: ExchangeRecapTone;
+  ariaLabel: string;
+};
+
+const RECAP_READ_COPY: Record<string, string> = {
+  GOOD: 'Good read',
+  NEUTRAL: 'Unclear read',
+  BAD: 'Bad read',
+};
+
+const RECAP_COMPLIANCE_COPY: Record<string, string> = {
+  FULL: 'Full compliance',
+  PARTIAL: 'Partial compliance',
+  RESISTED: 'Instinct overruled coaching',
+};
+
+const RECAP_OUTCOME_COPY: Record<string, string> = {
+  MISSED: 'attack missed',
+  BLOCKED: 'attack was blocked',
+  GLANCING_HIT: 'glancing hit',
+  CLEAN_HIT: 'clean hit',
+  COUNTERED: 'caught by the counter',
+  CANCELLED: 'commitment was stopped',
+  DISENGAGED: 'created breathing room',
+  NO_COMMITMENT: 'no commitment',
+};
+
+const RECAP_RESULT_COPY: Record<string, string> = {
+  ADVANTAGE: 'Exchange advantage',
+  EVEN: 'Even exchange',
+  DISADVANTAGE: 'Exchange disadvantage',
+  NO_DECISIVE_RESULT: 'No decisive result',
+};
+
+const RECAP_REASON_COPY: Record<string, string> = {
+  TEMPERAMENT_MISMATCH: 'Temperament resisted the plan',
+  TEMPERAMENT_ALIGNED: 'Temperament suited the plan',
+  LOW_BALANCE: 'Poor balance limited the response',
+  LOW_STAMINA: 'Low stamina slowed the response',
+};
+
+const SUCCESSFUL_OUTCOMES = new Set(['GLANCING_HIT', 'CLEAN_HIT', 'DISENGAGED']);
+const FAILED_OUTCOMES = new Set(['MISSED', 'BLOCKED', 'COUNTERED', 'CANCELLED', 'NO_COMMITMENT']);
+
+/** The only player-facing interpretation mapper. It relabels authoritative
+ * semantics and deliberately never derives combat truth from damage or timing. */
+export function describeExchangeRecap(
+  payload: ExchangeResolvedPayload,
+  assistance: ExchangeRecapAssistance = 'onboarding',
+): ExchangeRecapCopy {
+  const read = String(payload.read?.quality ?? '');
+  const compliance = String(payload.coaching?.compliance ?? '');
+  const command = ['PRESS', 'WAIT', 'COUNTER', 'RECOVER'].includes(String(payload.coaching?.command))
+    ? String(payload.coaching.command)
+    : 'INSTRUCTION';
+  const outcome = String(payload.primaryOutcome ?? '');
+  const result = String(payload.exchangeResult ?? '');
+  const readLabel = RECAP_READ_COPY[read] ?? 'Read unavailable';
+  const complianceLabel = RECAP_COMPLIANCE_COPY[compliance] ?? 'Compliance unavailable';
+  const outcomeLabel = RECAP_OUTCOME_COPY[outcome] ?? 'action resolved';
+  const resultLabel = RECAP_RESULT_COPY[result] ?? 'Exchange resolved';
+  const knownReason = Array.isArray(payload.coaching?.reasons)
+    ? payload.coaching.reasons.map(String).find(reason => RECAP_REASON_COPY[reason])
+    : undefined;
+
+  let detail = knownReason ? RECAP_REASON_COPY[knownReason] : null;
+  if (!detail && read === 'GOOD' && FAILED_OUTCOMES.has(outcome)) detail = 'The decision was sound; execution fell short';
+  if (!detail && read === 'BAD' && SUCCESSFUL_OUTCOMES.has(outcome)) detail = 'The read was poor; execution still succeeded';
+  if (!detail && compliance === 'PARTIAL') detail = 'The instruction was only partly followed';
+  if (!detail && compliance === 'RESISTED') detail = 'The fighter followed instinct instead';
+
+  const kicker = assistance === 'advanced'
+    ? null
+    : assistance === 'standard'
+      ? compliance === 'FULL' ? null : complianceLabel
+      : `${readLabel} · ${complianceLabel}`;
+  const visibleResult = assistance === 'advanced' ? null : resultLabel;
+  const visibleDetail = assistance === 'advanced' ? null : assistance === 'onboarding' ? detail : compliance === 'FULL' ? null : detail;
+  const action = `${command} → ${outcomeLabel}`;
+  const resultTone: ExchangeRecapTone = result === 'ADVANTAGE' ? 'positive' : result === 'DISADVANTAGE' ? 'negative' : 'neutral';
+  const ariaLabel = [kicker, action, visibleResult, visibleDetail].filter(Boolean).join('. ');
+
+  return { kicker, action, result: visibleResult, detail: visibleDetail, resultTone, ariaLabel };
 }

@@ -5,6 +5,7 @@ import { canAgeUp, canChickenAgeUp, canRetire } from "@/lib/growth";
 import { canFight } from "@/lib/combat";
 import { ChickenThumbnail } from "@/components/chicken3d/ChickenThumbnail";
 import { RARITY_GEM, topRarity } from "@/lib/rarity";
+import { presentFighterIdentity } from "@/lib/combat/identityPresenter";
 
 import { CoopIcon } from "./CoopIcons";
 import styles from "./coop.module.css";
@@ -18,6 +19,7 @@ export function ChickenCard({ chicken, selected, onSelect, onAgeUp, onRetire }: 
 }) {
   const rarity = topRarity(chicken.traits);
   const status = chicken.injured ? "Recovering" : chicken.status === "retired" ? "Retired" : chicken.growthStage === "chick" || chicken.growthStage === "juvenile" ? "Young" : canFight(chicken) ? "Ready" : "Resting";
+  const identity = presentFighterIdentity(chicken);
 
   return (
     <article className={`${styles.card} ${selected ? styles.cardSelected : ""}`}>
@@ -28,7 +30,7 @@ export function ChickenCard({ chicken, selected, onSelect, onAgeUp, onRetire }: 
         </div>
         <div className={styles.cardBody}>
           <h3 className={styles.cardName}>{chicken.name}</h3>
-          <p className={styles.cardMeta}>{chicken.fightingStyle} fighter · {chicken.growthStage.replace("_", " ")} · Gen {chicken.generation}</p>
+          <p className={styles.cardMeta}>{identity.primaryLabel} · {identity.careerStage} · Gen {chicken.generation}</p>
           <div className={styles.cardStats}>
             <div className={styles.cardStat}><b><CoopIcon name="bolt" />{chicken.energy}</b><span>Energy</span></div>
             <div className={styles.cardStat}><b><CoopIcon name="trophy" />{chicken.record.wins}-{chicken.record.losses}</b><span>Record</span></div>

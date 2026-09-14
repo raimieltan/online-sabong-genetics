@@ -8,6 +8,8 @@ import { createCombatEncounter, createSession, getSession, issueCommand, syncSes
 import { emptyCombatCareer } from "../combat/evolution";
 import { prisma } from "../db";
 import { getOrCreatePlayer } from "../player";
+import { currentOpponent } from "../tournament";
+import { startTournament } from "../tournament/service";
 import { GENETIC_STAT_KEYS, type GrowthStage, type StatBlock } from "../types";
 
 function statBlock(value: number): StatBlock {
@@ -118,6 +120,35 @@ test("manual awakening is authoritative, visible in projections, and idempotent"
   assert.ok(awakened.events.some(event => event.type === "AWAKENING_STARTED" && event.payload.detail === "unbreakable"));
 });
 
+test("launch campaign sessions hide and reject awakening controls", async () => {
+  const player = await getOrCreatePlayer();
+  const fighterId = await seedChicken(player.id, { awakening: "unbreakable" });
+  const encounter = await createCombatEncounter({
+    ownerPlayerId: player.id,
+    fighterId,
+    opponent: generateRandomChicken({ name: "Campaign NPC" }),
+    mode: "BOSS",
+    modeContextId: "charger",
+  });
+  const view = await createSession({
+    fighterId,
+    encounterId: encounter.id,
+    coachingMode: "MANUAL",
+    openingCommand: "WAIT",
+    disconnectPolicy: "KEEP_INSTRUCTION",
+    idempotencyKey: randomUUID(),
+  }, player.id);
+  assert.equal(view.allowedActions.awakening, false);
+  await assert.rejects(
+    () => triggerSessionAwakening(view.sessionId, {
+      actionId: randomUUID(),
+      type: "unbreakable",
+      observedRevision: view.revision,
+    }, player.id),
+    /AWAKENING_UNAVAILABLE/,
+  );
+});
+
 test("terminal retries return one settlement and never duplicate consequences", async () => {
   const player = await getOrCreatePlayer();
   const fighterId = await seedChicken(player.id);
@@ -134,4 +165,23 @@ test("terminal retries return one settlement and never duplicate consequences", 
   assert.deepEqual(replay.settlement, view.settlement);
   assert.equal(await prisma.combatSettlementRecord.count({ where: { sessionId: view.sessionId } }), 1);
   assert.equal((await prisma.chicken.findUniqueOrThrow({ where: { id: fighterId } })).activeCombatSessionId, null);
+});
+
+test("authoritative tournament combat settles before resolving the bracket", async () => {
+  const player = await getOrCreatePlayer();
+  const fighterId = await seedChicken(player.id);
+  const tournament = await startTournament(player.id, fighterId, 8, "beginner", "barangay-open");
+  const opponent = currentOpponent(tournament);
+  assert.ok(opponent);
+  const encounter = await createCombatEncounter({ ownerPlayerId: player.id, fighterId, opponent: opponent.chicken, mode: "TOURNAMENT", modeContextId: tournament.id });
+  let view = await createSession({ fighterId, encounterId: encounter.id, coachingMode: "AUTO", openingCommand: "PRESS", disconnectPolicy: "AUTO_COACH", idempotencyKey: randomUUID() }, player.id);
+
+  for (let index = 0; index < 40 && view.status === "ACTIVE"; index += 1) {
+    await prisma.combatSessionRecord.update({ where: { id: view.sessionId }, data: { lastAdvancedAt: new Date(Date.now() - 10_000) } });
+    view = await syncSession(view.sessionId, player.id, view.latestEventCursor);
+  }
+
+  assert.equal(view.status, "SETTLED");
+  assert.ok(view.settlement);
+  assert.equal((await prisma.tournament.findUniqueOrThrow({ where: { id: tournament.id } })).currentRound, 1);
 });

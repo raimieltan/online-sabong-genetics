@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { CanonicalCombatRuntime, CANONICAL_COMMANDS, digestSemantic } from "../combat-v2/canonical";
+import { CanonicalCombatRuntime, CANONICAL_COMMANDS, digestSemantic, experienceFromCanonicalEvents, publicFighters, type CanonicalCombatEvent } from "../combat-v2/canonical";
 import { createInjuryRecord } from "../combat/injuries";
 import { effectiveStat } from "../combat/stats";
 import { makeChicken } from "./testHelpers";
@@ -30,6 +30,25 @@ test("same snapshots, seed, and command log produce identical semantic output", 
     return { events, result: runtime.result(events) };
   };
   assert.equal(digestSemantic(run()), digestSemantic(run()));
+});
+
+test("canonical results preserve combat XP and Flow State afterimage markers", () => {
+  const event = (cursor: number, engineType: string, fighterId: string, targetId: string): CanonicalCombatEvent => ({
+    id: `event-${cursor}`, sessionId: "xp-session", cursor, logicalTick: cursor,
+    exchangeIndex: 0, type: engineType, payload: { engineType, fighterId, targetId }, semantic: true,
+  });
+  const gained = experienceFromCanonicalEvents(["a", "b"], [
+    event(1, "ATTACK_LANDED", "a", "b"),
+    event(2, "EVADE", "b", "a"),
+  ]);
+  assert.equal(gained.a.offensive, 2);
+  assert.equal(gained.a.adaptation, 1);
+  assert.equal(gained.b.evasion, 2);
+  assert.equal(gained.b.adaptation, 1);
+
+  const runtime = CanonicalCombatRuntime.create({ sessionId: "mirage-session", seed: 8, fighterA: makeChicken({ id: "a" }), fighterB: makeChicken({ id: "b" }), openingCommand: "WAIT" });
+  runtime.checkpoint.state.fighters[0].lastMirageEvadeTick = 42;
+  assert.equal(publicFighters(runtime.checkpoint.state)[0].lastMirageEvadeTick, 42);
 });
 
 test("deterministic injury metadata never depends on wall clock or process counters", () => {

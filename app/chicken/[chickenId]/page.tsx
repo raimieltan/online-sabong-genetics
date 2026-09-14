@@ -9,6 +9,7 @@ import { battleEligibility } from "@/lib/medical/eligibility";
 import { describeMedicalStatus, medicalStatus } from "@/lib/medical/status";
 import { emptyExperience } from "@/lib/combat/experience";
 import { normalizeCombatCareer } from "@/lib/combat/evolution";
+import { presentFighterIdentity } from "@/lib/combat/identityPresenter";
 import { effectiveStat } from "@/lib/combat";
 import { ageUpRequirements, canAgeUp, canChickenAgeUp, canRetire, canTrain, nextGrowthStage } from "@/lib/growth";
 import { summarizeCareer } from "@/lib/career/retirement";
@@ -155,6 +156,7 @@ function ChickenDetailPageContent({ params }: { params: Promise<{ chickenId: str
 
   const rarity = topRarity(chicken.traits);
   const archetype = deriveDossierArchetype(chicken);
+  const fighterIdentity = presentFighterIdentity(chicken);
   const behavior = dossierBehavior(chicken);
   const experience = chicken.experience ?? emptyExperience();
   const training = chicken.trainingState ?? defaultTrainingState();
@@ -186,7 +188,7 @@ function ChickenDetailPageContent({ params }: { params: Promise<{ chickenId: str
           <div className={styles.identityTopline}><span>Fighter dossier</span><StatusPill tone={eligibility.eligible ? "green" : "red"}>{eligibility.eligible ? "Battle ready" : describeMedicalStatus(medicalStatus(chicken))}</StatusPill></div>
           <h1>{chicken.name}</h1>
           <div className={styles.metaLine}><StatusPill>{rarity}</StatusPill><span>Gen {chicken.generation}</span><span>{pretty(chicken.growthStage)}</span><span>Development {development}%</span></div>
-          <div className={styles.archetype}><span>Fighter type</span><h2>{archetype.name}</h2><p>{archetype.description}</p><div>{archetype.traits.map((trait) => <b key={trait}>{trait}</b>)}</div></div>
+          <div className={styles.archetype}><span>Fighter identity · {fighterIdentity.confidence}</span><h2>{fighterIdentity.primaryLabel}</h2><p>{fighterIdentity.strengths.join(" · ")}</p><div>{fighterIdentity.temperament.map((trait) => <b key={trait}>{trait}</b>)}</div></div>
           <div className={styles.quickStats}>{DOSSIER_STATS.map((stat) => <div key={stat} title={`${pretty(stat)} current effective rating: ${Math.round(effectiveStat(chicken, stat))}`}><span>{STAT_MARK[stat]} {pretty(stat)}</span><strong>{Math.round(effectiveStat(chicken, stat))}</strong><i>{Array.from({ length: 5 }, (_, index) => <b key={index} className={index < Math.ceil(pct(effectiveStat(chicken, stat), 110) / 20) ? styles.segmentOn : ""} />)}</i></div>)}</div>
           <div className={styles.heroActions}>
             {canTrain(chicken.growthStage) ? <Link className={styles.primaryButton} href={`/training?chickenId=${chicken.id}`}>Train fighter</Link> : <button className={styles.primaryButton} disabled>Training locked</button>}
@@ -201,7 +203,7 @@ function ChickenDetailPageContent({ params }: { params: Promise<{ chickenId: str
       <div className={styles.content}>
         {tab === "Overview" && <Overview chicken={chicken} archetype={archetype} behavior={behavior} eligibility={eligibility} development={development} nextStage={nextStage} physicalName={physical.name} maturityRequirements={maturityRequirements} readyToMature={readyToMature} onRest={handleRest} onAgeUp={handleAgeUp} onTab={chooseTab} />}
         {tab === "Development" && <Development chicken={chicken} training={training} recommendation={recommendation} development={development} nextStage={nextStage} totalEv={totalEv} maturityRequirements={maturityRequirements} readyToMature={readyToMature} onAgeUp={handleAgeUp} />}
-        {tab === "Combat" && <Combat chicken={chicken} archetype={archetype} behavior={behavior} experience={experience} totalExperience={totalExperience} combatCareer={combatCareer} />}
+        {tab === "Combat" && <Combat chicken={chicken} archetype={archetype} identity={fighterIdentity} behavior={behavior} experience={experience} totalExperience={totalExperience} combatCareer={combatCareer} />}
         {tab === "Genetics" && <Genetics chicken={chicken} physical={physical} region={region} onRegion={setRegion} expressedMutations={expressedMutations} />}
         {tab === "Career" && <Career chicken={chicken} bossVictories={bossVictories} combatCareer={combatCareer} activeInjuries={activeInjuries} />}
       </div>
@@ -263,13 +265,13 @@ function Development({ chicken, training, recommendation, development, nextStage
   </div>;
 }
 
-function Combat({ chicken, archetype, behavior, experience, totalExperience, combatCareer }: any) {
+function Combat({ chicken, archetype, identity, behavior, experience, totalExperience, combatCareer }: any) {
   const hardening = chicken.battleHardening ?? 0;
   const maturity = hardening >= 40 ? "Elite" : hardening >= 25 ? "Veteran" : hardening >= 10 ? "Seasoned" : "Rookie";
   return <div>
-    <SectionHeading eyebrow="Combat file" title={archetype.name} copy={archetype.description} />
+    <SectionHeading eyebrow="Combat file" title={identity.primaryLabel} copy={identity.strengths.join(" · ")} />
     <div className={styles.twoColumn}>
-      <GlassCard className={styles.combatIdentity}><div className={styles.cardTitle}><span>Fighting identity</span><StatusPill>{pretty(chicken.fightingStyle)}</StatusPill></div><h3>{archetype.role}</h3><div className={styles.tags}>{archetype.traits.map((trait: string) => <b key={trait}>{trait}</b>)}</div><div className={styles.strengthRead}><div><span>Natural strengths</span><strong>{archetype.strengths.map(pretty).join(" · ")}</strong></div><div><span>Development risks</span><strong>{archetype.weaknesses.map(pretty).join(" · ")}</strong></div></div></GlassCard>
+      <GlassCard className={styles.combatIdentity}><div className={styles.cardTitle}><span>Fighting identity</span><StatusPill>{identity.confidence}</StatusPill></div><h3>{identity.primaryLabel}</h3><div className={styles.tags}>{identity.temperament.map((trait: string) => <b key={trait}>{trait}</b>)}</div><div className={styles.strengthRead}><div><span>Behavioral strengths</span><strong>{identity.strengths.join(" · ")}</strong></div><div><span>Meaningful tradeoff</span><strong>{identity.weakness}</strong></div><div><span>Known for</span><strong>{identity.knownFor.join(" · ")}</strong></div></div></GlassCard>
       <GlassCard><div className={styles.cardTitle}><span>Temperament</span><b>{valueBand(behavior.aggression * 100)} drive</b></div><dl className={styles.readableList}>{Object.entries(behavior).map(([key, value]) => <div key={key}><dt>{pretty(key)}</dt><dd>{valueBand((value as number) * 100)}</dd></div>)}</dl><p className={styles.flavorCopy}>{temperamentSummary(chicken)}</p></GlassCard>
     </div>
     <GlassCard className={styles.masteryCard}><div className={styles.cardTitle}><span>Combat mastery</span><b>{Math.round(totalExperience)} total XP</b></div>{totalExperience === 0 ? <EmptyState title="No established combat instincts" copy={`${chicken.name} will develop a distinct mastery profile through sparring and competition.`} action={<Link className={styles.secondaryButton} href={`/spar/${chicken.id}`}>Begin sparring</Link>} /> : <div className={styles.masteryWheel}><div className={styles.wheelCore}><span>{chicken.name}</span><strong>{maturity}</strong></div>{Object.entries(experience).map(([key, value]) => <div key={key} className={styles.masteryNode}><span>{EXPERIENCE_LABEL[key as CombatExperienceCategory]}</span><strong>{Math.round(value as number)}</strong><small>{potentialGrade(Math.min(100, (value as number) / 5))}</small></div>)}</div>}</GlassCard>
