@@ -14,12 +14,12 @@ import {
 import { makeChicken, physicalBlock, statBlock } from "./testHelpers";
 import { HIT_ZONES } from "../types";
 
-test("effectiveStat weights IV above EV (60/40)", () => {
+test("effectiveStat weights IV above EV, then applies adult growth expression", () => {
   const chicken = makeChicken({ iv: statBlock(100), ev: statBlock(0) });
-  assert.equal(effectiveStat(chicken, "power"), 60);
+  assert.equal(effectiveStat(chicken, "power"), 57);
 
   const trained = makeChicken({ iv: statBlock(0), ev: statBlock(100) });
-  assert.equal(effectiveStat(trained, "power"), 40);
+  assert.equal(effectiveStat(trained, "power"), 38);
 });
 
 test("effectiveStat applies an expressed mutation's stat modifier on top of IV/EV", () => {

@@ -1,28 +1,24 @@
-import { randomUUID } from "node:crypto";
+import { randomUUID } from 'node:crypto';
 
-import { generateRandomChicken } from "./chickenGenerator";
-import { chickenValue } from "./valuation";
+import { generateRandomChicken } from './chickenGenerator';
+import { chickenValue } from './valuation';
 import type {
   Chicken,
   ChickenColorScheme,
   ChickenSex,
   FightingStyle,
-  GrowthStage,
   MutationGenome,
   PhysicalBlock,
   StatBlock,
   Trait,
-} from "./types";
+} from './types';
 
 /** How many NPC listings the market keeps in stock at once. */
 export const MARKET_STOCK_SIZE = 6;
-
-/** Marketplace markup over the chicken's raw suggested value. */
 const MARKET_MARKUP = 1.15;
-
-/** What a player receives for selling a chicken back — below market value on purpose. */
 const SELL_PAYOUT_RATE = 0.5;
 
+/** Exact persisted MarketListing shape; all market stock is sold battle-ready. */
 export type MarketListingRow = {
   id: string;
   name: string;
@@ -38,11 +34,9 @@ export type MarketListingRow = {
   traits: Trait[];
   fightingStyle: FightingStyle;
   colorScheme: ChickenColorScheme;
-  growthStage: GrowthStage;
   price: number;
 };
 
-/** Generates a single random NPC chicken listing, priced above its base value. */
 export function generateListing(): MarketListingRow {
   const chicken = generateRandomChicken();
   return {
@@ -60,12 +54,10 @@ export function generateListing(): MarketListingRow {
     traits: chicken.traits,
     fightingStyle: chicken.fightingStyle,
     colorScheme: chicken.colorScheme,
-    growthStage: "adult",
     price: Math.round(chickenValue(chicken) * MARKET_MARKUP),
   };
 }
 
-/** Converts a purchased listing into a fresh, owned Chicken ready to insert. */
 export function listingToChicken(listing: MarketListingRow): Chicken {
   return {
     id: randomUUID(),
@@ -84,8 +76,8 @@ export function listingToChicken(listing: MarketListingRow): Chicken {
     health: 100,
     energy: 100,
     record: { wins: 0, losses: 0, championships: 0, koTko: 0, decisions: 0 },
-    status: "active",
-    growthStage: listing.growthStage,
+    status: 'active',
+    growthStage: 'adult',
     fightingStyle: listing.fightingStyle,
     colorScheme: listing.colorScheme,
     injured: false,
@@ -93,7 +85,6 @@ export function listingToChicken(listing: MarketListingRow): Chicken {
   };
 }
 
-/** What a player is paid for selling `chicken` back to the market. */
 export function sellPrice(chicken: Chicken): number {
   return Math.round(chickenValue(chicken) * SELL_PAYOUT_RATE);
 }

@@ -5,7 +5,7 @@ import { getVillageSlot, paginateVillage, VILLAGE_CAPACITY } from "../coopVillag
 
 test("getVillageSlot gives every index a unique, non-overlapping position", () => {
   const seen = new Set<string>();
-  for (let i = 0; i < 60; i++) {
+  for (let i = 0; i < VILLAGE_CAPACITY; i++) {
     const { home } = getVillageSlot(i);
     const key = `${home[0].toFixed(2)},${home[2].toFixed(2)}`;
     assert.ok(!seen.has(key), `slot ${i} collides at ${key}`);
@@ -14,8 +14,8 @@ test("getVillageSlot gives every index a unique, non-overlapping position", () =
 });
 
 test("getVillageSlot keeps adjacent huts at least a hut-width apart", () => {
-  for (let i = 0; i < 40; i++) {
-    for (let j = i + 1; j < 40; j++) {
+  for (let i = 0; i < VILLAGE_CAPACITY; i++) {
+    for (let j = i + 1; j < VILLAGE_CAPACITY; j++) {
       const a = getVillageSlot(i).home;
       const b = getVillageSlot(j).home;
       const dist = Math.hypot(a[0] - b[0], a[2] - b[2]);

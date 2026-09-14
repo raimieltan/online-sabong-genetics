@@ -71,7 +71,7 @@ const COMPOUND_SLOTS: Record<VillageZone, Array<Omit<VillageSlot, "facingY">>> =
     { home: [3.3, 0, .1], personalArea: [2.4, 0, .1] },
     { home: [-2.1, 0, 2.2], personalArea: [-1.3, 0, 1.35] },
     { home: [2, 0, 2.35], personalArea: [1.3, 0, 1.45] },
-    { home: [.1, 0, 3.9], personalArea: [.1, 0, 2.45] },
+    { home: [.1, 0, 1.8], personalArea: [.1, 0, 1] },
   ],
   young: [
     { home: [-2.9, 0, 5], personalArea: [-1.9, 0, 3.4] },

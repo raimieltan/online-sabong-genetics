@@ -66,7 +66,7 @@ test("createChicken assigns a persistent fighting style, a color scheme, and sta
   assert.equal(chicken.injured, false);
 });
 
-test("createChicken defaults growthStage to adult and traits to empty", () => {
+test("createChicken defaults a newly created chicken to chick with no traits", () => {
   const chicken = createChicken({
     name: "Test",
     sex: "rooster",
@@ -83,7 +83,7 @@ test("createChicken defaults growthStage to adult and traits to empty", () => {
     },
   });
 
-  assert.equal(chicken.growthStage, "adult");
+  assert.equal(chicken.growthStage, "chick");
   assert.deepEqual(chicken.traits, []);
 });
 

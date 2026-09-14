@@ -92,24 +92,25 @@ test("inheritMutations: two carrier parents always produce an expressed offsprin
   const bothCarry: MutationGenome = Object.fromEntries(
     MUTATION_POOL.map((def) => [def.id, { carrier: true, expressed: true }])
   );
-  const rng = queueRng(new Array(10).fill(0));
+  const rng = queueRng(new Array(MUTATION_POOL.length * 2).fill(0));
   const child = inheritMutations(bothCarry, bothCarry, rng);
 
-  assert.deepEqual(child.extra_toed, { carrier: true, expressed: true });
+  assert.deepEqual(child.iron_spurs, { carrier: true, expressed: true });
+  assert.deepEqual(child.extra_wings, { carrier: true, expressed: true });
   assert.deepEqual(child.albino, { carrier: true, expressed: true });
   assert.deepEqual(child.giant, { carrier: true, expressed: true });
   // luminescent loses its incompatibility tie with albino (earlier in catalog order)
   assert.deepEqual(child.luminescent, { carrier: true, expressed: false });
-  // two_headed loses its incompatibility tie with extra_toed (earlier in catalog order)
+  // two_headed loses its incompatibility tie with iron_spurs (earlier in catalog order)
   assert.deepEqual(child.two_headed, { carrier: true, expressed: false });
 });
 
 test("inheritMutations: a single recessive carrier from one parent stays a hidden, unexpressed carrier", () => {
   const father: MutationGenome = { albino: { carrier: true, expressed: false } };
   const mother: MutationGenome = {};
-  // Per-mutation in catalog order (extra_toed, albino, luminescent, giant, two_headed): a spontaneous
+  // Per-mutation in catalog order: a spontaneous
   // roll is drawn for every not-yet-expressed mutation, plus a pass-roll for albino's single carrier.
-  const rng = queueRng([0.99, 0.1, 0.99, 0.99, 0.99, 0.99]);
+  const rng = queueRng([0.99, 0.99, 0.1, 0.99, 0.99, 0.99, 0.99]);
   const child = inheritMutations(father, mother, rng);
 
   assert.deepEqual(child.albino, { carrier: true, expressed: false });
@@ -118,19 +119,19 @@ test("inheritMutations: a single recessive carrier from one parent stays a hidde
 test("inheritMutations: a single dominant-copy allele expresses immediately", () => {
   const father: MutationGenome = { luminescent: { carrier: true, expressed: true } };
   const mother: MutationGenome = {};
-  // extra_toed and albino draw a spontaneous roll each (no carriers), then luminescent's pass-roll
+  // iron_spurs, extra_wings, and albino draw spontaneous rolls, then luminescent's pass-roll
   // fires and expresses immediately (dominant, skipping its spontaneous roll), then giant/two_headed spontaneous rolls.
-  const rng = queueRng([0.99, 0.99, 0.1, 0.99, 0.99]);
+  const rng = queueRng([0.99, 0.99, 0.99, 0.1, 0.99, 0.99]);
   const child = inheritMutations(father, mother, rng);
 
   assert.deepEqual(child.luminescent, { carrier: true, expressed: true });
 });
 
 test("inheritMutations: a spontaneous mutation roll can produce a fresh, uninherited mutation", () => {
-  const rng = queueRng([0.005, 0.5, 0.5, 0.5, 0.5]);
+  const rng = queueRng(new Array(MUTATION_POOL.length).fill(0.5).map((value, index) => index === 0 ? 0.005 : value));
   const child = inheritMutations({}, {}, rng);
 
-  assert.deepEqual(child.extra_toed, { carrier: true, expressed: true });
+  assert.deepEqual(child.iron_spurs, { carrier: true, expressed: true });
   assert.equal(child.albino, undefined);
   assert.equal(child.luminescent, undefined);
   assert.equal(child.giant, undefined);
@@ -139,9 +140,9 @@ test("inheritMutations: a spontaneous mutation roll can produce a fresh, uninher
 
 test("inheritMutations: an inherited expression beats a spontaneous incompatible one", () => {
   const twoHeadedCarrier: MutationGenome = { two_headed: { carrier: true, expressed: false } };
-  const rng = queueRng([0.005, 0.5, 0.5, 0.5, 0.1, 0.1]);
+  const rng = queueRng([0.005, 0.5, 0.5, 0.5, 0.5, 0.1, 0.1]);
   const child = inheritMutations(twoHeadedCarrier, twoHeadedCarrier, rng);
 
   assert.deepEqual(child.two_headed, { carrier: true, expressed: true });
-  assert.deepEqual(child.extra_toed, { carrier: true, expressed: false });
+  assert.deepEqual(child.iron_spurs, { carrier: true, expressed: false });
 });
