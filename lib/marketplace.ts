@@ -34,6 +34,7 @@ export type MarketListingRow = {
   traits: Trait[];
   fightingStyle: FightingStyle;
   colorScheme: ChickenColorScheme;
+  growthStage: Chicken['growthStage'];
   price: number;
 };
 
@@ -54,6 +55,7 @@ export function generateListing(): MarketListingRow {
     traits: chicken.traits,
     fightingStyle: chicken.fightingStyle,
     colorScheme: chicken.colorScheme,
+    growthStage: 'adult',
     price: Math.round(chickenValue(chicken) * MARKET_MARKUP),
   };
 }
