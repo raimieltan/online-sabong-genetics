@@ -144,7 +144,7 @@ export async function createSession(input: {
       engineVersion: COMBAT_VERSION, rulesetVersion: RULESET_VERSION, snapshotSchemaVersion: SNAPSHOT_SCHEMA_VERSION,
       seed: String(seed), fighterASnapshot: json(fighter), fighterBSnapshot: json(encounter.opponentSnapshot),
       coachingMode: input.coachingMode, disconnectPolicy: input.disconnectPolicy, activeCommand: input.openingCommand,
-      status: "ACTIVE", phase: checkpoint.phase, exchangeIndex: checkpoint.exchangeIndex, logicalTick: checkpoint.state.tick,
+      status: "CREATED", phase: checkpoint.phase, exchangeIndex: checkpoint.exchangeIndex, logicalTick: checkpoint.state.tick,
       revision: 1, latestEventCursor: checkpoint.nextCursor - 1, engineCheckpoint: json(checkpoint), settlementKey: `combat:${sessionId}`,
       startedAt: now, lastAdvancedAt: now, expiresAt,
     } });
@@ -152,6 +152,28 @@ export async function createSession(input: {
     return row;
   });
   return rowView(created, events);
+}
+
+/** Starts the wall-clock combat timer. Sessions are created in `CREATED`
+ * status (never wall-clock-advanced) so the matchup screen / arena intro can
+ * be dwelt on indefinitely; the client calls this the instant the countdown
+ * hits "Fight!" so `lastAdvancedAt` reflects the real fight start rather than
+ * whenever the session row was created. */
+export async function beginSession(sessionId: string, actorPlayerId: string): Promise<CombatView> {
+  const row = await prisma.combatSessionRecord.findUnique({ where: { id: sessionId } });
+  if (!row || row.ownerPlayerId !== actorPlayerId) throw new CombatServiceError("SESSION_NOT_OWNED", 404);
+  if (row.status !== "CREATED") return rowView(row, await eventRows(row.id));
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + SESSION_LIFETIME_MS);
+  const updated = await prisma.$transaction(async tx => {
+    const write = await tx.combatSessionRecord.updateMany({ where: { id: row.id, revision: row.revision, status: "CREATED" }, data: {
+      status: "ACTIVE", startedAt: now, lastAdvancedAt: now, expiresAt, revision: { increment: 1 },
+    } });
+    if (write.count !== 1) return null;
+    return tx.combatSessionRecord.findUnique({ where: { id: row.id } });
+  });
+  if (!updated) throw new CombatServiceError("STALE_SESSION", 409);
+  return rowView(updated, await eventRows(updated.id));
 }
 
 function elapsedTicks(lastAdvancedAt: Date | null): number {

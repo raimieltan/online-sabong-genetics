@@ -378,9 +378,9 @@
     "semantic_hash": ""
   },
   "app/pve/[bossId]/fight/[chickenId]/page.tsx": {
-    "mtime": 1789423578.8404143,
-    "seen": 1789423629.5619001,
-    "ast_hash": "3e6c45b5e7d02ee18922d43f77b02830",
+    "mtime": 1789341997.405152,
+    "seen": 1789343024.246788,
+    "ast_hash": "247bf40b157247fd527926a209291892",
     "semantic_hash": ""
   },
   "app/pve/[bossId]/page.tsx": {
@@ -582,9 +582,9 @@
     "semantic_hash": "189832f9e6eef5cee7b1ed3df301f46a"
   },
   "lib/__tests__/chickenGenerator.test.ts": {
-    "mtime": 1789395388.8159199,
-    "seen": 1789423629.5638962,
-    "ast_hash": "918e51aff0fa81bfbe70bc1774d00c99",
+    "mtime": 1789285318.2400942,
+    "seen": 1789301068.978148,
+    "ast_hash": "e4f6e8ec677a01b4fc9a00a320e3ee23",
     "semantic_hash": ""
   },
   "lib/__tests__/chickens-route.test.ts": {
@@ -594,9 +594,9 @@
     "semantic_hash": "e1bdbe37c56e81b71ca784aecee83be8"
   },
   "lib/__tests__/combat.test.ts": {
-    "mtime": 1789395398.185151,
-    "seen": 1789423629.563918,
-    "ast_hash": "7e4e7a52df73da18a5accdce25a9cfee",
+    "mtime": 1789363405.3972747,
+    "seen": 1789395097.16764,
+    "ast_hash": "14bab6441ac68f3e2e3293054849cc54",
     "semantic_hash": ""
   },
   "lib/__tests__/combatPresentation.test.ts": {
@@ -612,10 +612,10 @@
     "semantic_hash": "9c7a7bcfd261112ded69b5d5b6c6f6d1"
   },
   "lib/__tests__/coopVillage.test.ts": {
-    "mtime": 1789395388.7480335,
-    "seen": 1789423629.5640929,
-    "ast_hash": "57fe8d3291aef0b94d3fea3439822fcf",
-    "semantic_hash": ""
+    "mtime": 1788691994.0869608,
+    "seen": 1788828404.916057,
+    "ast_hash": "793726a672c55b583c83298bf8417cc2",
+    "semantic_hash": "793726a672c55b583c83298bf8417cc2"
   },
   "lib/__tests__/economy.test.ts": {
     "mtime": 1788568470.5530152,
@@ -636,9 +636,9 @@
     "semantic_hash": ""
   },
   "lib/__tests__/genetics.test.ts": {
-    "mtime": 1789395389.01469,
-    "seen": 1789423629.564157,
-    "ast_hash": "4c0935e740db5917c571bd0fc1cee7e6",
+    "mtime": 1789300438.0059855,
+    "seen": 1789301068.9786618,
+    "ast_hash": "b701b54d48038c15118a1b75ba3274bd",
     "semantic_hash": ""
   },
   "lib/__tests__/growth.test.ts": {
@@ -744,9 +744,9 @@
     "semantic_hash": ""
   },
   "lib/__tests__/train-route.test.ts": {
-    "mtime": 1789395478.0123627,
-    "seen": 1789423629.5649018,
-    "ast_hash": "5714f525af6137d55c41a8d810926ca4",
+    "mtime": 1788829448.6612184,
+    "seen": 1788840441.728174,
+    "ast_hash": "ab17269aa319080ea6d256586197a00f",
     "semantic_hash": ""
   },
   "lib/__tests__/training.test.ts": {
@@ -1056,9 +1056,9 @@
     "semantic_hash": "0535131c90c74fe7d063d6298215dcc1"
   },
   "lib/coopVillage.ts": {
-    "mtime": 1789395388.6776235,
-    "seen": 1789423629.567626,
-    "ast_hash": "a8635daa47d94ccd385c89640fca3516",
+    "mtime": 1789089791.4153235,
+    "seen": 1789090889.095159,
+    "ast_hash": "ef42184f604a075604aeff6040d692d5",
     "semantic_hash": ""
   },
   "lib/db.ts": {
@@ -1122,9 +1122,9 @@
     "semantic_hash": ""
   },
   "lib/marketplace.ts": {
-    "mtime": 1789395422.8169308,
-    "seen": 1789423629.567901,
-    "ast_hash": "00067565840c0c5f467e96576c6b490d",
+    "mtime": 1789260438.4492164,
+    "seen": 1789262833.8714721,
+    "ast_hash": "3abe071c661274fd09ce8876b7af28f6",
     "semantic_hash": ""
   },
   "lib/medical/config.ts": {
@@ -2778,9 +2778,9 @@
     "semantic_hash": ""
   },
   "lib/combat/service.ts": {
-    "mtime": 1789423489.7373414,
-    "seen": 1789423629.5674372,
-    "ast_hash": "335f5a8769e66bf785e01c9f27511c14",
+    "mtime": 1789394121.2133071,
+    "seen": 1789395097.17057,
+    "ast_hash": "f0ee870fa0fa65d80f832a1a6e7a8d65",
     "semantic_hash": ""
   },
   "docs/combat/COMBAT-CANONICAL.md": {
@@ -2931,12 +2931,6 @@
     "mtime": 1789360760.3761318,
     "seen": 1789395097.172874,
     "ast_hash": "2b0d3bab096ce7d8192a45f34fa2cd3b",
-    "semantic_hash": ""
-  },
-  "app/api/combat/sessions/[sessionId]/begin/route.ts": {
-    "mtime": 1789423546.707763,
-    "seen": 1789423629.560427,
-    "ast_hash": "7fbf9d618ca640824f42b97781ab09b0",
     "semantic_hash": ""
   }
 }
