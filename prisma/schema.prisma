@@ -9,6 +9,11 @@ datasource db {
 
 model Player {
   id                 String               @id @default(uuid())
+  authUserId         String?              @unique @db.Uuid
+  displayName        String?
+  onboardingState    String               @default("PENDING")
+  provisionedAt      DateTime?
+  lastSeenAt         DateTime?
   createdAt          DateTime             @default(now())
   credits            Int                  @default(1000)
   tournamentTokens   Int                  @default(0)
