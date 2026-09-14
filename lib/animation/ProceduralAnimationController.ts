@@ -13,7 +13,11 @@
 
 import * as THREE from "three";
 
-import { ANIMATIONS } from "./animations";
+import { ANIMATIONS } from "./animations/index";
+import { aerialAttack } from './animations/aerial';
+import { applyAttackVariation } from "./animations/attackVariation";
+import { applyTacticalPosture } from './animations/tacticalPosture';
+import { applyTellPosture, TellPostureBlender } from './tellPosture';
 import { LayerRig } from "./layers";
 import { clamp, clamp01, smoothstep } from "./math";
 import { AnimationStateMachine } from "./stateMachine";
@@ -64,9 +68,13 @@ export class ProceduralAnimationController {
   private poseBase = makePose();
   private poseBlendFrom = makePose();
   private poseOut = makePose();
+  private readonly tellPosture = new TellPostureBlender();
 
   private playbackSpeed = 1;
   private locoPhase = 0;
+  private attackVariant = 0;
+  private simulationKey = "";
+  private simulationBlend = 1;
   private facing: "left" | "right" = "right";
   private gains: AnimationGains;
   private alive = true;
@@ -96,6 +104,7 @@ export class ProceduralAnimationController {
       velX: 0,
       velZ: 0,
       velY: 0,
+      wingFlapIntensity: 0,
       aimYaw: 0,
       alive: true,
     };
@@ -133,10 +142,11 @@ export class ProceduralAnimationController {
     const accepted = this.sm.request(target, finished, blendScale);
     if (!accepted) return;
     this.playbackSpeed = Math.max(0.2, intent.speed || 1);
+    this.attackVariant = variantFor(intent);
     copyPose(this.poseOut, this.poseBlendFrom);
     if (target === "death") this.alive = false;
     const power = HIT_POWER[target];
-    if (power != null) {
+    if (power != null && !intent.aerial) {
       const away = this.facing === "right" ? -1 : 1;
       this.layers.addHit(away, power);
     }
@@ -157,15 +167,34 @@ export class ProceduralAnimationController {
     velZ: number;
     velY: number;
     aimYaw: number;
+    simulationIntent?: AnimIntent;
   }): void {
     const dt = Math.min(frame.dt, 1 / 30);
     this.sm.update(dt);
+    const simulation = frame.simulationIntent;
+    if (simulation) {
+      const simulationKey = `${simulation.state}:${simulation.startedAt}`;
+      if (simulationKey !== this.simulationKey) {
+        copyPose(this.poseOut, this.poseBlendFrom);
+        this.simulationKey = simulationKey;
+        this.simulationBlend = 0;
+      }
+      this.sm.current = simulation.state;
+      this.sm.stateTime = (simulation.simulationProgress ?? 0) * ANIMATIONS[simulation.state].duration;
+      this.playbackSpeed = 1;
+      this.alive = !simulation.fatal;
+      const blendDuration = 0.08 * clamp(this.gains.inertia, 0.9, 1.4);
+      this.simulationBlend = clamp01(this.simulationBlend + dt / blendDuration);
+    } else {
+      this.simulationKey = "";
+      this.simulationBlend = 1;
+    }
 
     // --- internal auto-transitions ------------------------------------------
     const cur = this.sm.current;
     const anim = ANIMATIONS[cur];
     const done = !anim.loop && this.sm.stateTime * this.playbackSpeed >= anim.duration;
-    if (done) {
+    if (done && !simulation) {
       if (isAttack(cur)) this.sm.request("recovery", true);
       else if (cur === "recovery" || cur === "getup" || cur === "backstep" || cur === "knockback") {
         this.sm.request("ready", true);
@@ -177,10 +206,10 @@ export class ProceduralAnimationController {
     }
 
     // --- walk / run velocity overlay --------------------------------------
-    if (isRestState(this.sm.current)) {
+    if (!simulation && isRestState(this.sm.current)) {
       if (frame.speed > RUN_MIN) this.sm.request("run", true);
       else if (frame.speed > WALK_ENTER) this.sm.request("walk", true);
-    } else if ((this.sm.current === "walk" || this.sm.current === "run") && frame.speed <= WALK_EXIT) {
+    } else if (!simulation && (this.sm.current === "walk" || this.sm.current === "run") && frame.speed <= WALK_EXIT) {
       this.sm.request("ready", true);
     }
 
@@ -196,8 +225,11 @@ export class ProceduralAnimationController {
     ctx.velX = frame.velX;
     ctx.velZ = frame.velZ;
     ctx.velY = frame.velY;
+    ctx.wingFlapIntensity = flapIntensityFor(state, frame, simulation);
     ctx.aimYaw = frame.aimYaw;
     ctx.alive = this.alive;
+    ctx.moveKind = simulation?.moveKind;
+    ctx.attackVariant = simulation ? variantFor(simulation) : this.attackVariant;
     ctx.stateTime = this.sm.stateTime * this.playbackSpeed;
 
     if (state === "walk" || state === "run") {
@@ -212,16 +244,25 @@ export class ProceduralAnimationController {
 
     // --- pose: rest → base anim → blend → layers -------------------------
     resetPose(this.poseBase);
-    def.fn(ctx.t, ctx, this.poseBase);
+    if (simulation?.aerial && !simulation.fatal) aerialAttack(simulation.aerial, this.poseBase);
+    else def.fn(ctx.t, ctx, this.poseBase);
+    if (!simulation?.aerial && !simulation?.fatal) applyAttackVariation(state, ctx.t, ctx, this.poseBase);
+    if (simulation?.tacticalMode && !simulation.aerial && !simulation.fatal) {
+      applyTacticalPosture(simulation.tacticalMode, state, ctx, this.poseBase);
+    }
+    const tellLayers = this.tellPosture.update(simulation?.tellPosture, dt);
+    if (!simulation?.fatal) {
+      for (const tell of tellLayers) applyTellPosture(this.poseBase, tell.type, tell.strength, this.facing);
+    }
 
-    if (this.sm.transitionT < 1) {
-      lerpPose(this.poseBlendFrom, this.poseBase, smoothstep(this.sm.transitionT), this.poseOut);
+    const transitionT = simulation ? this.simulationBlend : this.sm.transitionT;
+    if (transitionT < 1) {
+      lerpPose(this.poseBlendFrom, this.poseBase, smoothstep(transitionT), this.poseOut);
     } else {
       copyPose(this.poseBase, this.poseOut);
     }
 
     this.layers.apply(this.poseOut, ctx, state);
-
     this.writeBones();
   }
 
@@ -239,6 +280,17 @@ export class ProceduralAnimationController {
   }
 }
 
+/** Stable visual variety from an authoritative action identity. */
+function variantFor(intent: AnimIntent): number {
+  const key = `${intent.moveKind ?? intent.state}:${intent.startedAt}`;
+  let hash = 2166136261;
+  for (let i = 0; i < key.length; i++) {
+    hash ^= key.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0) % 3;
+}
+
 function isAttack(s: AnimState): boolean {
   return (
     s === "peck_attack" || s === "quick_kick" || s === "heavy_kick" || s === "wing_strike" ||
@@ -248,4 +300,25 @@ function isAttack(s: AnimState): boolean {
 
 function isRestState(s: AnimState): boolean {
   return s === "idle" || s === "ready" || s === "idle_alert";
+}
+
+/** Strength for the additive flap layer. Base clips still own their silhouettes. */
+function flapIntensityFor(
+  state: AnimState,
+  frame: { speed: number; velY: number },
+  simulation?: AnimIntent
+): number {
+  if (simulation?.aerial) {
+    if (simulation.aerial.phase === "LAND") return 0.2;
+    // Deterministic short bursts: drive → breath → double drive, rather than
+    // an endlessly even flight loop. wingOffset de-synchronizes both birds.
+    const beat = ((simulation.aerial.tick + Math.round(simulation.aerial.wingOffset * 7)) % 17 + 17) % 17;
+    const burst = beat < 5 ? 1 : beat < 7 ? 0.22 : beat < 11 ? 0.78 : 0.34;
+    return 0.28 + burst * 0.58;
+  }
+  if (state === "wing_strike") return 0.62;
+  if (state === "jump_attack" || state === "flying_kick" || state === "double_kick") return 0.7;
+  if (state === "knockback" || state === "stagger" || state === "stagger_heavy") return 0.3;
+  if (state === "run") return 0.18;
+  return Math.min(0.2, Math.max(0, frame.speed - 0.4) * 0.12 + Math.abs(frame.velY) * 0.025);
 }

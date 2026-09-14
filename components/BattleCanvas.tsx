@@ -1,25 +1,87 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import type { Chicken, CombatLogEntry, FightingStyle } from "@/lib/types";
+import { useEffect, useRef, useState, type RefObject } from "react";
+import * as THREE from "three";
+import type { Chicken, CombatLogEntry, FightingStyle, HitZone, TellKind } from "@/lib/types";
 import { effectiveStat, maxHealth } from "@/lib/combat";
 import { resolvePhysicalProfile } from "@/lib/physicalProfile";
 import { AudioEngine } from "@/lib/audioEngine";
-import { ArenaBackdrop } from "@/components/chicken3d/ArenaBackdrop";
-import { BattleStage3D, WORLD_HALF_GAP } from "@/components/chicken3d/BattleStage3D";
+import {
+  BattleStage3D,
+  WORLD_HALF_GAP,
+  ANIM_PX_TO_WORLD,
+} from "@/components/chicken3d/BattleStage3D";
 import type { CameraCue } from "@/components/chicken3d/BattleStage3D";
-import type { ChickenPhysicsHandle } from "@/components/chicken3d/ChickenPhysicsRig";
-import { PX_TO_WORLD } from "@/components/chicken3d/ChickenModel";
+import {
+  KNOCKDOWN_RECOVER_MS,
+  scaledRecoveryMs,
+  type ChickenPhysicsHandle,
+} from "@/components/chicken3d/ChickenPhysicsRig";
+import type { ImpactVFXHandle } from "@/components/chicken3d/ImpactVFX";
+import {
+  BattleDebugOverlay,
+  makeDebugState,
+  type BattleDebugState,
+} from "@/components/chicken3d/BattleDebugOverlay";
 import type { FighterAnim } from "@/components/chicken3d/ChickenModel";
 import type { AnimIntent, AnimState } from "@/lib/animation/types";
+import { ANIMATIONS } from "@/lib/animation/animations";
 import type { StaggerLevel } from "@/lib/types";
+import { HitStopController } from "@/lib/animation/hitStop";
+import {
+  choreographyDuration,
+  getChoreography,
+  hitStopFor,
+  impactTime,
+} from "@/lib/animation/choreography";
+import { personalityForStyle } from "@/lib/animation/battlePersonality";
+import { DEFAULT_SPACING, dampFacingYaw } from "@/lib/animation/combatSpacing";
+import { roamPose, DEFAULT_ROAM } from "@/lib/animation/arenaRoam";
+import { damp } from "@/lib/animation/math";
+import { impactKindFor } from "@/lib/animation/impactVfx";
+import type { CameraCueName } from "@/lib/animation/cameraDirector";
+import { momentumHitStopBonus } from "@/lib/animation/momentumHitStop";
 
 interface BattleCanvasProps {
   chickenA: Chicken;
   chickenB: Chicken;
-  log: CombatLogEntry[];
+  /** Pre-baked replay (Battle/Live pages): the whole fight, known upfront and never mutated after mount. Ignored when `live` + `logRef` are used instead. */
+  log?: CombatLogEntry[];
   audioEnabled: boolean;
   onReplayEnd: () => void;
+  /** Fired the instant each log entry's impact actually lands (in sync with VFX/audio) — used by the /live feed's comic commentary overlay. Optional; existing callers are unaffected. */
+  onImpact?: (entry: CombatLogEntry) => void;
+  /**
+   * True for a live-coached fight (Spar) — `logRef` is read instead of
+   * `log`, and draining every currently-known entry does NOT end the replay
+   * (there may simply be no new exchange yet); the fight only ends once the
+   * caller also sets `fightOver`. Defaults to false (pre-existing pre-baked
+   * replay behavior via `log`, unchanged).
+   */
+  live?: boolean;
+  /**
+   * Required when `live` is true: a ref to an array the caller keeps
+   * pushing into in place (`arr.push(...)`, never replacing `.current`) as
+   * new exchanges resolve server-side. Passed as a ref rather than a plain
+   * array prop specifically so the caller never has to dereference
+   * `.current` during its own render to build this prop — it's read here
+   * only inside the effect below, same as every other ref this component
+   * takes (`cameraCue`, `physicsA`, etc.).
+   */
+  logRef?: RefObject<CombatLogEntry[]>;
+  /** Only meaningful with `live` — set once the server reports the fight is actually over, so the end-of-fight beat fires after the last queued entry finishes playing rather than immediately. */
+  fightOver?: boolean;
+  /**
+   * Only meaningful with `live`: fired each time the visual playback drains
+   * every currently-known log entry (i.e. it has nothing left queued to
+   * animate) — including mid-fight, not just at the very end. A caller that
+   * self-paces its own polling loop (Spar, main battle) should use this,
+   * rather than a fixed timer, to gate when it's safe to fetch the next
+   * turn: requesting more entries before the previous ones have actually
+   * been drawn lets the server's authoritative HP/state race ahead of what
+   * the fighter sprites are still animating out.
+   */
+  onCaughtUp?: () => void;
 }
 
 interface Particle {
@@ -67,15 +129,14 @@ const HIT_ZONE_LABELS: Record<string, string> = {
   right_leg: "R LEG",
 };
 
-// The lunge/flinch offsets below are computed in the old 2D-canvas pixel space
-// (r1BaseX/r2BaseX, PX_TO_WORLD) but drive the 3D mesh's world position directly
-// — they never touch physics. This clamp keeps a fighter's mesh from ever
-// closing more than the real 3D world-space gap between fighters, so a lunge
-// can't sail through the opponent. Leaves ~0.9 world units of clearance for
-// both chickens' body colliders (~0.4 world-unit radius each) plus the
-// defender's own flinch-back offset.
-const MAX_LUNGE_WORLD = WORLD_HALF_GAP - 0.9;
-const MAX_LUNGE_PX = MAX_LUNGE_WORLD / PX_TO_WORLD;
+// FighterAnim offsets are authored in a px-ish space and turned into a world
+// delta on the model by ANIM_PX_TO_WORLD (inner-group PX_TO_WORLD × stage
+// scale). The roam/lunge system below works in world units and converts at the
+// edge with this helper, so distances read as real arena metres.
+const worldToAnimPx = (w: number) => w / ANIM_PX_TO_WORLD;
+
+/** Body-width clearance (world units) a lunge always leaves between the two birds so a dash can't sail through the opponent. */
+const BODY_CLEARANCE_WORLD = 0.8;
 
 /** Cosmetic flinch magnitude by stagger tier — knockdown is suppressed here since real physics knockback/topple (ChickenPhysicsRig) takes over instead. */
 const STAGGER_FLINCH_MULT: Record<StaggerLevel, number> = {
@@ -86,16 +147,6 @@ const STAGGER_FLINCH_MULT: Record<StaggerLevel, number> = {
   medium: 1,
   heavy: 1.5,
   knockdown: 0,
-};
-
-/** Brief timescale freeze on impact so heavy hits read instantly instead of just playing through. */
-const HITSTOP_MS: Record<StaggerLevel, number> = {
-  none: 0,
-  light: 12,
-  stumble: 55,
-  medium: 40,
-  heavy: 90,
-  knockdown: 150,
 };
 
 /** Mid of the genetic IV range (40-99) — stat ratios below are normalized against this "average bird". */
@@ -123,7 +174,7 @@ function recoveryRatio(chicken: Chicken): number {
  * Per-style animation feel (spec: stats/genetics should read in the fight, not just the numbers).
  * `windupMult` scales the whole attack clip's duration uniformly (phase *fractions* never change,
  * so IMPACT_AT keeps lining up with the strike) — aggressive is snappier, counter/endurance more deliberate.
- * `lungeMult` scales dash distance (still clamped against MAX_LUNGE_PX). `idleLean`/`idleBobMult` shape
+ * `lungeMult` scales dash distance (still clamped so a lunge can never close past body clearance). `idleLean`/`idleBobMult` shape
  * the resting stance so styles read differently even before an exchange happens.
  */
 interface StyleAnimParams {
@@ -133,12 +184,29 @@ interface StyleAnimParams {
   idleBobMult: number;
 }
 
-const STYLE_ANIM_PARAMS: Record<FightingStyle, StyleAnimParams> = {
-  aggressive: { windupMult: 0.82, lungeMult: 1.18, idleLean: 0.1, idleBobMult: 1.25 },
-  counter: { windupMult: 1.2, lungeMult: 0.85, idleLean: -0.09, idleBobMult: 0.7 },
-  endurance: { windupMult: 1.12, lungeMult: 0.92, idleLean: -0.04, idleBobMult: 0.6 },
-  balanced: { windupMult: 1, lungeMult: 1, idleLean: 0, idleBobMult: 1 },
-};
+/**
+ * Adapter over the shared `battlePersonality` module (spec §24) so the rest of
+ * this file's call sites keep their existing field names. Personality is the
+ * single source of truth for presentation feel — no per-style table here.
+ */
+function styleAnimParams(style: FightingStyle): StyleAnimParams {
+  const p = personalityForStyle(style);
+  return {
+    windupMult: p.timingMul,
+    lungeMult: p.lungeCommit,
+    idleLean: p.idleLean,
+    idleBobMult: p.idleBobMul,
+  };
+}
+
+/** Extra neutral-beat pacing (seconds) added on top of each move's own recovery + minNeutralBeat. */
+const BASE_PACING_S = 0.3;
+
+/** Stagger tiers that produce a real-physics knockback impulse (spec §13/§25 debug readout). */
+const KNOCKBACK_STAGGERS = new Set<StaggerLevel>(["stumble", "medium", "heavy", "knockdown"]);
+
+/** Hold on the defeated bird before the winner's victory pose plays (spec §15: 0.25–0.5s). */
+const KO_RECOGNITION_MS = 350;
 
 /** Which attack move plays, driven by the server-rolled hit zone so variety falls out of combat data. */
 type MoveKind = "body" | "leg" | "wing" | "peck" | "spin_kick" | "aerial";
@@ -155,14 +223,25 @@ function pseudoRandom(seed: number): number {
  * a fraction of the time, seeded off the turn number so replays stay stable.
  */
 function moveKindForZone(hitZone: string | null, turn: number, isCrit: boolean): MoveKind {
+  // Roosters are flying birds — sabong roosters spend a lot of a real match
+  // airborne. `r` seeds a per-turn airborne roll shared across zones so aerials
+  // and spinning kicks show up frequently, not just on the odd wing hit.
+  const r = pseudoRandom(turn * 2.71);
+  if (isCrit && r < 0.7) return "aerial";
+
   if (hitZone === "left_leg" || hitZone === "right_leg") {
-    return isCrit || pseudoRandom(turn * 7.13) < 0.35 ? "spin_kick" : "leg";
+    if (r < 0.3) return "aerial";
+    return isCrit || pseudoRandom(turn * 7.13) < 0.55 ? "spin_kick" : "leg";
   }
   if (hitZone === "left_wing" || hitZone === "right_wing") {
-    return isCrit || pseudoRandom(turn * 3.37) < 0.3 ? "aerial" : "wing";
+    return isCrit || pseudoRandom(turn * 3.37) < 0.6 ? "aerial" : "wing";
   }
-  if (hitZone === "head" || hitZone === "neck") return "peck";
-  return "body";
+  if (hitZone === "head" || hitZone === "neck") {
+    return r < 0.4 ? "aerial" : "peck";
+  }
+  // body
+  if (r < 0.42) return "aerial";
+  return pseudoRandom(turn * 5.9) < 0.3 ? "spin_kick" : "body";
 }
 
 /** Un-signed, un-scaled pose values for one instant of an attack — the caller applies `dir` and `distance`. */
@@ -426,6 +505,30 @@ function attackStateForMove(moveKind: MoveKind): AnimState {
   }
 }
 
+/** Phase A.5 — TellKind → the procedural tell STATE that reads it a beat before the action resolves. */
+const TELL_ANIM_STATE: Record<TellKind, AnimState> = {
+  aggression: "tell_aggression",
+  patience: "tell_patience",
+  risk: "tell_risk",
+};
+
+/**
+ * Player-facing readout for a tell (spec Test A: "does a player start saying
+ * 'he's getting predictable, BAIT' out loud"). The pose itself is subtle by
+ * design — this floating callout is the legible confirmation that a tell is
+ * actually firing, separate from `?debugBattle`'s dev-only phase readout.
+ */
+const TELL_LABEL: Record<TellKind, string> = {
+  aggression: "ABOUT TO ENGAGE",
+  patience: "LOOKING FOR AN OPENING",
+  risk: "OVERCOMMITTING!",
+};
+const TELL_COLOR: Record<TellKind, string> = {
+  aggression: "#f97316",
+  patience: "#38bdf8",
+  risk: "#a855f7",
+};
+
 /** Server stagger tier (+ critical flag) → the defender's hit-reaction STATE. */
 function hitStateForStagger(stagger: StaggerLevel, isCritical: boolean): AnimState {
   if (isCritical) return "hit_critical";
@@ -461,14 +564,34 @@ function attackPoseFor(moveKind: MoveKind, progress: number): AttackPose {
 export default function BattleCanvas({
   chickenA,
   chickenB,
-  log,
+  log: replayLog,
   audioEnabled,
   onReplayEnd,
+  onImpact,
+  live = false,
+  logRef: liveLogRef,
+  fightOver = false,
+  onCaughtUp,
 }: BattleCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const audioRef = useRef<AudioEngine | null>(null);
   const animationRef = useRef<number | null>(null);
   const [currentTurn, setCurrentTurn] = useState(0);
+
+  // Callbacks are read through refs so a caller passing an inline (non-memoized)
+  // function — e.g. one that itself triggers a re-render, like /live's comic
+  // commentary — doesn't change the main effect's dependency array and force it
+  // to tear down and restart the whole replay from turn 0 on every impact.
+  const onReplayEndRef = useRef(onReplayEnd);
+  const onImpactRef = useRef(onImpact);
+  const fightOverRef = useRef(fightOver);
+  const onCaughtUpRef = useRef(onCaughtUp);
+  useEffect(() => {
+    onReplayEndRef.current = onReplayEnd;
+    onImpactRef.current = onImpact;
+    fightOverRef.current = fightOver;
+    onCaughtUpRef.current = onCaughtUp;
+  });
 
   // HUD state (React-rendered, updates once per turn — not per frame).
   const [hudA, setHudA] = useState({ hp: maxHealth(chickenA), maxHp: maxHealth(chickenA), fatigued: false });
@@ -497,12 +620,29 @@ export default function BattleCanvas({
 
   // Latest attack cue for the 3D camera — same attacker/crit/miss/timing info that
   // drives the 2D lunge below, mirrored here so BattleStage3D's camera can react
-  // without duplicating combat logic. `startTime` moving forward is what tells the
-  // camera a new attack began; it holds the last cue (doesn't reset to null) so the
+  // without duplicating combat logic. `seq` moving forward is what tells the
+  // camera a new beat began; it holds the last cue (doesn't reset to null) so the
   // camera has something to ease back from between turns.
   const cameraCueRef = useRef<CameraCue | null>(null);
 
+  // V2 presentation plumbing.
+  const vfxRef = useRef<ImpactVFXHandle>(null);
+  /** 0 while a hit-stop freeze is active — the 3D layer (camera, VFX) reads this to freeze in step with the 2D timeline. */
+  const hitStopScaleRef = useRef(1);
+  const debugRef = useRef<BattleDebugState>(makeDebugState());
+  const [showDebug] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).has("debugBattle")
+  );
+
   useEffect(() => {
+    // Resolved once per effect run (mount, or chickenA/chickenB/live change)
+    // — a ref dereference belongs here, never at the component's top-level
+    // render. Live mode reads the caller's growing array by reference, so
+    // appends after this point are visible without re-running this effect.
+    const log = live && liveLogRef ? liveLogRef.current : (replayLog ?? []);
+
     const audio = new AudioEngine(audioEnabled);
     audioRef.current = audio;
     audio.playMusic();
@@ -513,17 +653,18 @@ export default function BattleCanvas({
     if (!ctx) return;
 
     let lastTurnTime = Date.now();
-    // A full strike (coil → leap → wing-smack/scratch → recover) needs real
-    // hang time to read as a strike instead of a teleport, so the turn cadence
-    // is paced to let one finish (with a short beat to spare) before the next begins.
-    const TURN_INTERVAL = 900;
-    const ATTACK_DURATION = 700;
-    // Fraction of ATTACK_DURATION where the fighter is at full extension and
-    // actually makes contact — hit sound/particles/flash/HP fire here, not at
-    // turn start, so the impact lines up with the wing-smack instead of preceding it.
-    const IMPACT_AT = 0.52;
+    // Per-move pacing now comes from the choreography table (spec §2 / §16):
+    // each turn sets `turnInterval` to that move's full scripted length plus a
+    // personality-scaled neutral beat, so heavy moves visibly commit the bird
+    // and the fight stops feeling like machine-gun exchanges. Seeded with a
+    // short opening beat before the first turn.
+    let turnInterval = 850;
     let logIndex = 0;
     let replayEnded = false;
+    // Momentum juice (spec Phase B): last-seen momentum per fighter, so a big
+    // swing on the turn that lands can add a touch of extra hit-stop.
+    let prevMomentumA = 0;
+    let prevMomentumB = 0;
 
     const maxHpA = maxHealth(chickenA);
     const maxHpB = maxHealth(chickenB);
@@ -552,40 +693,111 @@ export default function BattleCanvas({
     Object.assign(animR1, { offsetX: 0, offsetY: 0, offsetZ: 0, rot: 0, yaw: 0, roll: 0, scaleX: 1, scaleY: 1, flash: 0, wingPhase: 0, legPhase: 0 });
     Object.assign(animR2, { offsetX: 0, offsetY: 0, offsetZ: 0, rot: 0, yaw: 0, roll: 0, scaleX: 1, scaleY: 1, flash: 0, wingPhase: 0, legPhase: 0 });
 
+    // --- arena roam state -------------------------------------------------------
+    // Each fighter's actual ring position in world units, damped toward
+    // roamPose() every frame so the pair circles, gives ground and cuts angles
+    // across the whole pit instead of standing pinned to ±WORLD_HALF_GAP. The
+    // lunge/flinch beats below ride on top of this base, and `engagement`
+    // mirrors it out for the deferred fireImpact closure (knockback direction,
+    // VFX placement) and the debug overlay.
+    const roam = (() => {
+      const seed = roamPose(Date.now(), DEFAULT_ROAM, {
+        styleA: chickenA.fightingStyle,
+        styleB: chickenB.fightingStyle,
+      });
+      return {
+        baseAX: seed.a.x, baseAZ: seed.a.z,
+        baseBX: seed.b.x, baseBZ: seed.b.z,
+        yawA: seed.yawA, yawB: seed.yawB,
+      };
+    })();
+    const engagement = {
+      ax: roam.baseAX, az: roam.baseAZ,
+      bx: roam.baseBX, bz: roam.baseBZ,
+      /** Unit vector from fighter A's ring position toward fighter B's. */
+      ux: 1, uz: 0,
+    };
+    let prevFrameNow = Date.now();
+    // Contact starts a short, explicit break-away beat. This is presentation
+    // state only: it never alters authoritative combat positions or damage.
+    let lastClashAt = -Infinity;
+
     // Mass is a bounded ~0.85–1.15 multiplier (see lib/physicalProfile) — heavier
     // birds take proportionally longer to complete a strike, lighter birds snap
     // faster. Computed once per fighter since physical genetics/style don't change mid-fight.
     const massA = resolvePhysicalProfile(chickenA).mass;
     const massB = resolvePhysicalProfile(chickenB).mass;
-    const styleA = STYLE_ANIM_PARAMS[chickenA.fightingStyle];
-    const styleB = STYLE_ANIM_PARAMS[chickenB.fightingStyle];
+    const styleA = styleAnimParams(chickenA.fightingStyle);
+    const styleB = styleAnimParams(chickenB.fightingStyle);
+    const personaA = personalityForStyle(chickenA.fightingStyle);
+    const personaB = personalityForStyle(chickenB.fightingStyle);
     const powerRatioA = powerRatio(chickenA);
     const powerRatioB = powerRatio(chickenB);
     const recoveryRatioA = recoveryRatio(chickenA);
     const recoveryRatioB = recoveryRatio(chickenB);
 
-    // Virtual clock: equals real time except during a hitstop freeze (triggered on
-    // impact below), when it holds flat so heavy hits get a beat of stillness before
-    // the animation continues — real Date.now() keeps advancing underneath it.
-    let timeOffset = 0;
-    let hitstopEndsAtRaw = 0;
-    let frozenVirtualNow = 0;
-    const triggerHitstop = (ms: number, virtualNow: number, rawNow: number) => {
-      if (ms <= 0) return;
-      hitstopEndsAtRaw = rawNow + ms;
-      frozenVirtualNow = virtualNow;
+    // Centralized virtual clock (spec §8): equals real time except during a
+    // hit-stop freeze, when `now()` holds flat so a heavy hit reads as violent.
+    // requestAnimationFrame / React / unrelated timers keep running.
+    const hitStop = new HitStopController();
+    debugRef.current = makeDebugState();
+    debugRef.current.attacker = chickenA.name;
+    debugRef.current.defender = chickenB.name;
+    debugRef.current.idealDistance = DEFAULT_SPACING.idealCombatDistance;
+    debugRef.current.attackRange = DEFAULT_SPACING.attackRange;
+    debugRef.current.minDistance = DEFAULT_SPACING.minimumCombatDistance;
+    debugRef.current.personaA = personaA.archetype;
+    debugRef.current.personaB = personaB.archetype;
+
+    // Opening establishing shot.
+    let cueSeq = 1;
+    cameraCueRef.current = {
+      attacker: "r1",
+      startTime: Date.now(),
+      isCrit: false,
+      isMiss: false,
+      stagger: "none",
+      seq: cueSeq,
+      cueName: "battle_start",
+      focus: "midpoint",
     };
+    const emitCue = (partial: Omit<CameraCue, "seq">) => {
+      cueSeq += 1;
+      cameraCueRef.current = { ...partial, seq: cueSeq };
+    };
+
+    // Phase A.5 — when a turn's attacker has a tell, the windup itself is
+    // deferred until the tell has read out, so a player gets a genuine beat
+    // to react before the action commits (spec: "read-and-anticipate, not a
+    // reaction-timing QTE"). Ticked against the same virtual hit-stop clock
+    // as everything else so a freeze mid-tell doesn't desync it.
+    let pendingBeginAttack: { at: number; run: () => void } | null = null;
 
     let activeAttack: {
       attacker: "r1" | "r2";
       startTime: number;
       duration: number;
+      /** Fraction of `duration` at which contact happens — from the move's choreography, not a fixed constant. */
+      impactAtFrac: number;
       isMiss: boolean;
       stagger: StaggerLevel;
+      isCritical: boolean;
       moveKind: MoveKind;
+      hitZone: HitZone | null;
       impactFired: boolean;
       fireImpact: (impactNow: number) => void;
+      /** Change in the attacker's momentum this turn vs last turn — feeds momentumHitStopBonus. */
+      momentumSwing: number;
     } | null = null;
+
+    /** Camera cue for a resolved hit (spec §21) — mirrors combatPresentation's cameraCueForResult, kept local since BattleCanvas already owns the per-turn entry shape. */
+    const cameraCueForEntry = (entry: CombatLogEntry, isFatal: boolean): CameraCueName => {
+      if (entry.isMiss) return "attack";
+      if (isFatal || entry.isCritical) return "critical";
+      if (entry.stagger === "knockdown") return "knockdown";
+      if (entry.stagger === "heavy" || entry.stagger === "stumble" || entry.stagger === "medium") return "impact_heavy";
+      return "impact_light";
+    };
 
     const spawnFeathers = (x: number, y: number, color: string, count = 12) => {
       for (let i = 0; i < count; i++) {
@@ -604,20 +816,27 @@ export default function BattleCanvas({
       }
     };
 
-    const spawnText = (x: number, y: number, text: string, color: string, fontSize = 20) => {
+    const spawnText = (x: number, y: number, text: string, color: string, fontSize = 20, maxLife = 45) => {
       floatingTexts.push({
         x: x + (Math.random() - 0.5) * 20, y, text, color, fontSize,
-        alpha: 1, life: 0, maxLife: 45,
+        alpha: 1, life: 0, maxLife,
       });
     };
 
     const animate = () => {
       const rawNow = Date.now();
-      if (rawNow < hitstopEndsAtRaw) {
-        // Freeze: keep virtual `now` pinned at the impact instant this frame.
-        timeOffset = frozenVirtualNow - rawNow;
+      hitStop.tick(rawNow);
+      const now = hitStop.now();
+      // Camera/VFX in the 3D layer read this to freeze in lockstep with the 2D timeline.
+      hitStopScaleRef.current = hitStop.frozen ? 0 : 1;
+      debugRef.current.hitStopMs = hitStop.remaining * 1000;
+
+      if (pendingBeginAttack && now >= pendingBeginAttack.at) {
+        const run = pendingBeginAttack.run;
+        pendingBeginAttack = null;
+        run();
       }
-      const now = rawNow + timeOffset;
+
       const currentAudio = audioRef.current;
       if (!currentAudio) return;
 
@@ -627,23 +846,51 @@ export default function BattleCanvas({
       const r2BaseX = width * 0.7;
       const roosterBaseY = height - 140;
 
-      if (now - lastTurnTime >= TURN_INTERVAL && logIndex < log.length) {
+      if (now - lastTurnTime >= turnInterval && logIndex < log.length) {
         const entry = log[logIndex];
         logIndex += 1;
         setCurrentTurn(entry.turn);
+        debugRef.current.turn = entry.turn;
 
         const isAAttacking = entry.attackerId === visualA.id;
         const defenderVisual = isAAttacking ? visualB : visualA;
         const targetX = isAAttacking ? r2BaseX : r1BaseX;
-        const targetColor = isAAttacking ? visualB.colorScheme.feathers : visualA.colorScheme.feathers;
+        const targetColor = isAAttacking ? visualB.colorScheme.body : visualA.colorScheme.body;
+
+        // Momentum juice: how much the attacker's momentum moved this turn,
+        // vs. the last turn we saw for that same fighter. `entry.momentum`
+        // is keyed by role (whoever attacked this turn), not by fighter.
+        const prevAttackerMomentum = isAAttacking ? prevMomentumA : prevMomentumB;
+        const attackerMomentum = entry.momentum?.attacker ?? prevAttackerMomentum;
+        const momentumSwing = attackerMomentum - prevAttackerMomentum;
+        if (entry.momentum) {
+          if (isAAttacking) {
+            prevMomentumA = entry.momentum.attacker;
+            prevMomentumB = entry.momentum.defender;
+          } else {
+            prevMomentumB = entry.momentum.attacker;
+            prevMomentumA = entry.momentum.defender;
+          }
+        }
 
         // Effects (HP, sound, particles, flash) are deferred to IMPACT_AT below,
         // fired once the fighter's wings/talons actually reach the target.
         const fireImpact = (impactNow: number) => {
+          lastClashAt = impactNow;
+          onImpactRef.current?.(entry);
           defenderVisual.hp = Math.max(0, entry.defenderHp);
           defenderVisual.fatigued = defenderVisual.hp < defenderVisual.maxHp * 0.3;
           const setDefenderHud = isAAttacking ? setHudB : setHudA;
           setDefenderHud({ hp: defenderVisual.hp, maxHp: defenderVisual.maxHp, fatigued: defenderVisual.fatigued });
+
+          // Side A is always the player's own fighter (both /battle and /spar
+          // pass their fighter as chickenA) — call out the turns where a
+          // pending command actually shaped its action, not just the small
+          // "Following: X" HUD tag that's easy to never notice.
+          const playerFollowedCommand = isAAttacking ? entry.attackerCommandFollowed : entry.defenderCommandFollowed;
+          if (playerFollowedCommand) {
+            spawnText(r1BaseX, roosterBaseY - 110, "🎯 command followed!", "#facc15", 18, 55);
+          }
 
           if (entry.isMiss) {
             currentAudio.playMiss();
@@ -673,7 +920,10 @@ export default function BattleCanvas({
             else animR1.flash = 1;
 
             const defenderPhysics = isAAttacking ? physicsR2Ref.current : physicsR1Ref.current;
-            const knockDir = isAAttacking ? 1 : -1;
+            // Knockback now follows the live attacker→defender axis (the pair can
+            // be at any angle in the ring), not a fixed ±X.
+            const knockDirX = isAAttacking ? engagement.ux : -engagement.ux;
+            const knockDirZ = isAAttacking ? engagement.uz : -engagement.uz;
             const attackerPowerRatio = isAAttacking ? powerRatioA : powerRatioB;
             const defenderRecoveryRatio = isAAttacking ? recoveryRatioB : recoveryRatioA;
 
@@ -684,6 +934,38 @@ export default function BattleCanvas({
             const defenderFacing: "left" | "right" = isAAttacking ? "left" : "right";
             const fatal = entry.defenderHp <= 0;
 
+            // Impact VFX (spec §19/§20): spawn at the defender's actual
+            // presentation-collider contact point when we can resolve one,
+            // falling back to a nominal chest-height point above the model.
+            const vfxKind = impactKindFor({
+              isMiss: entry.isMiss,
+              isCritical: entry.isCritical,
+              stagger: entry.stagger,
+            });
+            if (vfxKind && vfxRef.current) {
+              const zone = entry.hitZone ?? "body";
+              const zonePos = defenderPhysics?.getZonePosition(zone as HitZone) ?? null;
+              const fallbackX = isAAttacking ? engagement.bx : engagement.ax;
+              const fallbackZ = isAAttacking ? engagement.bz : engagement.az;
+              const pos =
+                zonePos ??
+                new THREE.Vector3(fallbackX, -0.2, fallbackZ);
+              const normal = new THREE.Vector3(knockDirX, 0.15, knockDirZ);
+              vfxRef.current.spawn(vfxKind, pos, normal);
+              const bloodIntensity = entry.isCritical
+                ? 1.8
+                : entry.isCrit
+                  ? 1.35
+                  : entry.stagger === "heavy" || entry.stagger === "knockdown"
+                    ? 1.2
+                    : 0.8;
+              vfxRef.current.spawnBlood(pos, normal, bloodIntensity);
+            }
+
+            debugRef.current.stagger = entry.stagger;
+            debugRef.current.knockback = KNOCKBACK_STAGGERS.has(entry.stagger);
+            debugRef.current.knockdown = entry.stagger === "knockdown" || fatal;
+
             if (fatal) {
               defenderIntent.current = {
                 state: "death",
@@ -693,16 +975,38 @@ export default function BattleCanvas({
                 facing: defenderFacing,
               };
               // KO always topples the body and never rights it (design decision 4).
-              defenderPhysics?.applyKnockback(knockDir, 0, "knockdown", attackerPowerRatio, defenderRecoveryRatio, {
+              defenderPhysics?.applyKnockback(knockDirX, knockDirZ, "knockdown", attackerPowerRatio, defenderRecoveryRatio, {
                 suppressRecovery: true,
               });
               const attackerIntent = isAAttacking ? intentR1Ref : intentR2Ref;
+              // Recognition beat (spec §15): the winner doesn't celebrate
+              // instantly — a short hold on the defeated bird first.
               attackerIntent.current = {
                 state: "victory",
-                startedAt: impactNow + 300,
+                startedAt: impactNow + KO_RECOGNITION_MS,
                 speed: 1,
                 facing: isAAttacking ? "right" : "left",
               };
+              emitCue({
+                attacker: isAAttacking ? "r1" : "r2",
+                startTime: impactNow,
+                isCrit: true,
+                isMiss: false,
+                stagger: entry.stagger,
+                cueName: "death",
+                focus: isAAttacking ? "r2" : "r1",
+              });
+              setTimeout(() => {
+                emitCue({
+                  attacker: isAAttacking ? "r1" : "r2",
+                  startTime: impactNow + KO_RECOGNITION_MS,
+                  isCrit: true,
+                  isMiss: false,
+                  stagger: entry.stagger,
+                  cueName: "victory",
+                  focus: isAAttacking ? "r1" : "r2",
+                });
+              }, KO_RECOGNITION_MS);
             } else {
               defenderIntent.current = {
                 state: hitStateForStagger(entry.stagger, entry.isCritical),
@@ -711,65 +1015,239 @@ export default function BattleCanvas({
                 stagger: entry.stagger,
                 facing: defenderFacing,
               };
-              defenderPhysics?.applyKnockback(knockDir, 0, entry.stagger, attackerPowerRatio, defenderRecoveryRatio);
+              defenderPhysics?.applyKnockback(knockDirX, knockDirZ, entry.stagger, attackerPowerRatio, defenderRecoveryRatio);
+
+              // A non-fatal knockdown holds its final pose by design (see
+              // ProceduralAnimationController) until something explicitly
+              // requests "getup" — nothing did, so a downed-but-alive bird
+              // used to stay on the ground forever. Fire that beat once the
+              // physics rig is done toppling it back upright.
+              if (entry.stagger === "knockdown") {
+                const getUpDelay = scaledRecoveryMs(KNOCKDOWN_RECOVER_MS, defenderRecoveryRatio);
+                setTimeout(() => {
+                  // Only stand up if nothing else (a later hit, a KO) has
+                  // since moved this fighter on to a different intent.
+                  if (defenderIntent.current?.state === "knockdown") {
+                    defenderIntent.current = {
+                      state: "getup",
+                      startedAt: Date.now(),
+                      speed: 1,
+                      facing: defenderFacing,
+                    };
+                  }
+                }, getUpDelay);
+              }
+
+              emitCue({
+                attacker: isAAttacking ? "r1" : "r2",
+                startTime: impactNow,
+                isCrit: entry.isCrit || entry.isCritical,
+                isMiss: false,
+                stagger: entry.stagger,
+                cueName: cameraCueForEntry(entry, false),
+                focus: isAAttacking ? "r2" : "r1",
+              });
             }
+          } else {
+            emitCue({
+              attacker: isAAttacking ? "r1" : "r2",
+              startTime: impactNow,
+              isCrit: false,
+              isMiss: true,
+              stagger: entry.stagger,
+              cueName: "attack",
+              focus: isAAttacking ? "r1" : "r2",
+            });
           }
 
           if (defenderVisual.fatigued) {
             currentAudio.playFatigue();
           }
 
-          if (logIndex >= log.length && !replayEnded) {
+          // Live mode: tell the caller the moment there's nothing left queued
+          // to animate, whether or not the fight is over yet — this is what
+          // lets a self-pacing poll loop (Spar, main battle) hold off
+          // fetching the next turn until this one has actually finished
+          // playing, instead of racing ahead of the visuals on a fixed timer.
+          if (live && logIndex >= log.length) {
+            onCaughtUpRef.current?.();
+          }
+
+          // Draining every currently-known entry just means "no new exchange
+          // has resolved yet" in live mode — only end once the caller also
+          // confirms the fight is over (fightOverRef), so this can idle here
+          // indefinitely across many appended entries.
+          if (logIndex >= log.length && !replayEnded && (!live || fightOverRef.current)) {
             replayEnded = true;
             currentAudio.playVictory();
-            setTimeout(() => onReplayEnd(), 1000);
+            setTimeout(() => onReplayEndRef.current(), 1000);
           }
         };
 
-        activeAttack = {
-          attacker: isAAttacking ? "r1" : "r2",
-          startTime: now,
-          duration:
-            ATTACK_DURATION *
-            (isAAttacking ? massA : massB) *
-            (isAAttacking ? styleA.windupMult : styleB.windupMult),
-          isMiss: entry.isMiss,
-          stagger: entry.stagger,
-          moveKind: moveKindForZone(entry.hitZone, entry.turn, entry.isCrit || entry.isCritical),
-          impactFired: false,
-          fireImpact,
-        };
-        cameraCueRef.current = {
-          attacker: activeAttack.attacker,
-          startTime: activeAttack.startTime,
-          isCrit: entry.isCrit || entry.isCritical,
-          isMiss: entry.isMiss,
-          stagger: entry.stagger,
+        const moveKind = moveKindForZone(entry.hitZone, entry.turn, entry.isCrit || entry.isCritical);
+        const attackState = attackStateForMove(moveKind);
+        // Choreography (spec §2): per-move anticipation/active/recovery beats
+        // and the contact fraction, mass- and personality-scaled uniformly so
+        // the impact frame stays lined up with the strike regardless of speed.
+        const choreo = getChoreography(attackState);
+        const attackerMass = isAAttacking ? massA : massB;
+        const attackerStyle = isAAttacking ? styleA : styleB;
+        const attackerPersona = isAAttacking ? personaA : personaB;
+        const scriptedDuration = choreographyDuration(choreo);
+        const durationMs = scriptedDuration * 1000 * attackerMass * attackerStyle.windupMult;
+        const impactAtFrac = impactTime(choreo) / scriptedDuration;
+
+        const attackerIntent = isAAttacking ? intentR1Ref : intentR2Ref;
+
+        // The windup takes an explicit `startAt` (rather than closing over
+        // `now`) so a tell below can genuinely push it back in time instead
+        // of just overlaying on top of it — the read-then-commit beat is the
+        // whole point of the mechanic (spec Phase A.5).
+        const beginWindup = (startAt: number) => {
+          activeAttack = {
+            attacker: isAAttacking ? "r1" : "r2",
+            startTime: startAt,
+            duration: durationMs,
+            impactAtFrac,
+            isMiss: entry.isMiss,
+            stagger: entry.stagger,
+            isCritical: entry.isCritical,
+            moveKind,
+            hitZone: entry.hitZone,
+            impactFired: false,
+            fireImpact,
+            momentumSwing,
+          };
+          emitCue({
+            attacker: activeAttack.attacker,
+            startTime: activeAttack.startTime,
+            isCrit: entry.isCrit || entry.isCritical,
+            isMiss: entry.isMiss,
+            stagger: entry.stagger,
+            cueName: "attack",
+            focus: activeAttack.attacker,
+          });
+          debugRef.current.move = moveKind;
+          if (isAAttacking) debugRef.current.attackerAnim = attackState;
+          else debugRef.current.defenderAnim = attackState;
+          debugRef.current.phase = "ANTICIPATION";
+
+          // Attacker plays its attack windup — hit or miss (a MISS just never
+          // triggers a defender reaction; the animation still swings).
+          attackerIntent.current = {
+            state: attackState,
+            startedAt: startAt,
+            speed: 1 / (attackerMass * attackerStyle.windupMult),
+            moveKind,
+            facing: isAAttacking ? "right" : "left",
+          };
         };
 
-        // Attacker plays its attack windup now — hit or miss (a MISS just never
-        // triggers a defender reaction; the animation still swings).
-        const attackerIntent = isAAttacking ? intentR1Ref : intentR2Ref;
-        attackerIntent.current = {
-          state: attackStateForMove(activeAttack.moveKind),
-          startedAt: now,
-          speed: 1 / (isAAttacking ? styleA.windupMult : styleB.windupMult),
-          moveKind: activeAttack.moveKind,
-          facing: isAAttacking ? "right" : "left",
-        };
+        // Phase A.5 tells: the attacker's own tell (aggression/patience/risk)
+        // plays first and genuinely delays the windup below — never the
+        // exact move, just the coarse intent, so a player has a real beat to
+        // read and react before anything commits. The defender's tell (their
+        // own independently-chosen action for this same turn) is a
+        // concurrent read only — it doesn't gate pacing since the defender
+        // isn't the one about to swing.
+        const tellState = entry.attackerTell ? TELL_ANIM_STATE[entry.attackerTell] : null;
+        const tellDelayMs = tellState ? ANIMATIONS[tellState].duration * 1000 : 0;
+
+        if (tellState) {
+          attackerIntent.current = {
+            state: tellState,
+            startedAt: now,
+            speed: 1,
+            facing: isAAttacking ? "right" : "left",
+          };
+          debugRef.current.phase = "TELL";
+          pendingBeginAttack = { at: now + tellDelayMs, run: () => beginWindup(hitStop.now()) };
+          // Held for the tell's full readout, not the ~0.75s default (a "-12
+          // dmg" number can fade fast; a tell needs to still be on screen
+          // when the pose it's labeling is still playing).
+          spawnText(
+            isAAttacking ? r1BaseX : r2BaseX,
+            roosterBaseY - 100,
+            TELL_LABEL[entry.attackerTell!],
+            TELL_COLOR[entry.attackerTell!],
+            16,
+            (tellDelayMs / 1000) * 60
+          );
+        } else {
+          beginWindup(now);
+        }
+
+        if (entry.defenderTell) {
+          const defenderTellIntent = isAAttacking ? intentR2Ref : intentR1Ref;
+          defenderTellIntent.current = {
+            state: TELL_ANIM_STATE[entry.defenderTell],
+            startedAt: now,
+            speed: 1,
+            facing: isAAttacking ? "left" : "right",
+          };
+          const defenderTellDurationMs = ANIMATIONS[TELL_ANIM_STATE[entry.defenderTell]].duration * 1000;
+          spawnText(
+            isAAttacking ? r2BaseX : r1BaseX,
+            roosterBaseY - 100,
+            TELL_LABEL[entry.defenderTell],
+            TELL_COLOR[entry.defenderTell],
+            16,
+            (defenderTellDurationMs / 1000) * 60
+          );
+        }
+
+        // Next turn begins only once this attack's full choreography (including
+        // its own recovery) has played out, plus a personality-scaled neutral
+        // beat (spec §16) — eliminates back-to-back "machine-gun" exchanges.
+        // A tell extends this, since the windup itself was pushed back by
+        // tellDelayMs.
+        turnInterval = tellDelayMs + durationMs + (choreo.minNeutralBeat + BASE_PACING_S) * 1000 * attackerPersona.neutralBeatMul;
 
         lastTurnTime = now;
       }
 
       const t = now / 250;
-      // Slow independent clock for pacing/circling footwork between exchanges —
-      // much lower frequency than the idle bob above so it reads as deliberate
-      // ring-craft (sizing each other up) rather than a jitter on top of it.
-      const circleT = now / 3400;
+
+      // Advance the shared ring-position target and damp both fighters toward
+      // it — pulled tighter (engageBias) while an attack is live so the roamer
+      // doesn't drag a lunging bird back out of its own strike range.
+      const frameDt = Math.min(Math.max((now - prevFrameNow) / 1000, 0), 1 / 15);
+      prevFrameNow = now;
+      const resetBias = clamp(1 - (now - lastClashAt) / 1900, 0, 1);
+      const targetPose = roamPose(now, DEFAULT_ROAM, {
+        styleA: chickenA.fightingStyle,
+        styleB: chickenB.fightingStyle,
+        activeAttacker: activeAttack?.attacker,
+        resetBias,
+      });
+      const ROAM_LAMBDA = 2.4;
+      roam.baseAX = damp(roam.baseAX, targetPose.a.x, ROAM_LAMBDA, frameDt);
+      roam.baseAZ = damp(roam.baseAZ, targetPose.a.z, ROAM_LAMBDA, frameDt);
+      roam.baseBX = damp(roam.baseBX, targetPose.b.x, ROAM_LAMBDA, frameDt);
+      roam.baseBZ = damp(roam.baseBZ, targetPose.b.z, ROAM_LAMBDA, frameDt);
+      roam.yawA = dampFacingYaw(roam.yawA, targetPose.yawA, 3, frameDt);
+      roam.yawB = dampFacingYaw(roam.yawB, targetPose.yawB, 3, frameDt);
+
+      const gapX = roam.baseBX - roam.baseAX;
+      const gapZ = roam.baseBZ - roam.baseAZ;
+      const gapDist = Math.max(0.1, Math.hypot(gapX, gapZ));
+      const ux = gapX / gapDist;
+      const uz = gapZ / gapDist;
+      // Perpendicular to the engagement axis — aerial loop-arounds swing out
+      // along this before striking back in.
+      const perpX = -uz;
+      const perpZ = ux;
+      engagement.ax = roam.baseAX;
+      engagement.az = roam.baseAZ;
+      engagement.bx = roam.baseBX;
+      engagement.bz = roam.baseBZ;
+      engagement.ux = ux;
+      engagement.uz = uz;
+
       if (!activeAttack || activeAttack.attacker !== "r1") {
-        animR1.offsetX = Math.sin(circleT * 0.7) * 9;
-        animR1.offsetZ = Math.sin(circleT) * 26;
-        animR1.yaw = Math.sin(circleT + Math.PI / 2) * 0.32;
+        animR1.offsetX = worldToAnimPx(roam.baseAX - -WORLD_HALF_GAP);
+        animR1.offsetZ = worldToAnimPx(roam.baseAZ);
+        animR1.yaw = roam.yawA;
         animR1.roll = 0;
         animR1.offsetY = Math.sin(t) * 4 * styleA.idleBobMult;
         // idleLean is signed toward the opponent (r1 faces right, so +lean tilts forward).
@@ -780,9 +1258,9 @@ export default function BattleCanvas({
         animR1.legPhase = Math.sin(t * 5);
       }
       if (!activeAttack || activeAttack.attacker !== "r2") {
-        animR2.offsetX = Math.cos(circleT * 0.7) * 9;
-        animR2.offsetZ = Math.cos(circleT * 1.1) * 26;
-        animR2.yaw = -Math.cos(circleT + Math.PI / 2) * 0.32;
+        animR2.offsetX = worldToAnimPx(roam.baseBX - WORLD_HALF_GAP);
+        animR2.offsetZ = worldToAnimPx(roam.baseBZ);
+        animR2.yaw = roam.yawB;
         animR2.roll = 0;
         animR2.offsetY = Math.cos(t * 0.9) * 4 * styleB.idleBobMult;
         // r2 faces left, so its forward lean is the negative direction.
@@ -796,55 +1274,137 @@ export default function BattleCanvas({
       if (activeAttack) {
         const elapsed = now - activeAttack.startTime;
         const progress = Math.min(1, elapsed / activeAttack.duration);
+        const impactAt = activeAttack.impactAtFrac;
 
-        if (!activeAttack.impactFired && progress >= IMPACT_AT) {
+        if (!activeAttack.impactFired && progress >= impactAt) {
           activeAttack.impactFired = true;
           // Trigger with THIS frame's clock — fireImpact was built at attack-start and
           // would otherwise freeze against a stale timestamp from turns ago.
-          triggerHitstop(HITSTOP_MS[activeAttack.stagger], now, rawNow);
+          const choreo = getChoreography(attackStateForMove(activeAttack.moveKind));
+          const hitStopSeconds = activeAttack.isMiss
+            ? 0
+            : hitStopFor(choreo, activeAttack.stagger, activeAttack.isCritical) +
+              momentumHitStopBonus(activeAttack.momentumSwing);
+          hitStop.trigger(hitStopSeconds, rawNow);
+          debugRef.current.hitStopMs = hitStopSeconds * 1000;
+          debugRef.current.phase = "IMPACT";
           activeAttack.fireImpact(now);
+        } else if (activeAttack.impactFired) {
+          debugRef.current.phase = "RECOVERY";
+        } else {
+          debugRef.current.phase = "ANTICIPATION";
         }
 
         if (progress < 1) {
-          const dir = activeAttack.attacker === "r1" ? 1 : -1;
-          const attackerAnim = activeAttack.attacker === "r1" ? animR1 : animR2;
-          const defenderAnim = activeAttack.attacker === "r1" ? animR2 : animR1;
-          const attackerStyle = activeAttack.attacker === "r1" ? styleA : styleB;
-          const distance = (r2BaseX - r1BaseX) * 0.42 * attackerStyle.lungeMult;
+          const attackerIsA = activeAttack.attacker === "r1";
+          // Pitch (rot, ChickenModel's rotation.x) convention is per-rig, not
+          // per-frame facing — r1's base facing is +X, r2's is −X, so a
+          // "leaning forward" pitch needs the opposite sign for r2.
+          const dir = attackerIsA ? 1 : -1;
+          const attackerAnim = attackerIsA ? animR1 : animR2;
+          const defenderAnim = attackerIsA ? animR2 : animR1;
+          const attackerAnchorX = attackerIsA ? -WORLD_HALF_GAP : WORLD_HALF_GAP;
+          const defenderAnchorX = attackerIsA ? WORLD_HALF_GAP : -WORLD_HALF_GAP;
+          const attackerBaseX = attackerIsA ? roam.baseAX : roam.baseBX;
+          const attackerBaseZ = attackerIsA ? roam.baseAZ : roam.baseBZ;
+          const defenderBaseX = attackerIsA ? roam.baseBX : roam.baseAX;
+          const defenderBaseZ = attackerIsA ? roam.baseBZ : roam.baseAZ;
+          const attackerStyle = attackerIsA ? styleA : styleB;
+          // Commitment crosses almost the whole live gap.  Unlike the old 42%
+          // lunge this stays visibly direct from medium/long range, while the
+          // clearance clamp below still prevents crossing through the defender.
+          const distanceWorld = Math.max(0, gapDist - BODY_CLEARANCE_WORLD) * attackerStyle.lungeMult;
 
           // Phase timeline, as a fraction of (mass-scaled) attack duration — shared
-          // across move kinds so IMPACT_AT keeps lining up with the strike phase:
+          // across move kinds so the choreography's contact fraction keeps lining
+          // up with the strike phase:
           //   0.00–0.16  coil    — crouch and pull back before the leap
           //   0.16–0.52  leap    — jump forward on an arc toward the opponent
-          //   0.52–0.70  strike  — full extension, the move's signature hit
+          //   ~impactAt  strike  — full extension, the move's signature hit
           //   0.70–1.00  recover — settle back down to the base stance
-          const { reach, hop, lean, stretch, wingSwipe, legKick } = attackPoseFor(activeAttack.moveKind, progress);
+          const { reach, hop, lean, stretch, wingSwipe, legKick, lateral, spin, roll } = attackPoseFor(
+            activeAttack.moveKind,
+            progress
+          );
 
-          const rawLunge = reach * distance * dir;
-          attackerAnim.offsetX = Math.sign(rawLunge) * Math.min(Math.abs(rawLunge), MAX_LUNGE_PX);
+          // Forward lunge rides the live attacker→defender axis (any angle in
+          // the ring), clamped so a dash always leaves body clearance and can
+          // never sail through the opponent. Aerial moves add a perpendicular
+          // `lateral` swing-out so an aerial reads as looping around, not just
+          // dashing straight in.
+          const maxLungeWorld = Math.max(0, gapDist - BODY_CLEARANCE_WORLD);
+          const rawLungeWorld = reach * distanceWorld;
+          const lungeMagWorld =
+            Math.sign(rawLungeWorld) * Math.min(Math.abs(rawLungeWorld), maxLungeWorld);
+          const lateralWorld = (lateral ?? 0) * distanceWorld * 0.7;
+
+          const attackerX = attackerBaseX + ux * lungeMagWorld + perpX * lateralWorld;
+          const attackerZ = attackerBaseZ + uz * lungeMagWorld + perpZ * lateralWorld;
+
+          attackerAnim.offsetX = worldToAnimPx(attackerX - attackerAnchorX);
+          attackerAnim.offsetZ = worldToAnimPx(attackerZ);
           attackerAnim.offsetY = -hop;
+          attackerAnim.yaw = (attackerIsA ? roam.yawA : roam.yawB) + (spin ?? 0);
+          attackerAnim.roll = roll ?? 0;
           attackerAnim.rot = lean * dir;
           attackerAnim.scaleX = 1 - stretch * 0.08;
           attackerAnim.scaleY = 1 + stretch * 0.12;
           attackerAnim.wingPhase = wingSwipe;
           attackerAnim.legPhase = legKick;
 
-          if (progress > 0.45 && !activeAttack.isMiss) {
+          const flinchStart = Math.max(0.1, impactAt - 0.07);
+          if (progress > flinchStart && !activeAttack.isMiss) {
             // Defender flinches on impact: knocked back a step, wings flare, braces.
             // Scaled by stagger tier — knockdown is suppressed here entirely since
             // ChickenPhysicsRig's real knockback/topple physics drives it instead.
             const flinchMult = STAGGER_FLINCH_MULT[activeAttack.stagger];
-            const flinchP = Math.min(1, (progress - 0.45) / 0.35);
+            const flinchP = Math.min(1, (progress - flinchStart) / Math.max(0.05, 1 - flinchStart));
             const flinch = Math.sin(flinchP * Math.PI);
-            const rawFlinch = -flinch * 18 * dir * flinchMult;
-            defenderAnim.offsetX = Math.sign(rawFlinch) * Math.min(Math.abs(rawFlinch), MAX_LUNGE_PX * 0.6);
+            const flinchMaxWorld = Math.max(0, gapDist - BODY_CLEARANCE_WORLD) * 0.35;
+            const flinchWorld = Math.min(flinch * 0.4 * flinchMult, flinchMaxWorld);
+
+            const defenderX = defenderBaseX + ux * flinchWorld;
+            const defenderZ = defenderBaseZ + uz * flinchWorld;
+            defenderAnim.offsetX = worldToAnimPx(defenderX - defenderAnchorX);
+            defenderAnim.offsetZ = worldToAnimPx(defenderZ);
             defenderAnim.rot = -flinch * 0.22 * dir * flinchMult;
             defenderAnim.wingPhase = flinch * 0.5 * Math.max(flinchMult, 0.6);
           }
         } else {
           activeAttack = null;
+          debugRef.current.phase = "COMPLETE";
+          emitCue({
+            attacker: "r1",
+            startTime: now,
+            isCrit: false,
+            isMiss: false,
+            stagger: "none",
+            cueName: "neutral",
+            focus: "midpoint",
+          });
         }
+      } else {
+        // A pending tell also holds `activeAttack` null (the whole point —
+        // the windup is genuinely delayed, not just overlaid), so without
+        // this check the debug phase gets stomped back to APPROACH the very
+        // next frame and "TELL" never has a chance to actually be visible.
+        debugRef.current.phase = pendingBeginAttack ? "TELL" : "APPROACH";
       }
+
+      debugRef.current.distance = gapDist;
+      debugRef.current.preferredA = targetPose.preferredA;
+      debugRef.current.preferredB = targetPose.preferredB;
+      debugRef.current.bandA = targetPose.distanceBandA;
+      debugRef.current.bandB = targetPose.distanceBandB;
+      debugRef.current.intentA = targetPose.intentA;
+      debugRef.current.intentB = targetPose.intentB;
+      debugRef.current.pressureA = targetPose.pressureA;
+      debugRef.current.pressureB = targetPose.pressureB;
+      debugRef.current.arenaRadius = DEFAULT_ROAM.arenaRadius;
+      debugRef.current.posA = `${roam.baseAX.toFixed(1)}, ${roam.baseAZ.toFixed(1)}`;
+      debugRef.current.posB = `${roam.baseBX.toFixed(1)}, ${roam.baseBZ.toFixed(1)}`;
+      debugRef.current.cameraTarget = `${((roam.baseAX + roam.baseBX) / 2).toFixed(1)}, ${((roam.baseAZ + roam.baseBZ) / 2).toFixed(1)}`;
+      debugRef.current.cameraDesiredDistance = 13.5 + gapDist * .9;
 
       animR1.flash = Math.max(0, animR1.flash - 0.08);
       animR2.flash = Math.max(0, animR2.flash - 0.08);
@@ -895,20 +1455,43 @@ export default function BattleCanvas({
         ctx.restore();
       }
 
-      if (logIndex < log.length || activeAttack || particles.length > 0 || floatingTexts.length > 0) {
+      // Live mode must keep ticking even when it's caught up to every entry
+      // seen so far — that's not "done", it's "waiting for the next step
+      // response" (see the matching comment at the log-drain check above).
+      // Stopping here would freeze the roam/idle poses at whatever they were
+      // on the very first frame, since logRef starts empty before the first
+      // fetch resolves.
+      if (
+        logIndex < log.length ||
+        activeAttack ||
+        particles.length > 0 ||
+        floatingTexts.length > 0 ||
+        (live && !fightOverRef.current)
+      ) {
         animationRef.current = requestAnimationFrame(animate);
       }
     };
 
     animationRef.current = requestAnimationFrame(animate);
 
+    const vfxHandle = vfxRef.current;
     return () => {
       if (animationRef.current) {
         cancelAnimationFrame(animationRef.current);
       }
       audio.stopMusic();
+      hitStop.reset();
+      hitStopScaleRef.current = 1;
+      vfxHandle?.clear();
     };
-  }, [chickenA, chickenB, log, audioEnabled, onReplayEnd]);
+    // `replayLog`/`liveLogRef` intentionally excluded: a live caller pushes
+    // new entries into `liveLogRef.current` in place rather than ever
+    // swapping the array or ref identity, so the effect must not restart
+    // (and re-trigger audio/camera/roam init) just because more entries
+    // arrived. Pre-baked replay callers never change `replayLog` after
+    // mount anyway, so this is a no-op for them.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chickenA, chickenB, audioEnabled, live]);
 
   useEffect(() => {
     if (audioRef.current) {
@@ -918,7 +1501,6 @@ export default function BattleCanvas({
 
   return (
     <div className="relative mx-auto aspect-[16/9] w-full max-w-[142.2vh] overflow-hidden">
-      <ArenaBackdrop />
       <div className="absolute inset-0">
         <BattleStage3D
           fighterA={chickenA}
@@ -930,9 +1512,13 @@ export default function BattleCanvas({
           physicsA={physicsR1Ref}
           physicsB={physicsR2Ref}
           cameraCue={cameraCueRef}
+          vfxRef={vfxRef}
+          hitStopScaleRef={hitStopScaleRef}
         />
       </div>
       <canvas ref={canvasRef} width={1600} height={686} className="absolute inset-0 h-full w-full" />
+
+      {showDebug && <BattleDebugOverlay stateRef={debugRef} />}
 
       <div className="absolute top-4 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-xl border border-(--color-gold)/30 bg-black/70 px-5 py-2 shadow-lg backdrop-blur">
         <span className="font-display text-sm font-semibold uppercase tracking-widest text-(--color-gold-bright)">

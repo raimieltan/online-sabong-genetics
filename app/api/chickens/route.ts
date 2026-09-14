@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { generateRandomChicken } from "@/lib/chickenGenerator";
+import { generateUniqueRandomChicken } from "@/lib/chickenGenerator";
 import { prisma } from "@/lib/db";
 import { getOrCreatePlayer } from "@/lib/player";
 
@@ -10,12 +10,37 @@ export async function GET() {
     where: { playerId: player.id },
     orderBy: { createdAt: "asc" },
   });
-  return NextResponse.json(chickens);
+  const developmentRows = await prisma.roosterTraining.findMany({
+    where: { chickenId: { in: chickens.map((chicken) => chicken.id) } },
+  });
+  const developmentByChicken = new Map(
+    developmentRows.map((row) => [row.chickenId, {
+      physicalXP: row.physicalXP,
+      combatXP: row.combatXP,
+      tacticalXP: row.tacticalXP,
+      disciplineXP: row.disciplineXP,
+      recoveryXP: row.recoveryXP,
+      effortSpent: row.effortSpent,
+      trainingPotential: row.trainingPotential,
+      discovered: row.discovered,
+      traits: row.traits,
+      breakthroughs: row.breakthroughs,
+      traitProgress: row.traitProgress,
+      specializationProgress: row.specializationProgress,
+    }]),
+  );
+  return NextResponse.json(chickens.map((chicken) => ({
+    ...chicken,
+    trainingDevelopment: developmentByChicken.get(chicken.id) ?? null,
+  })));
 }
 
 export async function POST() {
   const player = await getOrCreatePlayer();
-  const generated = generateRandomChicken();
+  const generated = await generateUniqueRandomChicken({}, async (name) => {
+    const existing = await prisma.chicken.findFirst({ where: { name }, select: { id: true } });
+    return existing !== null;
+  });
 
   const chicken = await prisma.chicken.create({
     data: {
@@ -27,8 +52,11 @@ export async function POST() {
       fatherId: generated.parents.fatherId,
       motherId: generated.parents.motherId,
       bloodlineId: generated.bloodlineId,
+      breed: generated.breed,
       iv: generated.iv,
       ev: generated.ev,
+      physical: generated.physical,
+      mutations: generated.mutations,
       traits: generated.traits,
       age: generated.age,
       health: generated.health,

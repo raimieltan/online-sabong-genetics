@@ -1,14 +1,19 @@
 "use client";
 
+import Link from "next/link";
+
 import type { Chicken, CombatResult } from "@/lib/types";
+import type { BattleReport } from "@/lib/combat/battleReport";
+import { BattleReportPanel } from "@/components/BattleReportPanel";
 
 interface CombatResultsScreenProps {
   result: CombatResult;
   playerChicken: Chicken;
   opponent: Chicken;
   creditsEarned?: number;
+  /** Structured post-fight summary (spec §70) for `playerChicken`'s side, when the fight route computed one. */
+  battleReport?: BattleReport;
   onFightAgain: () => void;
-  onHeal: () => void;
 }
 
 const OUTCOME_LABEL: Record<CombatResult["outcomeReason"], string> = {
@@ -22,11 +27,12 @@ export default function CombatResultsScreen({
   playerChicken,
   opponent,
   creditsEarned = 0,
+  battleReport,
   onFightAgain,
-  onHeal,
 }: CombatResultsScreenProps) {
   const didWin = result.winnerId === playerChicken.id;
   const playerInjured = result.injuredChickenId === playerChicken.id;
+  const analysis = result.analysis?.[playerChicken.id];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4 backdrop-blur-sm">
@@ -62,7 +68,7 @@ export default function CombatResultsScreen({
             <p className="text-sm font-semibold uppercase tracking-[0.2em] text-red-400">
               {playerChicken.name} suffered a critical injury
             </p>
-            <p className="mt-1 text-xs text-(--color-text-muted)">Heal before fighting again.</p>
+            <p className="mt-1 text-xs text-(--color-text-muted)">Visit the clinic to treat wounds before fighting again.</p>
           </div>
         )}
 
@@ -81,14 +87,25 @@ export default function CombatResultsScreen({
           </div>
         </div>
 
+        {analysis && (
+          <div className="mb-6 rounded-2xl border border-(--color-gold)/20 bg-black/25 p-4">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-[0.2em] text-(--color-text-muted)">
+              Battle Analysis
+            </p>
+            <p className="whitespace-pre-line text-sm leading-relaxed text-(--foreground)">{analysis}</p>
+          </div>
+        )}
+
+        {battleReport && <div className="mb-6"><BattleReportPanel report={battleReport} /></div>}
+
         <div className="flex flex-col gap-3 sm:flex-row">
           {playerInjured ? (
-            <button
-              onClick={onHeal}
-              className="flex-1 rounded-xl bg-gradient-to-b from-(--color-gold-bright) to-(--color-gold) px-4 py-3 font-display font-semibold uppercase tracking-wide text-(--color-ink) hover:brightness-110"
+            <Link
+              href="/clinic"
+              className="flex-1 rounded-xl bg-gradient-to-b from-(--color-gold-bright) to-(--color-gold) px-4 py-3 text-center font-display font-semibold uppercase tracking-wide text-(--color-ink) hover:brightness-110"
             >
-              Heal
-            </button>
+              🏥 Go to Clinic
+            </Link>
           ) : (
             <button
               onClick={onFightAgain}

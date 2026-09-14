@@ -9,12 +9,20 @@
     "lint": "eslint",
     "test": "node --import ./scripts/test-ts-loader.mjs --test --test-concurrency=1 lib/__tests__/*.test.ts",
     "db:up": "docker compose up -d",
-    "postinstall": "prisma generate"
+    "seed:god": "node --import ./scripts/test-ts-loader.mjs scripts/seed-god-chickens.ts",
+    "seed:endgame": "node --import ./scripts/test-ts-loader.mjs scripts/seed-endgame.ts",
+    "seed:monochrome": "node --import ./scripts/test-ts-loader.mjs scripts/seed-monochrome-pairs.ts",
+    "seed:redblack": "node --import ./scripts/test-ts-loader.mjs scripts/seed-deep-red-black-roster.ts",
+    "seed:strategy": "node --import ./scripts/test-ts-loader.mjs scripts/seed-strategy-fighter-roster.ts",
+    "backfill:colors": "node --import ./scripts/test-ts-loader.mjs scripts/backfill-color-jitter.ts",
+    "postinstall": "prisma generate",
+    "verify:launch-commands": "node --import ./scripts/test-ts-loader.mjs scripts/verify-launch-commands.ts"
   },
   "dependencies": {
     "@prisma/client": "^6",
     "@react-three/drei": "^10.7.8",
     "@react-three/fiber": "^9.7.0",
+    "@react-three/rapier": "^2.2.0",
     "next": "16.3.4",
     "react": "19.2.8",
     "react-dom": "19.2.8",

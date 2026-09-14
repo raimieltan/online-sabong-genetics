@@ -28,8 +28,32 @@ export function wingRaise(out: PoseMap, amt: number, forward = 0): void {
   add(out, "WingR", { rz: amt, rx: forward });
 }
 
+/**
+ * Drive the corrected rig from its folded runtime neutral pose toward its
+ * authored symmetric T-pose. This is deliberately an explicit local pose,
+ * not a tiny flap offset: `open=1` restores the source GLB's fully extended
+ * wing orientation, while flaps and strikes layer on top of it.
+ */
+export function wingOpen(out: PoseMap, amount: number, side?: "L" | "R"): void {
+  const k = clamp01(amount);
+  const open = (s: "L" | "R") => {
+    const mirror = s === "L" ? -1 : 1;
+    add(out, `Wing${s}`, {
+      rx: 0.226 * k,
+      ry: mirror * 1.292 * k,
+      rz: -mirror * 1.512 * k,
+    });
+  };
+  if (side) open(side);
+  else {
+    open("L");
+    open("R");
+  }
+}
+
 /** Spread wings wide for balance / display — lift plus a forward cup. */
 export function wingSpread(out: PoseMap, amt: number): void {
+  wingOpen(out, Math.abs(amt) * 0.62);
   wingRaise(out, amt, amt * 0.35);
 }
 
@@ -50,7 +74,10 @@ export function combatBase(out: PoseMap, w: number, gains = 1): void {
   addPair(out, "Thigh", { rx: 0.1 * k });
   addPair(out, "Shank", { rx: 0.14 * k });
   addPair(out, "Foot", { rx: -0.08 * k });
-  wingRaise(out, 0.1 * k);
+  // A rooster in guard keeps the wings folded but visibly tense, ready to
+  // flare. Large strikes/aerial moves open farther through wingOpen().
+  wingOpen(out, 0.16 * k);
+  wingRaise(out, 0.06 * k);
   add(out, "Tail", { rx: 0.05 * k });
 }
 

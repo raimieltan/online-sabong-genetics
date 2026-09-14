@@ -7,18 +7,52 @@ import {
   effectiveStat,
   generateMatchedOpponent,
   healChicken,
+  maxHealth,
   rollHitZone,
   simulateFight,
 } from "../combat";
-import { makeChicken, statBlock } from "./testHelpers";
+import { makeChicken, physicalBlock, statBlock } from "./testHelpers";
 import { HIT_ZONES } from "../types";
 
-test("effectiveStat weights IV above EV (60/40)", () => {
+test("effectiveStat weights IV above EV, then applies adult growth expression", () => {
   const chicken = makeChicken({ iv: statBlock(100), ev: statBlock(0) });
-  assert.equal(effectiveStat(chicken, "power"), 60);
+  assert.equal(effectiveStat(chicken, "power"), 57);
 
   const trained = makeChicken({ iv: statBlock(0), ev: statBlock(100) });
-  assert.equal(effectiveStat(trained, "power"), 40);
+  assert.equal(effectiveStat(trained, "power"), 38);
+});
+
+test("effectiveStat applies an expressed mutation's stat modifier on top of IV/EV", () => {
+  const plain = makeChicken({ iv: statBlock(100), ev: statBlock(0) });
+  const giant = makeChicken({
+    iv: statBlock(100),
+    ev: statBlock(0),
+    mutations: { giant: { carrier: true, expressed: true } },
+  });
+
+  // Giant: power +15%, speed -10% (lib/mutations.ts)
+  assert.equal(giant.mutations.giant?.expressed, true);
+  assert.ok(effectiveStat(giant, "power") > effectiveStat(plain, "power"));
+  assert.ok(effectiveStat(giant, "speed") < effectiveStat(plain, "speed"));
+  assert.equal(effectiveStat(giant, "defense"), effectiveStat(plain, "defense"));
+});
+
+test("effectiveStat ignores a carried-but-unexpressed mutation's stat modifier", () => {
+  const carrierOnly = makeChicken({
+    iv: statBlock(100),
+    ev: statBlock(0),
+    mutations: { giant: { carrier: true, expressed: false } },
+  });
+  const plain = makeChicken({ iv: statBlock(100), ev: statBlock(0) });
+
+  assert.equal(effectiveStat(carrierOnly, "power"), effectiveStat(plain, "power"));
+});
+
+test("maxHealth scales up with body-size genetics (mass modifier)", () => {
+  const baseline = makeChicken({ physical: physicalBlock(1) });
+  const bigBody = makeChicken({ physical: { ...physicalBlock(1), body: 1.4 } });
+
+  assert.ok(maxHealth(bigBody) > maxHealth(baseline));
 });
 
 test("canFight requires a battle-eligible growth stage and no injury", () => {
@@ -36,6 +70,10 @@ test("canFight excludes hens — hens do not fight per baseline spec", () => {
     canFight(makeChicken({ sex: "rooster", growthStage: "adult", injured: false })),
     true
   );
+});
+
+test("canFight excludes a rooster at zero health", () => {
+  assert.equal(canFight(makeChicken({ health: 0 })), false);
 });
 
 test("healChicken clears the injured flag and restores health", () => {
@@ -136,22 +174,44 @@ test("simulateFight favors the far stronger chicken across many trials", () => {
   assert.ok(wins >= 25, `expected the far stronger chicken to win most fights, won ${wins}/30`);
 });
 
-test("a head/neck crit can trigger a critical injury that ends the fight immediately", () => {
-  // rng sequence tuned to force: attacker picked, no miss, crit, head zone, then
-  // the critical-injury roll succeeding on the very first turn.
-  const values = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-  let i = 0;
-  const rng = () => values[Math.min(i++, values.length - 1)];
+test("physical modifiers nudge but do not swamp equal-stat matchups", () => {
+  const sprinter = makeChicken({
+    id: "sprinter",
+    iv: statBlock(60),
+    ev: statBlock(60),
+    physical: { ...physicalBlock(1), body: 0.85, neck: 1, legs: 1.35, tail: 1, wings: 1.0 },
+  });
+  const tank = makeChicken({
+    id: "tank",
+    iv: statBlock(60),
+    ev: statBlock(60),
+    physical: { ...physicalBlock(1), body: 1.35, neck: 1, legs: 0.85, tail: 1, wings: 0.9 },
+  });
 
+  let sprinterWins = 0;
+  const trials = 40;
+  for (let i = 0; i < trials; i++) {
+    const result = simulateFight(sprinter, tank);
+    if (result.winnerId === "sprinter") sprinterWins++;
+  }
+  // Physique should tilt outcomes (not a dead-even 50/50 across many trials)
+  // but stay far from a stat-tier blowout — neither build should dominate.
+  assert.ok(sprinterWins >= 8 && sprinterWins <= trials - 8, `expected a competitive split, sprinter won ${sprinterWins}/${trials}`);
+});
+
+test("a head/neck crit can trigger a critical injury that ends continuous combat", () => {
+  // simulateFight now consumes the injected RNG once to derive the replay
+  // seed. Seed 3 deterministically reaches a neck medical stoppage.
+  const rng = () => 3 / 0x1_0000_0000;
   const a = makeChicken({ id: "a", iv: statBlock(99), ev: statBlock(100) });
   const b = makeChicken({ id: "b", iv: statBlock(1), ev: statBlock(0) });
 
   const result = simulateFight(a, b, rng);
 
   assert.equal(result.outcomeReason, "critical_injury");
-  assert.equal(result.totalTurns, 1);
   assert.equal(result.injuredChickenId, "b");
   assert.equal(result.winnerId, "a");
-  assert.equal(result.log[0].isCritical, true);
-  assert.equal(result.log[0].hitZone, "head");
+  const criticalHit = result.log.find((entry) => entry.isCritical);
+  assert.ok(criticalHit);
+  assert.equal(criticalHit.hitZone, "neck");
 });

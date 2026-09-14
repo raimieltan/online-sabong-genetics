@@ -6,6 +6,7 @@ import Link from "next/link";
 import type { DescendantStats, PedigreeNode } from "@/lib/pedigree";
 
 import { PedigreeTreeNode } from "./PedigreeTreeNode";
+import { PageHeader } from "@/components/PageHeader";
 
 type PedigreeResponse = {
   ancestry: PedigreeNode;
@@ -48,12 +49,11 @@ export default function PedigreePage({ params }: { params: Promise<{ chickenId: 
 
   return (
     <main className="mx-auto max-w-4xl p-6">
-      <div className="signboard mb-6 p-4">
-        <h1 className="font-display text-2xl font-semibold text-(--color-gold-bright)">
-          🌳 Pedigree — {ancestry.name}
-        </h1>
-        <p className="text-sm opacity-70">Bloodline {ancestry.bloodlineId.slice(0, 8)}</p>
-      </div>
+      <PageHeader
+        eyebrow="Bloodline Records"
+        title={`🌳 Pedigree — ${ancestry.name}`}
+        description={`Bloodline ${ancestry.bloodlineId.slice(0, 8)}`}
+      />
 
       <section className="panel-wood mb-6 overflow-x-auto rounded-lg p-6">
         <div className="flex min-w-max justify-center">

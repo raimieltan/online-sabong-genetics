@@ -16,11 +16,12 @@ const GAIN_MIN = 0.7;
 const GAIN_MAX = 1.6;
 
 export function deriveAnimationGains(physical: PhysicalBlock | undefined): AnimationGains {
-  const body = physical?.body ?? 1;
-  const neck = physical?.neck ?? 1;
-  const legs = physical?.legs ?? 1;
-  const tail = physical?.tail ?? 1;
-  const wings = physical?.wings ?? 1;
+  const p = physical;
+  const body = p ? (p.bodyGirth + p.bodyLength + p.chest) / 3 : 1;
+  const neck = p ? (p.neckLength + p.neckThick) / 2 : 1;
+  const legs = p ? p.legLength : 1;
+  const tail = p ? (p.tailLength + p.tailArc) / 2 : 1;
+  const wings = p ? (p.wingSpan + p.wingSize) / 2 : 1;
 
   return {
     // Heavier body → more visual inertia: slower ease in/out, bigger follow-through.

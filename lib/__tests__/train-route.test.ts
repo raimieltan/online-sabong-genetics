@@ -5,7 +5,6 @@ import { randomUUID } from "node:crypto";
 import { prisma } from "../db";
 import { getOrCreatePlayer } from "../player";
 import { POST } from "../../app/api/chickens/[id]/train/route";
-import { ENERGY_PER_TRAIN, EV_PER_TRAIN } from "../training";
 import { GENETIC_STAT_KEYS, type GrowthStage, type StatBlock } from "../types";
 
 function statBlock(value: number): StatBlock {
@@ -54,16 +53,19 @@ test.beforeEach(async () => {
   await prisma.player.deleteMany();
 });
 
-test("POST /api/chickens/:id/train raises the trained stat's EV and spends energy", async () => {
+test("POST /api/chickens/:id/train starts an authoritative training session", async () => {
   const player = await getOrCreatePlayer();
   const id = await seedChicken(player.id, {});
 
   const response = await POST(postRequest(id, "power"), { params: Promise.resolve({ id }) });
-  assert.equal(response.status, 200);
+  assert.equal(response.status, 202);
 
-  const chicken = await response.json();
-  assert.equal(chicken.ev.power, EV_PER_TRAIN);
-  assert.equal(chicken.energy, 100 - ENERGY_PER_TRAIN);
+  const session = await response.json();
+  assert.equal(session.status, "ACTIVE");
+  assert.equal(session.programId, "STRENGTH");
+  const chicken = await prisma.chicken.findUniqueOrThrow({ where: { id } });
+  assert.equal((chicken.ev as Record<string, number>).power, 0);
+  assert.equal(chicken.energy, 100);
 });
 
 test("POST /api/chickens/:id/train returns 404 for an unknown chicken", async () => {
@@ -100,8 +102,27 @@ test("POST /api/chickens/:id/train returns 400 for a chick (untrainable stage)",
 
 test("POST /api/chickens/:id/train returns 400 when energy is insufficient", async () => {
   const player = await getOrCreatePlayer();
-  const id = await seedChicken(player.id, { energy: ENERGY_PER_TRAIN - 1 });
+  const id = await seedChicken(player.id, { energy: 0 });
 
   const response = await POST(postRequest(id, "power"), { params: Promise.resolve({ id }) });
   assert.equal(response.status, 400);
+});
+
+test("POST /api/chickens/:id/train persists the requested intensity", async () => {
+  const player = await getOrCreatePlayer();
+  const id = await seedChicken(player.id, {});
+
+  const response = await POST(
+    new Request(`http://localhost/api/chickens/${id}/train`, {
+      method: "POST",
+      body: JSON.stringify({ stat: "power", intensity: "hard" }),
+    }),
+    { params: Promise.resolve({ id }) }
+  );
+  assert.equal(response.status, 202);
+
+  const body = await response.json();
+  assert.equal(body.status, "ACTIVE");
+  assert.equal(body.intensity, "hard");
+  assert.ok(body.stressCost > 0);
 });

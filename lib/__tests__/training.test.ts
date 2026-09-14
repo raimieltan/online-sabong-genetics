@@ -9,39 +9,10 @@ import {
   canAffordTraining,
   trainStat,
   restEnergy,
+  defaultTrainingState,
 } from "../training";
-import { GENETIC_STAT_KEYS, type Chicken, type StatBlock } from "../types";
-
-function statBlock(value: number): StatBlock {
-  const block = {} as StatBlock;
-  GENETIC_STAT_KEYS.forEach((key) => (block[key] = value));
-  return block;
-}
-
-function makeChicken(overrides: Partial<Chicken> = {}): Chicken {
-  return {
-    id: "test",
-    name: "Test",
-    sex: "rooster",
-    generation: 0,
-    parents: { fatherId: null, motherId: null },
-    bloodlineId: "test",
-    iv: statBlock(50),
-    ev: statBlock(0),
-    traits: [],
-    age: 1,
-    health: 100,
-    energy: 100,
-    record: { wins: 0, losses: 0, championships: 0, koTko: 0, decisions: 0 },
-    status: "active",
-    growthStage: "adult",
-    fightingStyle: "balanced",
-    colorScheme: { body: "#000000", head: "#000000", comb: "#000000", tail: "#000000", feet: "#000000" },
-    injured: false,
-    createdAt: Date.now(),
-    ...overrides,
-  };
-}
+import { defaultRoosterTrainingState } from "../training/state";
+import { makeChicken, statBlock } from "./testHelpers";
 
 test("canAffordTraining is true at exactly the energy cost", () => {
   assert.equal(canAffordTraining(ENERGY_PER_TRAIN), true);
@@ -74,4 +45,34 @@ test("trainStat floors energy at 0", () => {
 
 test("restEnergy resets energy to MAX_ENERGY", () => {
   assert.equal(restEnergy().energy, MAX_ENERGY);
+});
+
+test("trainStat with no options behaves exactly as before (backward compat)", () => {
+  const chicken = makeChicken({ ev: statBlock(10), trainingState: undefined });
+  const result = trainStat(chicken, "power");
+
+  assert.equal(result.ev.power, 10 + EV_PER_TRAIN);
+  assert.equal(result.stressGain, undefined);
+  assert.equal(result.roosterTraining, undefined);
+});
+
+test("trainStat with a roosterTraining option produces stress at hard intensity", () => {
+  const roosterTraining = defaultRoosterTrainingState(statBlock(100));
+  const chicken = makeChicken({ ev: statBlock(10), trainingState: defaultTrainingState() });
+  const result = trainStat(chicken, "power", undefined, {
+    intensity: "hard",
+    roosterTraining,
+    rng: () => 0.999,
+  });
+
+  assert.ok((result.stressGain ?? 0) > 0);
+  assert.ok(result.roosterTraining);
+});
+
+test("trainStat caps EV at the chicken's trainingPotential, not the flat 100", () => {
+  const roosterTraining = defaultRoosterTrainingState({ ...statBlock(100), power: 12 });
+  const chicken = makeChicken({ ev: statBlock(10), trainingState: defaultTrainingState() });
+  const result = trainStat(chicken, "power", "strength", { roosterTraining, rng: () => 0.999 });
+
+  assert.equal(result.ev.power, 12);
 });

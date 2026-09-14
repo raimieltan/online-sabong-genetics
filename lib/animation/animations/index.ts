@@ -17,6 +17,8 @@ import {
 import { hitCritical, hitHeavy, hitLight, hitMedium, stagger, staggerHeavy } from "./hitReactions";
 import { death, getup, knockback, knockdown } from "./downed";
 import { defeat, recovery, victory } from "./outcomes";
+import { tellAggression, tellPatience, tellRisk } from "./tells";
+import { TEMPORARY_COMBAT_EXAGGERATION } from "../../combat-v2/constants";
 
 function def(duration: number, loop: boolean, state: AnimState, fn: AnimationDef["fn"]): AnimationDef {
   return { duration, loop, priority: PRIORITY[state], fn };
@@ -55,4 +57,11 @@ export const ANIMATIONS: Record<AnimState, AnimationDef> = {
   victory: def(4, true, "victory", victory),
   defeat: def(4, true, "defeat", defeat),
   taunt: def(1.2, false, "taunt", taunt),
+  // Spec Phase A.5 calls for a 300-500ms readable pose, but that's too fast
+  // for a player to actually register mid-fight. The normal readable beats
+  // are temporarily doubled to 2.4-3.2s here rather than in the pose fns, so
+  // `t` in tellAggression/Patience/Risk stays 0..1.
+  tell_aggression: def(1.2 * TEMPORARY_COMBAT_EXAGGERATION, false, "tell_aggression", tellAggression),
+  tell_patience: def(1.4 * TEMPORARY_COMBAT_EXAGGERATION, false, "tell_patience", tellPatience),
+  tell_risk: def(1.6 * TEMPORARY_COMBAT_EXAGGERATION, false, "tell_risk", tellRisk),
 };

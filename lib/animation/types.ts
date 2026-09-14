@@ -10,7 +10,7 @@
 
 import type { PhysicalBlock } from "@/lib/types";
 
-/** Every bone in the 14-bone rig we drive. `ChickenRoot` is left to mutation scaling. */
+/** Animation-driven joints in the 23-joint rig. `Root` and cosmetic joints keep their rest pose. */
 export const BONE_NAMES = [
   "Hips",
   "Spine",
@@ -18,7 +18,11 @@ export const BONE_NAMES = [
   "Neck",
   "Head",
   "WingL",
+  "WingL_Mid",
+  "WingL_Tip",
   "WingR",
+  "WingR_Mid",
+  "WingR_Tip",
   "Tail",
   "ThighL",
   "ShankL",
@@ -152,7 +156,10 @@ export type AnimState =
   | "victory"
   | "defeat"
   | "taunt"
-  | "backstep";
+  | "backstep"
+  | "tell_aggression"
+  | "tell_patience"
+  | "tell_risk";
 
 export const ATTACK_STATES: readonly AnimState[] = [
   "peck_attack",
@@ -203,8 +210,12 @@ export interface AnimContext {
   velZ: number;
   /** Vertical velocity of the whole fighter (world units/sec) — landing/launch cues. */
   velY: number;
+  /** 0..1 reusable procedural flap layer strength, independent of the base pose. */
+  wingFlapIntensity: number;
   /** Move variant for attack states that share a base state. */
   moveKind?: string;
+  /** Stable 0..2 visual variation for repeated attacks. It never affects combat. */
+  attackVariant?: number;
   stagger?: string;
   /** Target head yaw toward the opponent in the model's local frame (rad, pre-clamped). */
   aimYaw: number;
@@ -224,6 +235,15 @@ export interface AnimationDef {
 
 /** Intent handed from BattleCanvas to the model each turn / at impact. */
 export interface AnimIntent {
+  aerial?: import('../combat-v2/types').AerialRuntime & { tick: number; phaseProgress: number; actionId?: string; strikeProgress?: number };
+  /** V2 presentation: authoritative normalized pose time; bypass clip-driven transitions. */
+  simulationProgress?: number;
+  /** V2-only tactical silhouette layered over the authoritative action pose. */
+  tacticalMode?: import('../combat-v2/types').TacticalMode;
+  /** Observable tell posture, shared by authoritative and sandbox presentation. */
+  tellPosture?: { type: import('../combat-v2/types').ReadTellType; strength: number } | null;
+  /** One-shot simulation tick for a successful Flow State dodge snapshot. */
+  afterimageKey?: number;
   state: AnimState;
   /** ms timestamp when this intent began. */
   startedAt: number;

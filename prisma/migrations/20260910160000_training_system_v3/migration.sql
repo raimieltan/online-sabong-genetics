@@ -1,0 +1,8 @@
+ALTER TABLE "TrainingSession"
+ADD COLUMN "intensity" TEXT NOT NULL DEFAULT 'normal',
+ADD COLUMN "stressCost" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN "trainingPointCost" INTEGER NOT NULL DEFAULT 10;
+
+ALTER TABLE "RoosterTraining"
+ADD COLUMN "traitProgress" JSONB NOT NULL DEFAULT '{}',
+ADD COLUMN "specializationProgress" JSONB NOT NULL DEFAULT '{}';

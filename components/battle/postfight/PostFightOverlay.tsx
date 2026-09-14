@@ -1,0 +1,114 @@
+"use client";
+
+import { useEffect, useState, type ReactNode } from "react";
+import Link from "next/link";
+
+import type { Chicken, CombatResult } from "@/lib/types";
+import type { BattleReport } from "@/lib/combat/battleReport";
+
+export type PostFightState =
+  | "FINAL_IMPACT"
+  | "DEFEAT_SETTLE"
+  | "WINNER_REACTION"
+  | "RESULT"
+  | "REWARDS"
+  | "PROGRESSION"
+  | "INJURY_CONDITION"
+  | "SPECIAL_EVENT"
+  | "MODE_PROGRESS"
+  | "EXIT";
+
+const NEXT: Record<Exclude<PostFightState, "EXIT">, PostFightState> = {
+  FINAL_IMPACT: "DEFEAT_SETTLE",
+  DEFEAT_SETTLE: "WINNER_REACTION",
+  WINNER_REACTION: "RESULT",
+  RESULT: "REWARDS",
+  REWARDS: "PROGRESSION",
+  PROGRESSION: "INJURY_CONDITION",
+  INJURY_CONDITION: "SPECIAL_EVENT",
+  SPECIAL_EVENT: "MODE_PROGRESS",
+  MODE_PROGRESS: "EXIT",
+};
+
+type Props = {
+  result: CombatResult;
+  playerChicken: Chicken;
+  creditsEarned?: number;
+  tournamentTokensEarned?: number;
+  battleReport?: BattleReport;
+  actionLabel?: string;
+  onContinue: () => void;
+  campaign?: { headline: string; copy: string; reputation: number; bossName: string; unlocked?: string };
+};
+
+/**
+ * A presentation-only state machine. The result was persisted before this is
+ * mounted; this component only reveals authoritative outcome data over the
+ * still-mounted arena.
+ */
+export function PostFightOverlay({ result, playerChicken, creditsEarned = 0, tournamentTokensEarned = 0, battleReport, actionLabel = "Fight Again", onContinue, campaign }: Props) {
+  const [state, setState] = useState<PostFightState>("FINAL_IMPACT");
+  const didDraw = result.isDraw === true || result.winnerId === null;
+  const didWin = result.winnerId === playerChicken.id;
+  const playerInjured = result.injuredChickenId === playerChicken.id || Boolean(battleReport?.newInjuries.length);
+  const playerHealth = result.finalHealth?.[playerChicken.id];
+  const opponentId = result.winnerId === playerChicken.id ? result.loserId : result.winnerId;
+  const opponentHealth = opponentId ? result.finalHealth?.[opponentId] : undefined;
+  const retryBlocked = actionLabel === "Fight Again"
+    && (playerInjured || (playerHealth?.current ?? playerChicken.health) <= 0);
+  const specialEvents = (battleReport?.development ?? []).filter(notice => notice.kind === "awakening" || notice.kind === "signature" || notice.kind === "trait");
+  const next = () => setState(current => current === "EXIT" ? current : current === "INJURY_CONDITION" && specialEvents.length === 0 ? "MODE_PROGRESS" : NEXT[current]);
+
+  useEffect(() => {
+    const accelerate = (event: KeyboardEvent) => {
+      if ((event.key === " " || event.key === "Enter") && state !== "FINAL_IMPACT") next();
+    };
+    window.addEventListener("keydown", accelerate);
+    return () => window.removeEventListener("keydown", accelerate);
+  }, [state]);
+
+  const showResult = ["RESULT", "REWARDS", "PROGRESSION", "INJURY_CONDITION", "MODE_PROGRESS", "EXIT"].includes(state);
+  const showRewards = ["REWARDS", "PROGRESSION", "INJURY_CONDITION", "MODE_PROGRESS", "EXIT"].includes(state);
+  const showExperience = ["PROGRESSION", "INJURY_CONDITION", "MODE_PROGRESS", "EXIT"].includes(state);
+  const showProgression = ["PROGRESSION", "INJURY_CONDITION", "MODE_PROGRESS", "EXIT"].includes(state);
+  const showCondition = ["INJURY_CONDITION", "SPECIAL_EVENT", "MODE_PROGRESS", "EXIT"].includes(state);
+
+  return (
+    <div className="absolute inset-0 z-40 flex items-center justify-center overflow-y-auto p-4 sm:p-8" onClick={state === "FINAL_IMPACT" ? undefined : next}>
+      {state !== "EXIT" && <button type="button" onClick={event => { event.stopPropagation(); setState("EXIT"); }} className="absolute right-4 top-4 z-50 rounded border border-white/20 bg-black/60 px-3 py-2 text-[10px] uppercase tracking-widest text-white/70">Skip to summary</button>}
+      {state === "FINAL_IMPACT" && <div onAnimationEnd={next} className="pointer-events-none animate-postfight-ko text-center"><p className="font-comic text-3xl text-red-400 [-webkit-text-stroke:1px_#160806] sm:text-5xl">KALABOG!!</p><p className="mt-2 font-display text-6xl font-black tracking-[.14em] text-[#f4e3bb] drop-shadow-[0_5px_2px_rgba(0,0,0,.9)] sm:text-8xl">K.O.</p></div>}
+      {state === "DEFEAT_SETTLE" && <div onAnimationEnd={next} className="pointer-events-none text-center animate-postfight-rise"><p className="font-comic text-sm uppercase tracking-[.3em] text-(--color-gold-bright)">The dust settles</p></div>}
+      {state === "WINNER_REACTION" && <div onAnimationEnd={next} className="pointer-events-none text-center animate-postfight-rise"><p className="font-comic text-sm uppercase tracking-[.3em] text-(--color-gold-bright)">{didDraw ? "Neither fighter yields" : "The arena erupts"}</p><p className="mt-2 font-display text-3xl text-(--foreground) sm:text-5xl">{didDraw ? "The judges declare a draw." : `${didWin ? playerChicken.name : "Your fighter"} holds the moment.`}</p></div>}
+
+      {showResult && <section className="postfight-glass my-auto w-full max-w-md animate-postfight-rise text-center" onClick={event => event.stopPropagation()}>
+        <p className={`font-comic text-xs uppercase tracking-[.3em] ${didWin || didDraw ? "text-(--color-gold-bright)" : "text-red-300"}`}>{didDraw ? "Official draw" : didWin ? "Winner" : "Defeat"}</p>
+        <h2 className="mt-2 font-display text-4xl font-bold tracking-[.08em] text-(--foreground) sm:text-5xl">{didDraw ? "DRAW" : didWin ? "VICTORY" : "DEFEATED"}</h2>
+        <p className="mt-1 font-display text-xl text-(--color-gold-bright)">{playerChicken.name}</p>
+        <p className="mt-3 text-xs uppercase tracking-[.2em] text-(--color-text-muted)">{result.outcomeReason === "ko" ? "Knockout" : result.outcomeReason.replace("_", " ")} · Turn {result.totalTurns}</p>
+
+        {playerHealth && opponentHealth && <Reveal title="Final health"><div className="grid grid-cols-2 gap-3 text-left"><FinalHealth label={playerChicken.name} health={playerHealth} winner={didWin} /><FinalHealth label="Opponent" health={opponentHealth} winner={!didWin} /></div>{result.outcomeReason === "timeout" && <p className="mt-3 text-[10px] uppercase tracking-[.14em] text-(--color-text-muted)">Decision awarded by remaining health percentage</p>}</Reveal>}
+
+        {showRewards && (creditsEarned > 0 || tournamentTokensEarned > 0) && <Reveal title="Rewards"><div className="space-y-1 font-display text-2xl text-(--color-gold-bright)">{creditsEarned > 0 && <p>+{creditsEarned} <span className="text-base">CREDITS</span></p>}{tournamentTokensEarned > 0 && <p>+{tournamentTokensEarned} <span className="text-base">TOURNAMENT TOKENS</span></p>}</div></Reveal>}
+        {showExperience && battleReport && <Reveal title="Battle experience"><div className="grid grid-cols-2 gap-x-5 gap-y-1 text-sm">{Object.entries(battleReport.experienceGained).map(([name, value]) => <p key={name} className="flex justify-between uppercase text-(--color-text-muted)"><span>{name}</span><b className="text-(--color-gold-bright)">+{value}</b></p>)}{battleReport.totalExperienceGained > 0 && <p className="col-span-2 mt-1 border-t border-(--color-gold)/20 pt-2 font-display text-(--foreground)">+{battleReport.totalExperienceGained} XP</p>}</div></Reveal>}
+        {showProgression && battleReport && battleReport.newTraits.length > 0 && <Reveal title="Trait developed">{battleReport.newTraits.map(trait => <p key={trait.id} className="font-display text-lg text-[#b899e8]">{trait.name} <span className="text-xs uppercase">{trait.rarity}</span></p>)}</Reveal>}
+        {showProgression && Boolean(battleReport?.development?.length) && <Reveal title="Combat evolution">{battleReport?.development?.map(notice => <div key={`${notice.kind}-${notice.id}`} className="mb-2"><p className="font-display text-lg text-(--color-gold-bright)">{notice.title}</p><p className="text-xs text-(--color-text-muted)">{notice.detail}</p></div>)}</Reveal>}
+        {showCondition && <Reveal title="Fight condition"><div className="space-y-1 text-sm text-(--color-text-muted)"><p>Condition <b className="ml-2 text-(--foreground)">{battleReport?.conditionDelta ?? 0}%</b></p><p>Morale <b className="ml-2 text-(--foreground)">{signed(battleReport?.moraleDelta)}</b> · Confidence <b className="text-(--foreground)">{signed(battleReport?.confidenceDelta)}</b></p>{battleReport?.newInjuries.map(injury => <p key={injury.id} className="mt-3 rounded-lg border border-red-400/35 bg-red-950/25 p-2 text-red-200">⚠ {injury.label} <span className="text-red-200/70">· {injury.severity.replace("_", " ")} · {injury.permanent ? "lasting injury" : `${injury.recoveryRemaining} recovery cycle${injury.recoveryRemaining === 1 ? "" : "s"}`}</span></p>)}</div></Reveal>}
+        {state === "SPECIAL_EVENT" && specialEvents.length > 0 && <Reveal title="Special development">{specialEvents.map(notice => <div key={`${notice.kind}-${notice.id}`} className="rounded-lg border border-violet-300/30 bg-violet-950/30 p-3"><p className="font-display text-xl text-violet-200">{notice.title}</p><p className="mt-1 text-xs text-violet-100/70">{notice.detail}</p></div>)}</Reveal>}
+        {state === "MODE_PROGRESS" && campaign && <Reveal title="Campaign consequence"><p className="font-display text-xl text-(--color-gold-bright)">{campaign.headline}</p><p className="mt-1 text-sm text-(--color-text-muted)">{campaign.copy}</p>{campaign.reputation > 0 && <p className="mt-2 text-sm text-(--foreground)">+{campaign.reputation} reputation</p>}{campaign.unlocked && <p className="mt-2 text-xs font-semibold uppercase tracking-[.14em] text-(--color-gold-bright)">New unlock · {campaign.unlocked}</p>}</Reveal>}
+
+        {state === "EXIT" && <div className="mt-6"><div className="flex gap-3"><Link href={playerInjured ? "/clinic" : "/coop"} className="flex-1 rounded-lg border border-(--color-gold)/35 bg-black/20 px-3 py-3 text-xs font-semibold uppercase tracking-[.12em] text-(--color-parchment) hover:bg-white/5">{playerInjured ? "Visit Clinic" : "Return to Coop"}</Link><button type="button" onClick={onContinue} disabled={retryBlocked} className="flex-1 rounded-lg bg-gradient-to-b from-(--color-gold-bright) to-(--color-gold) px-3 py-3 font-display text-sm font-bold uppercase tracking-[.08em] text-(--color-ink) hover:brightness-110 disabled:cursor-not-allowed disabled:from-stone-600 disabled:to-stone-700 disabled:text-stone-300 disabled:hover:brightness-100">{retryBlocked ? "Needs Recovery" : actionLabel}</button></div>{retryBlocked && <p className="mt-2 text-[10px] uppercase tracking-[.14em] text-red-300">This fighter cannot return at zero health or while injured.</p>}</div>}
+        {state !== "EXIT" && <p className="mt-5 text-[10px] uppercase tracking-[.18em] text-(--color-text-muted)">Click, Space, or Enter to continue</p>}
+      </section>}
+    </div>
+  );
+}
+
+function Reveal({ title, children }: { title: string; children: ReactNode }) {
+  return <div className="mt-5 border-t border-(--color-gold)/20 pt-4"><p className="mb-2 text-[10px] font-semibold uppercase tracking-[.24em] text-(--color-text-muted)">{title}</p>{children}</div>;
+}
+
+function FinalHealth({ label, health, winner }: { label: string; health: { current: number; max: number; percent: number }; winner: boolean }) {
+  return <div className={`rounded-lg border p-2.5 ${winner ? "border-(--color-gold)/45 bg-(--color-gold)/10" : "border-white/10 bg-black/20"}`}><div className="flex items-center justify-between gap-2 text-[10px] uppercase tracking-[.12em]"><span className="truncate text-(--color-text-muted)">{label}</span>{winner && <b className="text-(--color-gold-bright)">Winner</b>}</div><div className="mt-2 h-2 overflow-hidden rounded-full bg-black/50"><div className={winner ? "h-full bg-gradient-to-r from-amber-700 to-(--color-gold-bright)" : "h-full bg-gradient-to-r from-red-900 to-red-400"} style={{ width: `${health.percent}%` }} /></div><p className="mt-1 text-xs text-(--foreground)">{health.percent}% <span className="text-[10px] text-(--color-text-muted)">({Math.round(health.current)}/{Math.round(health.max)} HP)</span></p></div>;
+}
+
+function signed(value = 0) { return `${value >= 0 ? "+" : ""}${value}`; }

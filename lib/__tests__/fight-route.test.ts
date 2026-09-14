@@ -1,114 +1,187 @@
-import test from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
+import test from "node:test";
 
+import { POST } from "../../app/api/chickens/[id]/fight/route";
+import { generateRandomChicken } from "../chickenGenerator";
+import { createCombatEncounter, createSession, getSession, issueCommand, syncSession, triggerSessionAwakening } from "../combat/service";
+import { emptyCombatCareer } from "../combat/evolution";
 import { prisma } from "../db";
 import { getOrCreatePlayer } from "../player";
-import { generateRandomChicken } from "../chickenGenerator";
-import { BATTLE_WIN_CREDITS } from "../economy";
-import { POST } from "../../app/api/chickens/[id]/fight/route";
-import { GENETIC_STAT_KEYS, type Chicken, type GrowthStage, type StatBlock } from "../types";
+import { currentOpponent } from "../tournament";
+import { startTournament } from "../tournament/service";
+import { GENETIC_STAT_KEYS, type GrowthStage, type StatBlock } from "../types";
 
 function statBlock(value: number): StatBlock {
   const block = {} as StatBlock;
-  GENETIC_STAT_KEYS.forEach((key) => (block[key] = value));
+  GENETIC_STAT_KEYS.forEach(key => { block[key] = value; });
   return block;
 }
 
-async function seedChicken(
-  playerId: string,
-  overrides: { growthStage?: GrowthStage; iv?: StatBlock; injured?: boolean } = {},
-) {
+async function seedChicken(playerId: string, overrides: { growthStage?: GrowthStage; injured?: boolean; awakening?: "unbreakable" } = {}) {
   const id = randomUUID();
-  await prisma.chicken.create({
-    data: {
-      id,
-      playerId,
-      name: "Test",
-      sex: "rooster",
-      generation: 0,
-      bloodlineId: id,
-      iv: overrides.iv ?? statBlock(80),
-      ev: statBlock(50),
-      traits: [],
-      age: 1,
-      health: 100,
-      energy: 100,
-      record: { wins: 0, losses: 0, championships: 0, koTko: 0, decisions: 0 },
-      status: "active",
-      growthStage: overrides.growthStage ?? "adult",
-      injured: overrides.injured ?? false,
-    },
-  });
+  const combatCareer = emptyCombatCareer();
+  if (overrides.awakening) combatCareer.awakenings.find(item => item.id === overrides.awakening)!.unlocked = true;
+  await prisma.chicken.create({ data: { id, playerId, name: "Test", sex: "rooster", generation: 0, bloodlineId: id, iv: statBlock(80), ev: statBlock(50), traits: [], age: 1, health: 100, energy: 100, record: { wins: 0, losses: 0, championships: 0, koTko: 0, decisions: 0 }, combatCareer, status: "active", growthStage: overrides.growthStage ?? "adult", injured: overrides.injured ?? false } });
   return id;
 }
 
-function postRequest(id: string, opponent: Chicken) {
-  return new Request(`http://localhost/api/chickens/${id}/fight`, {
-    method: "POST",
-    body: JSON.stringify({ opponent }),
-  });
+function request(id: string, body: unknown, key = randomUUID()) {
+  return new Request(`http://localhost/api/chickens/${id}/fight`, { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": key }, body: JSON.stringify(body) });
 }
 
 test.beforeEach(async () => {
+  await prisma.combatSettlementRecord.deleteMany();
+  await prisma.combatCommandRecord.deleteMany();
+  await prisma.combatEventRecord.deleteMany();
+  await prisma.combatSessionRecord.deleteMany();
+  await prisma.combatEncounter.deleteMany();
   await prisma.egg.deleteMany();
   await prisma.chicken.deleteMany();
   await prisma.player.deleteMany();
 });
 
-test("POST /api/chickens/:id/fight runs a fight and updates the player chicken's record", async () => {
+test("fight route creates an unresolved authoritative session from a server encounter", async () => {
   const player = await getOrCreatePlayer();
-  const id = await seedChicken(player.id, { iv: statBlock(90) });
-  const opponent = generateRandomChicken({ name: "NPC" });
-
-  const response = await POST(postRequest(id, opponent), { params: Promise.resolve({ id }) });
+  const fighterId = await seedChicken(player.id);
+  const encounter = await createCombatEncounter({ ownerPlayerId: player.id, fighterId, opponent: generateRandomChicken({ name: "NPC" }), mode: "NORMAL" });
+  const response = await POST(request(fighterId, { encounterId: encounter.id, openingCommand: "WAIT" }), { params: Promise.resolve({ id: fighterId }) });
   assert.equal(response.status, 200);
-
   const body = await response.json();
-  assert.ok(body.result.winnerId === id || body.result.winnerId === opponent.id);
-  assert.ok(Array.isArray(body.log));
-  assert.ok(body.log.length > 0);
-
-  const updated = await prisma.chicken.findUnique({ where: { id } });
-  const wonOrLost = updated!.record as { wins: number; losses: number };
-  assert.equal(wonOrLost.wins + wonOrLost.losses, 1);
+  assert.equal(body.status, "ACTIVE");
+  assert.equal(body.phase, "READ");
+  assert.equal(body.result, null);
+  assert.ok(body.events.some((event: { type: string }) => event.type === "SESSION_STARTED"));
 });
 
-test("POST /api/chickens/:id/fight awards BATTLE_WIN_CREDITS only when the player's chicken wins", async () => {
+test("fight route rejects client-authored opponents", async () => {
   const player = await getOrCreatePlayer();
-  const id = await seedChicken(player.id, { iv: statBlock(90) });
-  const opponent = generateRandomChicken({ name: "NPC" });
-
-  const response = await POST(postRequest(id, opponent), { params: Promise.resolve({ id }) });
-  const body = await response.json();
-  const won = body.result.winnerId === id;
-
-  const updatedPlayer = await prisma.player.findUnique({ where: { id: player.id } });
-  assert.equal(body.creditsEarned, won ? BATTLE_WIN_CREDITS : 0);
-  assert.equal(updatedPlayer!.credits, player.credits + (won ? BATTLE_WIN_CREDITS : 0));
-  assert.equal(body.credits, updatedPlayer!.credits);
-});
-
-test("POST /api/chickens/:id/fight returns 404 for an unknown chicken", async () => {
-  const opponent = generateRandomChicken({ name: "NPC" });
-  const response = await POST(postRequest("missing", opponent), { params: Promise.resolve({ id: "missing" }) });
-  assert.equal(response.status, 404);
-});
-
-test("POST /api/chickens/:id/fight returns 400 when the chicken cannot battle", async () => {
-  const player = await getOrCreatePlayer();
-  const id = await seedChicken(player.id, { growthStage: "chick" });
-  const opponent = generateRandomChicken({ name: "NPC" });
-
-  const response = await POST(postRequest(id, opponent), { params: Promise.resolve({ id }) });
+  const fighterId = await seedChicken(player.id);
+  const response = await POST(request(fighterId, { opponent: generateRandomChicken({ name: "Fake" }) }), { params: Promise.resolve({ id: fighterId }) });
   assert.equal(response.status, 400);
+  assert.equal((await response.json()).error, "CLIENT_OPPONENT_FORBIDDEN");
 });
 
-test("POST /api/chickens/:id/fight returns 400 when the chicken is already injured", async () => {
+test("creation idempotency returns the same session and one fighter lease", async () => {
   const player = await getOrCreatePlayer();
-  const id = await seedChicken(player.id, { injured: true });
-  const opponent = generateRandomChicken({ name: "NPC" });
+  const fighterId = await seedChicken(player.id);
+  const encounter = await createCombatEncounter({ ownerPlayerId: player.id, fighterId, opponent: generateRandomChicken({ name: "NPC" }), mode: "NORMAL" });
+  const key = randomUUID();
+  const first = await POST(request(fighterId, { encounterId: encounter.id }, key), { params: Promise.resolve({ id: fighterId }) });
+  const second = await POST(request(fighterId, { encounterId: encounter.id }, key), { params: Promise.resolve({ id: fighterId }) });
+  assert.equal((await first.json()).sessionId, (await second.json()).sessionId);
+  assert.equal(await prisma.combatSessionRecord.count(), 1);
+});
 
-  const response = await POST(postRequest(id, opponent), { params: Promise.resolve({ id }) });
-  assert.equal(response.status, 400);
+test("ineligible fighters cannot consume an encounter", async () => {
+  const player = await getOrCreatePlayer();
+  const fighterId = await seedChicken(player.id, { growthStage: "chick" });
+  const encounter = await createCombatEncounter({ ownerPlayerId: player.id, fighterId, opponent: generateRandomChicken({ name: "NPC" }), mode: "NORMAL" });
+  const response = await POST(request(fighterId, { encounterId: encounter.id }), { params: Promise.resolve({ id: fighterId }) });
+  assert.equal(response.status, 409);
+});
+
+test("command ids deduplicate and commands lock at commitment", async () => {
+  const player = await getOrCreatePlayer();
+  const fighterId = await seedChicken(player.id);
+  const encounter = await createCombatEncounter({ ownerPlayerId: player.id, fighterId, opponent: generateRandomChicken({ name: "NPC" }), mode: "NORMAL" });
+  const view = await createSession({ fighterId, encounterId: encounter.id, coachingMode: "MANUAL", openingCommand: "WAIT", disconnectPolicy: "KEEP_INSTRUCTION", idempotencyKey: randomUUID() }, player.id);
+  const commandId = randomUUID();
+  const first = await issueCommand(view.sessionId, { commandId, command: "PRESS", observedRevision: view.revision }, player.id);
+  const duplicate = await issueCommand(view.sessionId, { commandId, command: "RECOVER", observedRevision: view.revision }, player.id);
+  assert.deepEqual(duplicate, first);
+  for (let index = 0; index < 20; index++) {
+    await prisma.combatSessionRecord.update({ where: { id: view.sessionId }, data: { lastAdvancedAt: new Date(Date.now() - 1_000) } });
+    const current = await syncSession(view.sessionId, player.id);
+    if (current.phase !== "READ") {
+      await assert.rejects(() => issueCommand(view.sessionId, { commandId: randomUUID(), command: "COUNTER", observedRevision: current.revision }, player.id), /COMMAND_LOCKED/);
+      return;
+    }
+  }
+  assert.fail("session never reached commitment");
+});
+
+test("manual awakening is authoritative, visible in projections, and idempotent", async () => {
+  const player = await getOrCreatePlayer();
+  const fighterId = await seedChicken(player.id, { awakening: "unbreakable" });
+  const encounter = await createCombatEncounter({ ownerPlayerId: player.id, fighterId, opponent: generateRandomChicken({ name: "NPC" }), mode: "NORMAL" });
+  const view = await createSession({ fighterId, encounterId: encounter.id, coachingMode: "MANUAL", openingCommand: "WAIT", disconnectPolicy: "KEEP_INSTRUCTION", idempotencyKey: randomUUID() }, player.id);
+  assert.deepEqual(view.projection[0].unlockedAwakenings, ["unbreakable"]);
+  assert.equal(view.allowedActions.awakening, true);
+
+  const actionId = randomUUID();
+  const first = await triggerSessionAwakening(view.sessionId, { actionId, type: "unbreakable", observedRevision: view.revision }, player.id);
+  const duplicate = await triggerSessionAwakening(view.sessionId, { actionId, type: "unbreakable", observedRevision: view.revision }, player.id);
+  assert.deepEqual(duplicate, first);
+
+  const awakened = await getSession(view.sessionId, player.id);
+  assert.equal(awakened.projection[0].awakening?.type, "unbreakable");
+  assert.equal(awakened.allowedActions.awakening, false);
+  assert.ok(awakened.events.some(event => event.type === "AWAKENING_STARTED" && event.payload.detail === "unbreakable"));
+});
+
+test("launch campaign sessions hide and reject awakening controls", async () => {
+  const player = await getOrCreatePlayer();
+  const fighterId = await seedChicken(player.id, { awakening: "unbreakable" });
+  const encounter = await createCombatEncounter({
+    ownerPlayerId: player.id,
+    fighterId,
+    opponent: generateRandomChicken({ name: "Campaign NPC" }),
+    mode: "BOSS",
+    modeContextId: "charger",
+  });
+  const view = await createSession({
+    fighterId,
+    encounterId: encounter.id,
+    coachingMode: "MANUAL",
+    openingCommand: "WAIT",
+    disconnectPolicy: "KEEP_INSTRUCTION",
+    idempotencyKey: randomUUID(),
+  }, player.id);
+  assert.equal(view.allowedActions.awakening, false);
+  await assert.rejects(
+    () => triggerSessionAwakening(view.sessionId, {
+      actionId: randomUUID(),
+      type: "unbreakable",
+      observedRevision: view.revision,
+    }, player.id),
+    /AWAKENING_UNAVAILABLE/,
+  );
+});
+
+test("terminal retries return one settlement and never duplicate consequences", async () => {
+  const player = await getOrCreatePlayer();
+  const fighterId = await seedChicken(player.id);
+  const opponent = generateRandomChicken({ name: "NPC" });
+  const encounter = await createCombatEncounter({ ownerPlayerId: player.id, fighterId, opponent, mode: "NORMAL" });
+  let view = await createSession({ fighterId, encounterId: encounter.id, coachingMode: "AUTO", openingCommand: "PRESS", disconnectPolicy: "AUTO_COACH", idempotencyKey: randomUUID() }, player.id);
+  for (let index = 0; index < 40 && view.status === "ACTIVE"; index++) {
+    await prisma.combatSessionRecord.update({ where: { id: view.sessionId }, data: { lastAdvancedAt: new Date(Date.now() - 10_000) } });
+    view = await syncSession(view.sessionId, player.id, view.latestEventCursor);
+  }
+  assert.equal(view.status, "SETTLED");
+  const replay = await getSession(view.sessionId, player.id);
+  assert.deepEqual(replay.result, view.result);
+  assert.deepEqual(replay.settlement, view.settlement);
+  assert.equal(await prisma.combatSettlementRecord.count({ where: { sessionId: view.sessionId } }), 1);
+  assert.equal((await prisma.chicken.findUniqueOrThrow({ where: { id: fighterId } })).activeCombatSessionId, null);
+});
+
+test("authoritative tournament combat settles before resolving the bracket", async () => {
+  const player = await getOrCreatePlayer();
+  const fighterId = await seedChicken(player.id);
+  const tournament = await startTournament(player.id, fighterId, 8, "beginner", "barangay-open");
+  const opponent = currentOpponent(tournament);
+  assert.ok(opponent);
+  const encounter = await createCombatEncounter({ ownerPlayerId: player.id, fighterId, opponent: opponent.chicken, mode: "TOURNAMENT", modeContextId: tournament.id });
+  let view = await createSession({ fighterId, encounterId: encounter.id, coachingMode: "AUTO", openingCommand: "PRESS", disconnectPolicy: "AUTO_COACH", idempotencyKey: randomUUID() }, player.id);
+
+  for (let index = 0; index < 40 && view.status === "ACTIVE"; index += 1) {
+    await prisma.combatSessionRecord.update({ where: { id: view.sessionId }, data: { lastAdvancedAt: new Date(Date.now() - 10_000) } });
+    view = await syncSession(view.sessionId, player.id, view.latestEventCursor);
+  }
+
+  assert.equal(view.status, "SETTLED");
+  assert.ok(view.settlement);
+  assert.equal((await prisma.tournament.findUniqueOrThrow({ where: { id: tournament.id } })).currentRound, 1);
 });

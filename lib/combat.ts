@@ -1,49 +1,50 @@
-import { generateRandomChicken } from "./chickenGenerator";
+import { battleAftermath } from "./combat/aftermath";
+import { evaluateBattleTraits } from "./combat/battleTraits";
+import { evolveCombatCareer } from "./combat/evolution";
+import { deriveBehaviorProfile, driftBehaviorProfile } from "./combat/behavior";
+import { rollHitZone } from "./combat/resolution";
+import { MAX_TURNS as SIM_MAX_TURNS } from "./combat/simulator";
+import { LiveCombatV2Session } from "./combat-v2/liveSession";
+import { MAX_HEALTH as STATE_MAX_HEALTH } from "./combat/state";
+import { effectiveStat, maxHealth } from "./combat/stats";
 import { canBattle as canBattleStage } from "./growth";
-import {
-  GENETIC_STAT_KEYS,
-  HIT_ZONES,
-  type Chicken,
-  type CombatLogEntry,
-  type CombatResult,
-  type FightingStyle,
-  type GeneticStatKey,
-  type HitZone,
+import type {
+  BehavioralProfile,
+  Chicken,
+  CombatExperience,
+  CombatCareerState,
+  CombatRecord,
+  CombatResult,
+  InjuryRecord,
+  Trait,
 } from "./types";
 
 export type Rng = () => number;
 
-export const MAX_TURNS = 300;
-export const MAX_HEALTH = 100;
-const FATIGUE_STAMINA_RATIO = 0.3;
-const FATIGUE_DAMAGE_MULT = 0.8;
-const MAX_CRIT_CHANCE = 0.25;
-const CRIT_DAMAGE_MULT = 1.5;
-const MAX_DEFENSE_REDUCTION = 0.4;
-const MIN_DAMAGE = 0.5;
-const CRITICAL_INJURY_BASE_CHANCE = 0.5;
-const COUNTER_DAMAGE_MULT = 1.4;
+export const MAX_TURNS = SIM_MAX_TURNS;
+export const MAX_HEALTH = STATE_MAX_HEALTH;
 
-/** IV is genetic ceiling, EV is trained investment — 60/40 weighting per the combat spec. */
-export function effectiveStat(chicken: Chicken, key: GeneticStatKey): number {
-  return chicken.iv[key] * 0.6 + chicken.ev[key] * 0.4;
-}
+export { effectiveStat, maxHealth, rollHitZone };
+export { generateMatchedOpponent } from "./combat/matchmaking";
+export { generatePveOpponent, PVE_ENCOUNTERS } from "./combat/pveEncounters";
+export type { PveEncounterDefinition, PveEncounterId } from "./combat/pveEncounters";
 
 /** Hens do not fight — only roosters enter combat, per the baseline mechanics spec. */
 export function canFight(chicken: Chicken): boolean {
-  return chicken.sex === "rooster" && canBattleStage(chicken.growthStage) && !chicken.injured;
+  return chicken.sex === "rooster"
+    && canBattleStage(chicken.growthStage)
+    && !chicken.injured
+    && chicken.health > 0;
 }
 
 export function healChicken(): { injured: false; health: number } {
   return { injured: false, health: MAX_HEALTH };
 }
 
-export function maxHealth(chicken: Chicken): number {
-  return 50 + effectiveStat(chicken, "stamina") + effectiveStat(chicken, "defense") * 0.5;
-}
-
 /** The chicken's remaining HP at the end of a fight, scaled to the 0–100 `Chicken.health` range. */
 export function finalHealthPercent(result: CombatResult, chicken: Chicken): number {
+  const authoritative = result.finalHealth?.[chicken.id];
+  if (authoritative) return Math.round(Math.max(0, Math.min(100, authoritative.percent)));
   const max = maxHealth(chicken);
   for (let i = result.log.length - 1; i >= 0; i--) {
     const entry = result.log[i];
@@ -54,282 +55,114 @@ export function finalHealthPercent(result: CombatResult, chicken: Chicken): numb
   return 100;
 }
 
-/** Weighted so head/neck are rare relative to body/wings/legs (5/5/30/15/15/15/15). */
-const HIT_ZONE_WEIGHTS: Record<HitZone, number> = {
-  head: 5,
-  neck: 5,
-  body: 30,
-  left_wing: 15,
-  right_wing: 15,
-  left_leg: 15,
-  right_leg: 15,
-};
-
-export function rollHitZone(rng: Rng): HitZone {
-  const totalWeight = HIT_ZONES.reduce((sum, zone) => sum + HIT_ZONE_WEIGHTS[zone], 0);
-  let roll = rng() * totalWeight;
-  for (const zone of HIT_ZONES) {
-    roll -= HIT_ZONE_WEIGHTS[zone];
-    if (roll < 0) return zone;
-  }
-  return HIT_ZONES[HIT_ZONES.length - 1];
-}
-
-const STYLE_FREQUENCY_WEIGHT: Record<FightingStyle, number> = {
-  aggressive: 1.25,
-  counter: 0.85,
-  endurance: 0.9,
-  balanced: 1.0,
-};
-
-const STYLE_STAMINA_COST_MULT: Record<FightingStyle, number> = {
-  aggressive: 1.2,
-  counter: 0.9,
-  endurance: 0.75,
-  balanced: 1.0,
-};
-
-const STYLE_DEFENSE_MULT: Record<FightingStyle, number> = {
-  aggressive: 0.9,
-  counter: 1.0,
-  endurance: 1.0,
-  balanced: 1.0,
-};
-
-function hasTrait(chicken: Chicken, id: string): boolean {
-  return chicken.traits.some((trait) => trait.id === id);
-}
-
-function styleDamageMult(style: FightingStyle, turn: number): number {
-  if (style === "aggressive") return 1.1;
-  if (style === "endurance") return turn <= 15 ? 0.9 : 1.15;
-  return 1.0;
-}
-
-function traitDamageMult(chicken: Chicken): number {
-  let mult = 1.0;
-  if (hasTrait(chicken, "heavy-striker")) mult *= 1.15;
-  if (hasTrait(chicken, "glass-cannon")) mult *= 1.2;
-  return mult;
-}
-
-function traitDefenseMult(chicken: Chicken): number {
-  return hasTrait(chicken, "glass-cannon") ? 0.8 : 1.0;
-}
-
-function traitStaminaCostMult(chicken: Chicken): number {
-  let mult = 1.0;
-  if (hasTrait(chicken, "iron-stamina")) mult *= 0.8;
-  if (hasTrait(chicken, "heavy-striker")) mult *= 1.15;
-  return mult;
-}
-
-function counterChance(chicken: Chicken): number {
-  let chance = 0;
-  if (chicken.fightingStyle === "counter") chance += 0.6;
-  if (hasTrait(chicken, "counter-fighter")) chance += 0.2;
-  return chance;
-}
-
-type FighterState = {
-  chicken: Chicken;
-  hp: number;
-  maxHp: number;
-  stamina: number;
-  wasHitLastTurn: boolean;
-};
-
-function makeFighterState(chicken: Chicken): FighterState {
-  const hp = maxHealth(chicken);
-  return { chicken, hp, maxHp: hp, stamina: 100, wasHitLastTurn: false };
-}
-
 /**
  * Runs a full fight to completion and returns the complete log — the client
  * never simulates, it only replays this. Deterministic for a given rng.
+ * Delegates to the V2 turn-based simulator (lib/combat/simulator.ts); the
+ * exported CombatResult shape is unchanged (with additive optional fields)
+ * so every existing caller keeps working.
  */
-export function simulateFight(
-  chickenA: Chicken,
-  chickenB: Chicken,
-  rng: Rng = Math.random
-): CombatResult {
-  const stateA = makeFighterState(chickenA);
-  const stateB = makeFighterState(chickenB);
-  const log: CombatLogEntry[] = [];
-
-  let turn = 0;
-  let outcomeReason: CombatResult["outcomeReason"] = "timeout";
-  let injuredChickenId: string | null = null;
-  let winner: FighterState = stateA;
-  let loser: FighterState = stateB;
-  let fightOver = false;
-
-  while (turn < MAX_TURNS && !fightOver) {
-    turn += 1;
-
-    const weightA =
-      STYLE_FREQUENCY_WEIGHT[stateA.chicken.fightingStyle] *
-      (effectiveStat(stateA.chicken, "speed") + effectiveStat(stateA.chicken, "agility") + 1);
-    const weightB =
-      STYLE_FREQUENCY_WEIGHT[stateB.chicken.fightingStyle] *
-      (effectiveStat(stateB.chicken, "speed") + effectiveStat(stateB.chicken, "agility") + 1);
-
-    const attacker = rng() < weightA / (weightA + weightB) ? stateA : stateB;
-    const defender = attacker === stateA ? stateB : stateA;
-
-    const attackerAccuracy = effectiveStat(attacker.chicken, "accuracy");
-    const defenderAgility = effectiveStat(defender.chicken, "agility");
-    let missChance = Math.max(0, ((defenderAgility - attackerAccuracy) / 100) * 0.15);
-    if (hasTrait(attacker.chicken, "calm")) missChance *= 0.7;
-    const isMiss = rng() < missChance;
-
-    let damage = 0;
-    let isCrit = false;
-    let isCounter = false;
-    let isCritical = false;
-    let hitZone: HitZone | null = null;
-
-    if (!isMiss) {
-      hitZone = rollHitZone(rng);
-
-      const attackerPower = effectiveStat(attacker.chicken, "power");
-      let baseDamage = 10 + attackerPower / 10;
-      if (hasTrait(attacker.chicken, "quick-starter") && turn <= 5) baseDamage *= 1.15;
-      const variance = baseDamage * 0.2 * (rng() - 0.5) * 2;
-
-      const critChance = Math.min(attackerAccuracy / 400, MAX_CRIT_CHANCE);
-      isCrit = rng() < critChance;
-      const critMult = isCrit ? CRIT_DAMAGE_MULT : 1.0;
-
-      const fatigueMult =
-        attacker.stamina < 100 * FATIGUE_STAMINA_RATIO ? FATIGUE_DAMAGE_MULT : 1.0;
-
-      const defenderDefense =
-        effectiveStat(defender.chicken, "defense") *
-        STYLE_DEFENSE_MULT[defender.chicken.fightingStyle] *
-        traitDefenseMult(defender.chicken);
-      const defenseReduction = Math.min(defenderDefense / 250, MAX_DEFENSE_REDUCTION);
-
-      if (counterChance(attacker.chicken) > 0 && attacker.wasHitLastTurn && rng() < counterChance(attacker.chicken)) {
-        isCounter = true;
-      }
-      const counterMult = isCounter ? COUNTER_DAMAGE_MULT : 1.0;
-
-      const styleMult = styleDamageMult(attacker.chicken.fightingStyle, turn);
-      const traitMult = traitDamageMult(attacker.chicken);
-
-      damage = Math.max(
-        MIN_DAMAGE,
-        (baseDamage + variance) * critMult * fatigueMult * counterMult * styleMult * traitMult *
-          (1 - defenseReduction)
-      );
-
-      if (isCrit && (hitZone === "head" || hitZone === "neck")) {
-        let injuryChance = CRITICAL_INJURY_BASE_CHANCE;
-        if (hasTrait(defender.chicken, "survivor")) injuryChance *= 0.5;
-        if (rng() < injuryChance) {
-          isCritical = true;
-        }
-      }
-
-      defender.hp = Math.max(0, defender.hp - damage);
-    }
-
-    const staminaCost =
-      10 * STYLE_STAMINA_COST_MULT[attacker.chicken.fightingStyle] * traitStaminaCostMult(attacker.chicken);
-    attacker.stamina = Math.max(0, attacker.stamina - staminaCost);
-
-    defender.wasHitLastTurn = !isMiss;
-    attacker.wasHitLastTurn = false;
-
-    log.push({
-      turn,
-      attackerId: attacker.chicken.id,
-      defenderId: defender.chicken.id,
-      damage: Number(damage.toFixed(1)),
-      hitZone,
-      isMiss,
-      isCrit,
-      isCounter,
-      isCritical,
-      defenderHp: Number(defender.hp.toFixed(1)),
-      timestamp: Date.now(),
-    });
-
-    if (isCritical) {
-      fightOver = true;
-      outcomeReason = "critical_injury";
-      injuredChickenId = defender.chicken.id;
-      winner = attacker;
-      loser = defender;
-    } else if (defender.hp <= 0) {
-      fightOver = true;
-      outcomeReason = "ko";
-      winner = attacker;
-      loser = defender;
-    }
-  }
-
-  if (!fightOver) {
-    outcomeReason = "timeout";
-    if (stateA.hp === stateB.hp) {
-      const totalA = effectiveStat(stateA.chicken, "power") + effectiveStat(stateA.chicken, "stamina");
-      const totalB = effectiveStat(stateB.chicken, "power") + effectiveStat(stateB.chicken, "stamina");
-      winner = totalB > totalA ? stateB : stateA;
-      loser = winner === stateA ? stateB : stateA;
-    } else {
-      winner = stateA.hp > stateB.hp ? stateA : stateB;
-      loser = winner === stateA ? stateB : stateA;
-    }
-  }
-
-  return {
-    winnerId: winner.chicken.id,
-    loserId: loser.chicken.id,
-    log,
-    totalTurns: turn,
-    outcomeReason,
-    injuredChickenId,
-  };
+export function simulateFight(chickenA: Chicken, chickenB: Chicken, rng: Rng = Math.random): CombatResult {
+  // This compatibility entry point powers tournament rounds, live odds and
+  // every remaining one-shot caller. Route them all through V2 so there is
+  // one authoritative combat ruleset in production.
+  const session = new LiveCombatV2Session(
+    chickenA,
+    chickenB,
+    Math.floor(rng() * 0x1_0000_0000) >>> 0,
+  );
+  while (!session.fightOver) session.step();
+  return session.finalize();
 }
 
-const MATCH_TOLERANCE = 0.2; // ±20% of the player chicken's total effective stats
-const MATCH_ATTEMPTS = 20;
-
-function totalEffectiveStats(chicken: Chicken): number {
-  return GENETIC_STAT_KEYS.reduce((sum, key) => sum + effectiveStat(chicken, key), 0);
-}
+/** Persistable field updates for one side of a resolved fight — shared by `/api/chickens/[id]/fight` and `/api/live/resolve` so both apply the same rules to an owned chicken. */
+export type FightOutcomeUpdate = {
+  record: CombatRecord;
+  health: number;
+  injured: boolean;
+  status: Chicken["status"];
+  behavior: BehavioralProfile;
+  experience: CombatExperience;
+  condition: number;
+  injuries: InjuryRecord[];
+  confidence: number;
+  morale: number;
+  stress: number;
+  battleHardening: number;
+  traits: Trait[];
+  combatCareer: CombatCareerState;
+  /** Traits newly earned by this fight (spec §43-44) — subset of `traits`, empty on most fights. */
+  newTraits: Trait[];
+};
 
 /**
- * Generates an NPC opponent, not persisted, roughly matched to `playerChicken`'s
- * total effective stats. Tries several random candidates for one inside the
- * tolerance band; falls back to the closest candidate seen if none land in it.
+ * Computes the persisted record/health/injury/status delta for `chicken`'s
+ * side of `result`, plus the V2 layer's experience/behavior-drift/condition/
+ * injury deltas (spec §19, §16, §28, §27). Caller decides whether to award
+ * credits (only the fight-initiating route does).
  */
-export function generateMatchedOpponent(
-  playerChicken: Chicken,
-  generator: () => Chicken = () => generateRandomChicken({ sex: "rooster" })
-): Chicken {
-  const targetTotal = totalEffectiveStats(playerChicken);
-  const minTotal = targetTotal * (1 - MATCH_TOLERANCE);
-  const maxTotal = targetTotal * (1 + MATCH_TOLERANCE);
+export function applyFightOutcome(chicken: Chicken, result: CombatResult): FightOutcomeUpdate {
+  const won = result.winnerId === chicken.id;
+  const drew = result.isDraw === true || result.winnerId === null;
+  const record = chicken.record;
 
-  let closest: Chicken | null = null;
-  let closestDiff = Infinity;
+  const gained = result.experienceGained?.[chicken.id];
+  const experience: CombatExperience = gained
+    ? {
+        offensive: (chicken.experience?.offensive ?? 0) + gained.offensive,
+        defensive: (chicken.experience?.defensive ?? 0) + gained.defensive,
+        evasion: (chicken.experience?.evasion ?? 0) + gained.evasion,
+        counter: (chicken.experience?.counter ?? 0) + gained.counter,
+        pressure: (chicken.experience?.pressure ?? 0) + gained.pressure,
+        recovery: (chicken.experience?.recovery ?? 0) + gained.recovery,
+        adaptation: (chicken.experience?.adaptation ?? 0) + gained.adaptation,
+      }
+    : chicken.experience ?? {
+        offensive: 0,
+        defensive: 0,
+        evasion: 0,
+        counter: 0,
+        pressure: 0,
+        recovery: 0,
+        adaptation: 0,
+      };
 
-  for (let i = 0; i < MATCH_ATTEMPTS; i++) {
-    const candidate = generator();
-    const candidateTotal = totalEffectiveStats(candidate);
+  const baseBehavior = chicken.behavior ?? deriveBehaviorProfile(chicken.fightingStyle, chicken.traits);
+  const behavior = driftBehaviorProfile(baseBehavior, experience);
+  const conditionDelta = result.conditionDelta?.[chicken.id] ?? 0;
+  const condition = Math.max(0, Math.min(100, (chicken.condition ?? 100) + conditionDelta));
+  const newInjuries = result.newInjuries?.[chicken.id] ?? [];
+  const wasInjured = result.injuredChickenId === chicken.id || newInjuries.length > 0;
+  const injuries = [...(chicken.injuries ?? []), ...newInjuries];
+  const hasActiveInjury = wasInjured || injuries.some((injury) => !injury.permanent && injury.recoveryRemaining > 0);
+  const aftermath = battleAftermath(chicken, result, chicken.id, wasInjured, newInjuries);
+  const earnedTraits = evaluateBattleTraits(chicken, aftermath, injuries);
+  const evolution = evolveCombatCareer(chicken, result.combatCareerGained?.[chicken.id]);
+  const allEarnedTraits = [...earnedTraits, ...evolution.newTraits];
+  const replacedIds = new Set(evolution.newTraits.map((trait) => trait.id));
+  const traits = allEarnedTraits.length ? [...chicken.traits.filter((trait) => !replacedIds.has(trait.id)), ...allEarnedTraits] : chicken.traits;
 
-    if (candidateTotal >= minTotal && candidateTotal <= maxTotal) {
-      return candidate;
-    }
-
-    const diff = Math.abs(candidateTotal - targetTotal);
-    if (diff < closestDiff) {
-      closest = candidate;
-      closestDiff = diff;
-    }
-  }
-
-  return closest ?? generator();
+  return {
+    record: {
+      ...record,
+      wins: record.wins + (won ? 1 : 0),
+      losses: record.losses + (won || drew ? 0 : 1),
+      koTko: record.koTko + (won && result.outcomeReason !== "timeout" ? 1 : 0),
+      decisions: record.decisions + (result.outcomeReason === "timeout" ? 1 : 0),
+    },
+    health: finalHealthPercent(result, chicken),
+    injured: hasActiveInjury,
+    status: hasActiveInjury ? "injured" : chicken.status,
+    behavior,
+    experience,
+    condition,
+    injuries,
+    confidence: aftermath.confidence,
+    morale: aftermath.morale,
+    stress: aftermath.stress,
+    battleHardening: aftermath.battleHardening,
+    traits,
+    combatCareer: evolution.career,
+    newTraits: allEarnedTraits,
+  };
 }

@@ -123,13 +123,137 @@ test("a throwing AudioContext constructor is caught and future calls stay no-ops
   }
 });
 
+test("playMusic starts a self-scheduling drone+drum loop; stopMusic halts further scheduling", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let oscillatorCount = 0;
+  let bufferSourceCount = 0;
+
+  class FakeAudioContext {
+    currentTime = 0;
+    sampleRate = 44100;
+    destination = {};
+    createOscillator() {
+      oscillatorCount += 1;
+      return makeFakeAudioNode();
+    }
+    createGain() {
+      return makeFakeGainNode();
+    }
+    createBufferSource() {
+      bufferSourceCount += 1;
+      return makeFakeAudioNode();
+    }
+    createBuffer(_channels: number, length: number) {
+      return { getChannelData: () => new Float32Array(length) };
+    }
+    createBiquadFilter() {
+      return makeFakeFilterNode();
+    }
+  }
+
+  (globalThis as Record<string, unknown>).window = { AudioContext: FakeAudioContext };
+
+  try {
+    const engine = new AudioEngine(true);
+    engine.playMusic();
+
+    const oscAfterFirstLoop = oscillatorCount;
+    const noiseAfterFirstLoop = bufferSourceCount;
+    assert.ok(oscAfterFirstLoop > 0, "drone oscillators scheduled");
+    assert.ok(noiseAfterFirstLoop > 0, "drum hits scheduled");
+
+    // Calling again while already playing must not double-schedule.
+    engine.playMusic();
+    assert.equal(oscillatorCount, oscAfterFirstLoop);
+
+    // Advance past one full loop — the recursive setTimeout should fire and
+    // schedule another loop's worth of drone + drum nodes.
+    t.mock.timers.tick(6000);
+    assert.ok(oscillatorCount > oscAfterFirstLoop, "second loop's drone scheduled");
+    assert.ok(bufferSourceCount > noiseAfterFirstLoop, "second loop's drums scheduled");
+
+    const oscBeforeStop = oscillatorCount;
+    engine.stopMusic();
+
+    // After stopping, further time advancement must not schedule any more loops.
+    t.mock.timers.tick(20000);
+    assert.equal(oscillatorCount, oscBeforeStop, "no further loops scheduled after stopMusic");
+  } finally {
+    delete (globalThis as Record<string, unknown>).window;
+    t.mock.timers.reset();
+  }
+});
+
+test("playMusic/stopMusic are no-ops (never throw) when no AudioContext exists (SSR/Node)", () => {
+  const engine = new AudioEngine(true);
+  assert.doesNotThrow(() => engine.playMusic());
+  assert.doesNotThrow(() => engine.stopMusic());
+});
+
+test("setEnabled(true) lazily resumes music that was requested while disabled", (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout"] });
+  let oscillatorCount = 0;
+
+  class FakeAudioContext {
+    currentTime = 0;
+    sampleRate = 44100;
+    destination = {};
+    createOscillator() {
+      oscillatorCount += 1;
+      return makeFakeAudioNode();
+    }
+    createGain() {
+      return makeFakeGainNode();
+    }
+    createBufferSource() {
+      return makeFakeAudioNode();
+    }
+    createBuffer(_channels: number, length: number) {
+      return { getChannelData: () => new Float32Array(length) };
+    }
+    createBiquadFilter() {
+      return makeFakeFilterNode();
+    }
+  }
+
+  (globalThis as Record<string, unknown>).window = { AudioContext: FakeAudioContext };
+
+  try {
+    // Engine starts disabled; playMusic is requested but blocked until enabled.
+    const engine = new AudioEngine(false);
+    engine.playMusic();
+    assert.equal(oscillatorCount, 0, "music does not start while disabled");
+
+    engine.setEnabled(true);
+    assert.ok(oscillatorCount > 0, "music starts once enabled after being requested");
+
+    // Muting/unmuting an already-playing loop must never throw.
+    assert.doesNotThrow(() => engine.setEnabled(false));
+    assert.doesNotThrow(() => engine.setEnabled(true));
+  } finally {
+    delete (globalThis as Record<string, unknown>).window;
+    t.mock.timers.reset();
+  }
+});
+
 // --- fake Web Audio node helpers ---------------------------------------
 
 function makeFakeAudioParam() {
+  let value = 0;
   return {
-    setValueAtTime: () => {},
-    linearRampToValueAtTime: () => {},
-    exponentialRampToValueAtTime: () => {},
+    get value() {
+      return value;
+    },
+    setValueAtTime: (v: number) => {
+      value = v;
+    },
+    linearRampToValueAtTime: (v: number) => {
+      value = v;
+    },
+    exponentialRampToValueAtTime: (v: number) => {
+      value = v;
+    },
+    cancelScheduledValues: () => {},
   };
 }
 

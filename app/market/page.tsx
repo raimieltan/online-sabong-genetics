@@ -4,7 +4,9 @@ import { useEffect, useState } from "react";
 
 import type { MarketListingRow } from "@/lib/marketplace";
 import { RARITY_BORDER, RARITY_GEM, topRarity } from "@/lib/rarity";
-import { ChickenViewer } from "@/components/chicken3d/ChickenViewer";
+import { ChickenThumbnail } from "@/components/chicken3d/ChickenThumbnail";
+import { PageHeader } from "@/components/PageHeader";
+import { setPlayerCredits } from "@/lib/playerStore";
 
 const SEX_ICON: Record<string, string> = { rooster: "🐓", hen: "🐔" };
 
@@ -29,6 +31,7 @@ export default function MarketPage() {
       if (cancelled) return;
       setListings(data.listings);
       setCredits(data.credits);
+      setPlayerCredits(data.credits);
       setLoading(false);
     });
     return () => {
@@ -55,18 +58,17 @@ export default function MarketPage() {
 
   return (
     <main className="mx-auto max-w-5xl p-6">
-      <div className="signboard mb-6 flex flex-wrap items-center justify-between gap-3 p-4">
-        <div>
-          <h1 className="font-display text-2xl font-semibold text-(--color-gold-bright)">🛒 Market</h1>
-          <p className="text-sm opacity-70">Buy chickens from the flock trade with Battle Credits.</p>
-        </div>
-        {credits !== null && (
+      <PageHeader
+        eyebrow="Livestock Trade"
+        title="🛒 Market"
+        description="Buy chickens from the flock trade with Battle Credits."
+        right={credits !== null && (
           <div className="flex items-center gap-1.5 rounded-full border border-(--color-gold)/25 bg-black/30 py-1 pl-2.5 pr-3">
             <span className="text-sm leading-none">🪙</span>
             <span className="font-display text-sm font-semibold">{credits.toLocaleString()}</span>
           </div>
         )}
-      </div>
+      />
 
       {message && (
         <div className="mb-4 rounded-lg border border-(--color-gold)/30 bg-(--color-gold)/10 p-3 text-center text-sm text-(--color-gold-bright)">
@@ -88,11 +90,7 @@ export default function MarketPage() {
                 key={listing.id}
                 className={`panel-wood rounded-lg border-t-2 p-4 ${RARITY_BORDER[rarity]}`}
               >
-                <ChickenViewer
-                  chicken={listing}
-                  className="mb-2 h-40 w-full rounded-lg bg-(--color-ink)"
-                  cameraDistance={5}
-                />
+                <ChickenThumbnail chicken={listing} className="mb-2 h-40 w-full rounded-lg bg-(--color-ink)" />
                 <div className="flex items-center gap-2">
                   <span className="text-xl">{SEX_ICON[listing.sex]}</span>
                   <div>
