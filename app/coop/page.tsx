@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 
 import type { Chicken, Egg } from "@/lib/types";
@@ -28,8 +28,6 @@ export default function CoopPage() {
       })
       .finally(() => setLoading(false));
   }, []);
-
-  const filteredChickens = useMemo(() => filterChickens(chickens, filters), [chickens, filters]);
 
   async function handleGenerate() {
     const res = await fetch("/api/chickens", { method: "POST" });
