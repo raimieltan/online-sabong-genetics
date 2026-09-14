@@ -1,7 +1,7 @@
 import {
   STAT_KEYS,
+  type ChickenColorScheme,
   type Rooster,
-  type RoosterColorScheme,
   type StatKey,
 } from "./types";
 
@@ -25,11 +25,41 @@ const RANDOM_NAME_POOL: readonly string[] = [
   "Ember",
 ];
 
-/** Dark-neon palette families from the design spec (reds / greens / browns). */
-export const COLOR_PALETTES: readonly RoosterColorScheme[] = [
-  { body: "#d4514f", head: "#c0622e", comb: "#ff0000", tail: "#ff4444", feet: "#ff8c00" },
-  { body: "#4a7c59", head: "#2d5f3d", comb: "#ff0000", tail: "#66cc88", feet: "#ff8c00" },
-  { body: "#8b6f47", head: "#6b5637", comb: "#ff0000", tail: "#a0826d", feet: "#ff8c00" },
+/** Dark-neon palette families from the design spec (reds / greens / browns), remapped onto the rig's 7 materials. */
+export const COLOR_PALETTES: readonly ChickenColorScheme[] = [
+  {
+    body: "#d4514f",
+    hackle: "#e0891d",
+    wings: "#4c1708",
+    tail: "#ff4444",
+    comb: "#b8100f",
+    beak: "#d9a83a",
+    shanks: "#cc9e33",
+    pattern: "SOLID",
+    patternColor: "#5c1f1d",
+  },
+  {
+    body: "#4a7c59",
+    hackle: "#c75c0f",
+    wings: "#2f5a3e",
+    tail: "#66cc88",
+    comb: "#b8100f",
+    beak: "#d9a83a",
+    shanks: "#cc9e33",
+    pattern: "BARRED",
+    patternColor: "#1c3a26",
+  },
+  {
+    body: "#8b6f47",
+    hackle: "#c9a24f",
+    wings: "#4c1708",
+    tail: "#a0826d",
+    comb: "#b8100f",
+    beak: "#d9a83a",
+    shanks: "#cc9e33",
+    pattern: "MOTTLED",
+    patternColor: "#4a3521",
+  },
 ];
 
 function cryptoSafeId(seed: string): string {
@@ -55,7 +85,7 @@ function pickRandomName(): string {
   return RANDOM_NAME_POOL[Math.floor(Math.random() * RANDOM_NAME_POOL.length)];
 }
 
-function pickRandomPalette(): RoosterColorScheme {
+function pickRandomPalette(): ChickenColorScheme {
   return { ...COLOR_PALETTES[Math.floor(Math.random() * COLOR_PALETTES.length)] };
 }
 

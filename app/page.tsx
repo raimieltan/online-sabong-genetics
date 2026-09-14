@@ -1,225 +1,44 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import BattleArena from "@/components/BattleArena";
-import BattleLog from "@/components/BattleLog";
-import BettingPanel from "@/components/BettingPanel";
-import ResultsScreen from "@/components/ResultsScreen";
-import RoosterSelector from "@/components/RoosterSelector";
-import type { BattleLogEntry, BattleResult, Bet, Rooster } from "@/lib/types";
-import {
-  loadAudioEnabled,
-  loadCredits,
-  saveAudioEnabled,
-  saveCredits,
-} from "@/lib/storage";
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
+import { ChickenViewer } from "@/components/chicken3d/ChickenViewer";
+import type { Chicken } from "@/lib/types";
 
-type GamePhase = "selection" | "battle" | "results";
+type Activity = { id: string; occurredAt: string; title: string; summary?: string; destination?: string };
+type Hub = { chickens: Chicken[]; eggs: { id: string }[]; activeTraining: { id: string; chickenId: string; programId: string }[]; injuredChickenIds: string[]; activeTreatmentChickenIds: string[]; trainingChickenIds: string[]; tournament: { chickenId: string; name: string; round: number; totalRounds: number; opponent: Chicken | null } | null; progression: { boss: { id: string; name: string; styleLabel: string }; completed: number; total: number; rank: number } | null; activities: Activity[] };
+const emptyHub: Hub = { chickens: [], eggs: [], activeTraining: [], injuredChickenIds: [], activeTreatmentChickenIds: [], trainingChickenIds: [], tournament: null, progression: null, activities: [] };
+
+function status(chicken: Chicken, training: Set<string>, treatment: Set<string>) {
+  if (training.has(chicken.id)) return "Training";
+  if (treatment.has(chicken.id)) return "Recovery";
+  if (chicken.injured || chicken.status === "injured") return "Injured";
+  if ((chicken.condition ?? 100) < 60 || chicken.energy < 35) return "Fatigued";
+  return chicken.status === "active" ? "Ready" : chicken.status;
+}
+function Stat({ label, value, color }: { label: string; value: number; color: string }) { return <div className="grid grid-cols-[4.7rem_1fr] items-center gap-2 text-[10px] font-bold uppercase tracking-[.12em] text-(--color-parchment)"><span>{label}</span><span className="h-2 overflow-hidden rounded-sm border border-black/40 bg-black/50"><span className={`block h-full ${color}`} style={{ width: `${Math.min(100, Math.max(0, value))}%` }} /></span></div>; }
+function Action({ href, children }: { href: string; children: React.ReactNode }) { return <Link href={href} className="smoked-glass-light rounded p-3 text-center text-[10px] font-bold uppercase tracking-wide transition hover:border-(--color-gold)/60 hover:text-(--color-gold-bright)">{children}</Link>; }
 
 export default function Home() {
-  const [redRooster, setRedRooster] = useState<Rooster | null>(null);
-  const [blueRooster, setBlueRooster] = useState<Rooster | null>(null);
-  const [credits, setCredits] = useState(5000);
-  const [audioEnabled, setAudioEnabled] = useState(false);
-  const [phase, setPhase] = useState<GamePhase>("selection");
-  const [bet, setBet] = useState<Bet | null>(null);
-  const [logs, setLogs] = useState<BattleLogEntry[]>([]);
-  const [result, setResult] = useState<BattleResult | null>(null);
-
-  useEffect(() => {
-    setCredits(loadCredits());
-    setAudioEnabled(loadAudioEnabled());
-  }, []);
-
-  const handleCreditsChange = useCallback((nextCredits: number) => {
-    setCredits(nextCredits);
-    saveCredits(nextCredits);
-  }, []);
-
-  const handleAudioToggle = () => {
-    const next = !audioEnabled;
-    setAudioEnabled(next);
-    saveAudioEnabled(next);
-  };
-
-  const handleSelectRed = (rooster: Rooster) => {
-    setRedRooster({ ...rooster, id: `red-${rooster.id}` });
-  };
-
-  const handleSelectBlue = (rooster: Rooster) => {
-    setBlueRooster({ ...rooster, id: `blue-${rooster.id}` });
-  };
-
-  const handleBetPlaced = (nextBet: Bet) => {
-    setBet(nextBet);
-    setLogs([]);
-    setResult(null);
-    handleCreditsChange(credits - nextBet.amount);
-    setPhase("battle");
-  };
-
-  const handleLogEntry = useCallback((entry: BattleLogEntry) => {
-    setLogs((current) => [...current, entry]);
-  }, []);
-
-  const handleBattleEnd = useCallback(
-    (battleResult: BattleResult) => {
-      setResult(battleResult);
-      setPhase("results");
-
-      setBet((currentBet) => {
-        if (currentBet && battleResult.winner.id === currentBet.roosterId) {
-          const payout = Math.floor(currentBet.amount * currentBet.odds);
-          setCredits((currentCredits) => {
-            const nextCredits = currentCredits + payout;
-            saveCredits(nextCredits);
-            return nextCredits;
-          });
-        }
-        return currentBet;
-      });
-    },
-    []
-  );
-
-  const handleNewBattle = () => {
-    setPhase("selection");
-    setBet(null);
-    setLogs([]);
-    setResult(null);
-  };
-
-  const payout = useMemo(() => {
-    if (!bet || !result || result.winner.id !== bet.roosterId) return 0;
-    return Math.floor(bet.amount * bet.odds);
-  }, [bet, result]);
-
-  const canShowBattle = phase === "battle" && redRooster && blueRooster;
-  const canShowResults = phase === "results" && result && bet;
-
-  return (
-    <main className="min-h-screen overflow-x-hidden bg-[radial-gradient(circle_at_top,#172554_0%,#020617_42%,#000_100%)] text-slate-100">
-      <div className="mx-auto flex max-w-7xl flex-col gap-8 px-4 py-6 sm:px-6 lg:px-8">
-        <header className="rounded-3xl border border-cyan-500/25 bg-black/35 p-6 shadow-2xl shadow-cyan-950/30 backdrop-blur">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <p className="mb-2 text-xs font-black uppercase tracking-[0.32em] text-cyan-300">
-                Fictional credits · Cartoon combat · No real gambling
-              </p>
-              <h1 className="text-4xl font-black uppercase tracking-tight text-white sm:text-6xl">
-                Rooster Arena
-              </h1>
-              <p className="mt-3 max-w-2xl text-sm font-medium text-slate-400 sm:text-base">
-                Pick fighters, read stats, set wager, watch 500ms-turn Canvas battle unfold.
-              </p>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="rounded-2xl border border-emerald-500/40 bg-emerald-500/10 px-5 py-3">
-                <p className="text-xs font-black uppercase tracking-[0.22em] text-emerald-400">
-                  Credits
-                </p>
-                <p className="text-3xl font-black text-emerald-300">
-                  {credits.toLocaleString()}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={handleAudioToggle}
-                className={`rounded-2xl border px-5 py-3 text-left transition hover:scale-[1.02] ${
-                  audioEnabled
-                    ? "border-cyan-400 bg-cyan-400/15 text-cyan-200"
-                    : "border-slate-700 bg-slate-900/80 text-slate-400"
-                }`}
-              >
-                <p className="text-xs font-black uppercase tracking-[0.22em]">
-                  Audio
-                </p>
-                <p className="text-xl font-black">{audioEnabled ? "On" : "Off"}</p>
-              </button>
-            </div>
-          </div>
-        </header>
-
-        {phase === "selection" ? (
-          <div className="grid gap-6 lg:grid-cols-[1fr_1fr]">
-            <RoosterSelector
-              corner="red"
-              selectedRooster={redRooster}
-              onSelect={handleSelectRed}
-            />
-            <RoosterSelector
-              corner="blue"
-              selectedRooster={blueRooster}
-              onSelect={handleSelectBlue}
-            />
-            <div className="lg:col-span-2">
-              <BettingPanel
-                redRooster={redRooster}
-                blueRooster={blueRooster}
-                credits={credits}
-                onBetPlaced={handleBetPlaced}
-              />
-            </div>
-          </div>
-        ) : null}
-
-        {canShowBattle ? (
-          <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_24rem]">
-            <section className="rounded-3xl border border-slate-800 bg-black/35 p-4 shadow-2xl">
-              <BattleArena
-                r1={redRooster}
-                r2={blueRooster}
-                audioEnabled={audioEnabled}
-                onLogEntry={handleLogEntry}
-                onBattleEnd={handleBattleEnd}
-              />
-            </section>
-            <BattleLog entries={logs} />
-          </div>
-        ) : null}
-
-        {phase === "results" ? (
-          <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_24rem]">
-            <section className="rounded-3xl border border-slate-800 bg-black/35 p-4 shadow-2xl">
-              {redRooster && blueRooster ? (
-                <BattleArenaPreview redRooster={redRooster} blueRooster={blueRooster} />
-              ) : null}
-            </section>
-            <BattleLog entries={logs} />
-          </div>
-        ) : null}
-      </div>
-
-      {canShowResults ? (
-        <ResultsScreen
-          result={result}
-          bet={bet}
-          payout={payout}
-          onNewBattle={handleNewBattle}
-        />
-      ) : null}
-    </main>
-  );
-}
-
-function BattleArenaPreview({
-  redRooster,
-  blueRooster,
-}: {
-  redRooster: Rooster;
-  blueRooster: Rooster;
-}) {
-  return (
-    <div className="flex min-h-[280px] flex-col items-center justify-center rounded-2xl border border-slate-800 bg-slate-950/70 p-8 text-center">
-      <p className="mb-3 text-xs font-black uppercase tracking-[0.3em] text-slate-500">
-        Match Complete
-      </p>
-      <div className="flex flex-wrap items-center justify-center gap-4 text-2xl font-black uppercase text-white sm:text-4xl">
-        <span className="text-red-400">{redRooster.name}</span>
-        <span className="text-slate-600">vs</span>
-        <span className="text-blue-400">{blueRooster.name}</span>
-      </div>
+  const [hub, setHub] = useState<Hub | null>(null); const [selectedId, setSelectedId] = useState<string | null>(null);
+  useEffect(() => { fetch("/api/ranch-hub").then((r) => r.ok ? r.json() : emptyHub).then((data: Hub) => { setHub(data); if (data.chickens.length) setSelectedId(data.chickens.find((c) => c.sex === "rooster" && c.status === "active")?.id ?? data.chickens[0].id); }).catch(() => setHub(emptyHub)); }, []);
+  const fighter = useMemo(() => hub?.chickens.find((c) => c.id === selectedId) ?? hub?.chickens[0] ?? null, [hub, selectedId]);
+  const training = useMemo(() => new Set(hub?.trainingChickenIds ?? []), [hub]); const treatment = useMemo(() => new Set(hub?.activeTreatmentChickenIds ?? []), [hub]);
+  const fighterStatus = fighter ? status(fighter, training, treatment) : null;
+  const attention = useMemo(() => { if (!hub) return []; const items: { id: string; label: string; detail: string; href: string }[] = [];
+    if (hub.injuredChickenIds.length) items.push({ id: "injured", label: `${hub.injuredChickenIds.length} fighter${hub.injuredChickenIds.length === 1 ? "" : "s"} need treatment`, detail: "Visit the clinic before the next fight.", href: "/clinic" });
+    if (hub.tournament) items.push({ id: "tournament", label: `${hub.tournament.name} is in progress`, detail: `Round ${hub.tournament.round} of ${hub.tournament.totalRounds} is ready.`, href: `/tournament/${hub.tournament.chickenId}` });
+    if (hub.eggs.length) items.push({ id: "eggs", label: `${hub.eggs.length} egg${hub.eggs.length === 1 ? "" : "s"} ready to hatch`, detail: "Your incubator has new birds waiting.", href: "/coop" });
+    hub.activeTraining.forEach((s) => { const c = hub.chickens.find((item) => item.id === s.chickenId); if (c) items.push({ id: s.id, label: `${c.name} is training`, detail: s.programId.replaceAll("_", " "), href: "/training" }); });
+    if (!items.length && hub.progression) items.push({ id: "road", label: "A Road to Glory fight is available", detail: `Face ${hub.progression.boss.name} to advance.`, href: `/pve/${hub.progression.boss.id}` }); return items.slice(0, 4); }, [hub]);
+  const selectRelative = (step: number) => { if (!hub?.chickens.length || !fighter) return; const i = hub.chickens.findIndex((c) => c.id === fighter.id); setSelectedId(hub.chickens[(i + step + hub.chickens.length) % hub.chickens.length].id); };
+  return <main className="relative min-h-[calc(100vh-5.5rem)] overflow-hidden bg-(--color-ink)"><div className="absolute inset-0 bg-[url('/background/home-backround.png')] bg-cover bg-center" /><div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(7,5,3,.9)_0%,rgba(10,7,4,.48)_38%,rgba(9,6,4,.18)_66%,rgba(7,5,3,.76)_100%)]" /><div className="absolute inset-0 bg-[linear-gradient(0deg,rgba(7,5,3,.9)_0%,transparent_42%,rgba(7,5,3,.23)_100%)]" />
+    <div className="relative mx-auto max-w-[1600px] px-4 py-5 lg:px-7 lg:py-7"><div className="grid min-h-[31rem] grid-cols-1 gap-5 lg:grid-cols-[20rem_minmax(24rem,1fr)_21rem]">
+      <section className="smoked-glass h-fit rounded-lg p-5 lg:mt-10"><span className="smoked-glass-light inline-flex rounded px-2 py-1 text-[10px] font-bold uppercase tracking-[.12em] text-(--color-gold-bright)">Active fighter</span>{fighter ? <><h1 className="mt-3 font-comic text-5xl uppercase italic leading-none text-(--color-gold-bright)">{fighter.name}</h1><p className="mt-4 font-display text-xs font-semibold uppercase tracking-wide text-(--color-parchment)">Gen. {fighter.generation} <span className="mx-2 text-(--color-gold)">|</span> {fighter.breed ?? fighter.bloodlineId} bloodline</p><p className="mt-4 font-display text-lg font-bold text-(--color-parchment)">{fighter.record.wins}W <span className="mx-3 text-(--color-text-muted)">{fighter.record.losses}L</span> {fighter.record.koTko}KO</p><div className="mt-5 space-y-3 border-t border-(--color-gold)/20 pt-5"><Stat label="Power" value={fighter.iv.power} color="bg-red-500" /><Stat label="Speed" value={fighter.iv.speed} color="bg-(--color-gold-bright)" /><Stat label="Stamina" value={fighter.iv.stamina} color="bg-blue-400" /></div><p className={`mt-6 text-sm font-bold uppercase ${fighterStatus === "Ready" ? "text-emerald-400" : "text-(--color-gold-bright)"}`}>Condition <span className="ml-3">{fighterStatus} ●</span></p><Link href={`/chicken/${fighter.id}`} className="mt-6 flex items-center justify-center gap-3 rounded-md bg-gradient-to-b from-(--color-gold-bright) to-(--color-gold) px-4 py-3 font-display text-sm font-bold text-(--color-ink)">View fighter <span className="text-xl">→</span></Link></> : <p className="mt-5 text-sm text-(--color-text-muted)">Your ranch has no fighters yet. Visit the market or hatch an egg to begin.</p>}</section>
+      <section className="relative order-first min-h-[22rem] lg:order-none" aria-label="Your focused rooster"><div className="absolute inset-x-0 bottom-0 top-0 mx-auto max-w-[39rem]">{fighter && <ChickenViewer chicken={fighter} interactive className="h-full w-full" cameraDistance={3.7} />}</div><div className="pointer-events-none absolute inset-x-[15%] bottom-5 h-12 rounded-[50%] bg-black/40 blur-xl" />{(hub?.chickens.length ?? 0) > 1 && <div className="absolute inset-x-4 bottom-5 flex justify-between"><button onClick={() => selectRelative(-1)} className="smoked-glass rounded-full px-4 py-2 text-(--color-gold-bright)" aria-label="Previous fighter">←</button><button onClick={() => selectRelative(1)} className="smoked-glass rounded-full px-4 py-2 text-(--color-gold-bright)" aria-label="Next fighter">→</button></div>}</section>
+      <aside className="space-y-4 lg:mt-3"><section className="smoked-glass rounded-lg p-4"><p className="text-[10px] font-bold uppercase tracking-[.14em] text-(--color-gold-bright)">Road to Glory</p>{hub?.tournament ? <><h2 className="mt-2 font-comic text-3xl uppercase italic leading-none text-(--color-gold-bright)">{hub.tournament.name}</h2><p className="mt-4 text-xs font-semibold uppercase tracking-wide text-(--color-parchment)">Round {hub.tournament.round} of {hub.tournament.totalRounds}</p>{hub.tournament.opponent && <p className="mt-2 text-sm text-(--color-parchment)">Next: {hub.tournament.opponent.name}</p>}<Link href={`/tournament/${hub.tournament.chickenId}`} className="mt-5 block rounded-md bg-gradient-to-b from-(--color-gold-bright) to-(--color-gold) px-3 py-3 text-center text-xs font-bold uppercase text-(--color-ink)">Continue tournament →</Link></> : hub?.progression ? <><h2 className="mt-2 font-comic text-3xl uppercase italic leading-none text-(--color-gold-bright)">{hub.progression.boss.name}</h2><p className="mt-4 text-xs font-semibold uppercase tracking-wide text-(--color-parchment)">{hub.progression.boss.styleLabel}</p><div className="mt-3 h-1.5 overflow-hidden rounded bg-black/50"><span className="block h-full bg-(--color-gold-bright)" style={{ width: `${hub.progression.total ? hub.progression.completed / hub.progression.total * 100 : 0}%` }} /></div><p className="mt-2 text-[10px] uppercase tracking-wider text-(--color-text-muted)">{hub.progression.completed} / {hub.progression.total} challenges cleared · Rank #{hub.progression.rank}</p><Link href={`/pve/${hub.progression.boss.id}`} className="mt-5 block rounded-md bg-gradient-to-b from-(--color-gold-bright) to-(--color-gold) px-3 py-3 text-center text-xs font-bold uppercase text-(--color-ink)">View fight →</Link></> : <><h2 className="mt-2 font-display text-xl text-(--color-parchment)">No fight currently selected</h2><p className="mt-3 text-sm text-(--color-text-muted)">Choose your next challenge and continue building your career.</p><Link href="/pve" className="mt-5 block rounded-md bg-gradient-to-b from-(--color-gold-bright) to-(--color-gold) px-3 py-3 text-center text-xs font-bold uppercase text-(--color-ink)">Find a fight →</Link></>}</section><section className="smoked-glass rounded-lg p-4"><h2 className="font-display text-sm font-bold text-(--color-parchment)">⚑ Ranch attention</h2><div className="mt-3 space-y-3">{attention.length ? attention.map((item) => <Link href={item.href} key={item.id} className="block border-l-2 border-(--color-gold)/60 pl-3"><p className="text-xs font-bold uppercase text-(--color-parchment)">{item.label}</p><p className="mt-1 text-[11px] text-(--color-text-muted)">{item.detail}</p></Link>) : <p className="text-sm text-(--color-text-muted)">Your ranch is clear. Choose a fighter and set the next goal.</p>}</div></section></aside>
     </div>
-  );
+    <section className="smoked-glass mt-5 rounded-lg p-4"><div className="flex items-center justify-between gap-4"><h2 className="font-display text-sm font-bold text-(--color-gold-bright)">Your stable</h2><Link href="/coop" className="text-[10px] font-bold uppercase tracking-wider text-(--color-gold-bright)">View all {hub?.chickens.length ?? 0} →</Link></div>{hub?.chickens.length ? <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">{hub.chickens.slice(0, 4).map((chicken) => { const s = status(chicken, training, treatment); return <button key={chicken.id} onClick={() => setSelectedId(chicken.id)} className={`rounded border p-3 text-left transition ${chicken.id === fighter?.id ? "border-(--color-gold-bright) bg-(--color-gold)/10" : "border-(--color-gold)/15 bg-black/15 hover:border-(--color-gold)/50"}`}><p className="truncate font-display text-lg text-(--color-parchment)">{chicken.name}</p><p className="mt-1 text-[10px] uppercase tracking-wide text-(--color-text-muted)">Gen. {chicken.generation} · {chicken.record.wins}W {chicken.record.losses}L</p><p className={`mt-3 text-[10px] font-bold uppercase tracking-wider ${s === "Ready" ? "text-emerald-400" : "text-(--color-gold-bright)"}`}>● {s}</p></button>; })}</div> : <p className="mt-3 text-sm text-(--color-text-muted)">No fighters in the stable yet.</p>}</section>
+    <div className="mt-5 grid gap-5 lg:grid-cols-[1fr_21rem]"><section className="smoked-glass rounded-lg p-4"><h2 className="font-display text-sm font-bold text-(--color-gold-bright)">⚔ Ranch journal</h2>{hub?.activities.length ? <div className="mt-3 grid gap-2 md:grid-cols-2">{hub.activities.map((a) => <Link href={a.destination ?? "/coop"} key={a.id} className="smoked-glass-light rounded p-3"><p className="text-xs font-bold uppercase text-(--color-parchment)">{a.title}</p>{a.summary && <p className="mt-1 text-xs text-(--color-text-muted)">{a.summary}</p>}<p className="mt-2 text-[10px] uppercase tracking-wider text-(--color-gold)/80">{new Date(a.occurredAt).toLocaleDateString()}</p></Link>)}</div> : <p className="mt-3 text-sm text-(--color-text-muted)">Your ranch journal will record training, breeding, recovery, and career progress as they happen.</p>}</section><section className="smoked-glass rounded-lg p-4"><h2 className="font-display text-sm font-bold text-(--color-gold-bright)">⚡ Quick actions</h2><div className="mt-3 grid grid-cols-2 gap-2">{hub?.injuredChickenIds.length ? <Action href="/clinic">Visit clinic</Action> : null}{hub?.eggs.length ? <Action href="/coop">Hatch eggs</Action> : null}{fighter && fighterStatus === "Ready" && <><Action href="/pve">Find fight</Action><Action href="/training">Start training</Action></>}{hub?.tournament && <Action href={`/tournament/${hub.tournament.chickenId}`}>View bracket</Action>}{!hub?.injuredChickenIds.length && !hub?.eggs.length && !hub?.tournament && (!fighter || fighterStatus !== "Ready") && <Action href="/coop">View stable</Action>}</div></section></div>
+    </div></main>;
 }

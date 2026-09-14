@@ -1,16 +1,87 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import type { Chicken, CombatLogEntry } from "@/lib/types";
-import { maxHealth } from "@/lib/combat";
+import { useEffect, useRef, useState, type RefObject } from "react";
+import * as THREE from "three";
+import type { Chicken, CombatLogEntry, FightingStyle, HitZone, TellKind } from "@/lib/types";
+import { effectiveStat, maxHealth } from "@/lib/combat";
+import { resolvePhysicalProfile } from "@/lib/physicalProfile";
 import { AudioEngine } from "@/lib/audioEngine";
+import {
+  BattleStage3D,
+  WORLD_HALF_GAP,
+  ANIM_PX_TO_WORLD,
+} from "@/components/chicken3d/BattleStage3D";
+import type { CameraCue } from "@/components/chicken3d/BattleStage3D";
+import {
+  KNOCKDOWN_RECOVER_MS,
+  scaledRecoveryMs,
+  type ChickenPhysicsHandle,
+} from "@/components/chicken3d/ChickenPhysicsRig";
+import type { ImpactVFXHandle } from "@/components/chicken3d/ImpactVFX";
+import {
+  BattleDebugOverlay,
+  makeDebugState,
+  type BattleDebugState,
+} from "@/components/chicken3d/BattleDebugOverlay";
+import type { FighterAnim } from "@/components/chicken3d/ChickenModel";
+import type { AnimIntent, AnimState } from "@/lib/animation/types";
+import { ANIMATIONS } from "@/lib/animation/animations";
+import type { StaggerLevel } from "@/lib/types";
+import { HitStopController } from "@/lib/animation/hitStop";
+import {
+  choreographyDuration,
+  getChoreography,
+  hitStopFor,
+  impactTime,
+} from "@/lib/animation/choreography";
+import { personalityForStyle } from "@/lib/animation/battlePersonality";
+import { DEFAULT_SPACING, dampFacingYaw } from "@/lib/animation/combatSpacing";
+import { roamPose, DEFAULT_ROAM } from "@/lib/animation/arenaRoam";
+import { damp } from "@/lib/animation/math";
+import { impactKindFor } from "@/lib/animation/impactVfx";
+import type { CameraCueName } from "@/lib/animation/cameraDirector";
+import { momentumHitStopBonus } from "@/lib/animation/momentumHitStop";
 
 interface BattleCanvasProps {
   chickenA: Chicken;
   chickenB: Chicken;
-  log: CombatLogEntry[];
+  /** Pre-baked replay (Battle/Live pages): the whole fight, known upfront and never mutated after mount. Ignored when `live` + `logRef` are used instead. */
+  log?: CombatLogEntry[];
   audioEnabled: boolean;
   onReplayEnd: () => void;
+  /** Fired the instant each log entry's impact actually lands (in sync with VFX/audio) — used by the /live feed's comic commentary overlay. Optional; existing callers are unaffected. */
+  onImpact?: (entry: CombatLogEntry) => void;
+  /**
+   * True for a live-coached fight (Spar) — `logRef` is read instead of
+   * `log`, and draining every currently-known entry does NOT end the replay
+   * (there may simply be no new exchange yet); the fight only ends once the
+   * caller also sets `fightOver`. Defaults to false (pre-existing pre-baked
+   * replay behavior via `log`, unchanged).
+   */
+  live?: boolean;
+  /**
+   * Required when `live` is true: a ref to an array the caller keeps
+   * pushing into in place (`arr.push(...)`, never replacing `.current`) as
+   * new exchanges resolve server-side. Passed as a ref rather than a plain
+   * array prop specifically so the caller never has to dereference
+   * `.current` during its own render to build this prop — it's read here
+   * only inside the effect below, same as every other ref this component
+   * takes (`cameraCue`, `physicsA`, etc.).
+   */
+  logRef?: RefObject<CombatLogEntry[]>;
+  /** Only meaningful with `live` — set once the server reports the fight is actually over, so the end-of-fight beat fires after the last queued entry finishes playing rather than immediately. */
+  fightOver?: boolean;
+  /**
+   * Only meaningful with `live`: fired each time the visual playback drains
+   * every currently-known log entry (i.e. it has nothing left queued to
+   * animate) — including mid-fight, not just at the very end. A caller that
+   * self-paces its own polling loop (Spar, main battle) should use this,
+   * rather than a fixed timer, to gate when it's safe to fetch the next
+   * turn: requesting more entries before the previous ones have actually
+   * been drawn lets the server's authoritative HP/state race ahead of what
+   * the fighter sprites are still animating out.
+   */
+  onCaughtUp?: () => void;
 }
 
 interface Particle {
@@ -38,17 +109,6 @@ interface FloatingText {
   maxLife: number;
 }
 
-interface FighterAnim {
-  offsetX: number;
-  offsetY: number;
-  rot: number;
-  scaleX: number;
-  scaleY: number;
-  flash: number; // 0..1 flash white on hit
-  wingPhase: number;
-  legPhase: number;
-}
-
 /** Display-only fighter state, derived by replaying the server-computed log one entry at a time. */
 interface FighterVisual {
   id: string;
@@ -69,6 +129,432 @@ const HIT_ZONE_LABELS: Record<string, string> = {
   right_leg: "R LEG",
 };
 
+// FighterAnim offsets are authored in a px-ish space and turned into a world
+// delta on the model by ANIM_PX_TO_WORLD (inner-group PX_TO_WORLD × stage
+// scale). The roam/lunge system below works in world units and converts at the
+// edge with this helper, so distances read as real arena metres.
+const worldToAnimPx = (w: number) => w / ANIM_PX_TO_WORLD;
+
+/** Body-width clearance (world units) a lunge always leaves between the two birds so a dash can't sail through the opponent. */
+const BODY_CLEARANCE_WORLD = 0.8;
+
+/** Cosmetic flinch magnitude by stagger tier — knockdown is suppressed here since real physics knockback/topple (ChickenPhysicsRig) takes over instead. */
+const STAGGER_FLINCH_MULT: Record<StaggerLevel, number> = {
+  none: 0.25,
+  light: 0.55,
+  // A trip reads as losing footing, not just a bigger flinch — slightly more than a plain medium hit.
+  stumble: 1.2,
+  medium: 1,
+  heavy: 1.5,
+  knockdown: 0,
+};
+
+/** Mid of the genetic IV range (40-99) — stat ratios below are normalized against this "average bird". */
+const STAT_BASELINE = 70;
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+/** Attacker power vs baseline — scales real-physics knockback magnitude (ChickenPhysicsRig). */
+function powerRatio(chicken: Chicken): number {
+  return clamp(effectiveStat(chicken, "power") / STAT_BASELINE, 0.6, 1.8);
+}
+
+/** Defender speed/stamina (+ an endurance-style bonus) vs baseline — scales how fast footing recovers after a stumble/knockdown. */
+function recoveryRatio(chicken: Chicken): number {
+  const speed = effectiveStat(chicken, "speed");
+  const stamina = effectiveStat(chicken, "stamina");
+  let ratio = ((speed + stamina) / 2 / STAT_BASELINE);
+  if (chicken.fightingStyle === "endurance") ratio *= 1.15;
+  return clamp(ratio, 0.7, 1.5);
+}
+
+/**
+ * Per-style animation feel (spec: stats/genetics should read in the fight, not just the numbers).
+ * `windupMult` scales the whole attack clip's duration uniformly (phase *fractions* never change,
+ * so IMPACT_AT keeps lining up with the strike) — aggressive is snappier, counter/endurance more deliberate.
+ * `lungeMult` scales dash distance (still clamped so a lunge can never close past body clearance). `idleLean`/`idleBobMult` shape
+ * the resting stance so styles read differently even before an exchange happens.
+ */
+interface StyleAnimParams {
+  windupMult: number;
+  lungeMult: number;
+  idleLean: number;
+  idleBobMult: number;
+}
+
+/**
+ * Adapter over the shared `battlePersonality` module (spec §24) so the rest of
+ * this file's call sites keep their existing field names. Personality is the
+ * single source of truth for presentation feel — no per-style table here.
+ */
+function styleAnimParams(style: FightingStyle): StyleAnimParams {
+  const p = personalityForStyle(style);
+  return {
+    windupMult: p.timingMul,
+    lungeMult: p.lungeCommit,
+    idleLean: p.idleLean,
+    idleBobMult: p.idleBobMul,
+  };
+}
+
+/** Extra neutral-beat pacing (seconds) added on top of each move's own recovery + minNeutralBeat. */
+const BASE_PACING_S = 0.3;
+
+/** Stagger tiers that produce a real-physics knockback impulse (spec §13/§25 debug readout). */
+const KNOCKBACK_STAGGERS = new Set<StaggerLevel>(["stumble", "medium", "heavy", "knockdown"]);
+
+/** Hold on the defeated bird before the winner's victory pose plays (spec §15: 0.25–0.5s). */
+const KO_RECOGNITION_MS = 350;
+
+/** Which attack move plays, driven by the server-rolled hit zone so variety falls out of combat data. */
+type MoveKind = "body" | "leg" | "wing" | "peck" | "spin_kick" | "aerial";
+
+/** Deterministic 0..1 pseudo-random from a numeric seed, so the same combat log always replays the same move variant. */
+function pseudoRandom(seed: number): number {
+  const x = Math.sin(seed * 12.9898) * 43758.5453;
+  return x - Math.floor(x);
+}
+
+/**
+ * Leg/wing hits pick between the plain move and a flashier rigged-model
+ * variant (spinning back kick / aerial flip) — always on a crit, otherwise
+ * a fraction of the time, seeded off the turn number so replays stay stable.
+ */
+function moveKindForZone(hitZone: string | null, turn: number, isCrit: boolean): MoveKind {
+  // Roosters are flying birds — sabong roosters spend a lot of a real match
+  // airborne. `r` seeds a per-turn airborne roll shared across zones so aerials
+  // and spinning kicks show up frequently, not just on the odd wing hit.
+  const r = pseudoRandom(turn * 2.71);
+  if (isCrit && r < 0.7) return "aerial";
+
+  if (hitZone === "left_leg" || hitZone === "right_leg") {
+    if (r < 0.3) return "aerial";
+    return isCrit || pseudoRandom(turn * 7.13) < 0.55 ? "spin_kick" : "leg";
+  }
+  if (hitZone === "left_wing" || hitZone === "right_wing") {
+    return isCrit || pseudoRandom(turn * 3.37) < 0.6 ? "aerial" : "wing";
+  }
+  if (hitZone === "head" || hitZone === "neck") {
+    return r < 0.4 ? "aerial" : "peck";
+  }
+  // body
+  if (r < 0.42) return "aerial";
+  return pseudoRandom(turn * 5.9) < 0.3 ? "spin_kick" : "body";
+}
+
+/** Un-signed, un-scaled pose values for one instant of an attack — the caller applies `dir` and `distance`. */
+interface AttackPose {
+  reach: number; // -0.1..~1.1 fraction of the forward dash distance
+  hop: number; // px, jump height
+  lean: number; // rad, forward lean
+  stretch: number; // -1 (squash) .. 1 (stretch), for scale
+  wingSwipe: number; // wing smack angle
+  legKick: number; // scratching/kicking angle
+  lateral?: number; // -1..1, depth-axis (Z) arc — aerial loop-arounds
+  spin?: number; // rad, extra yaw on top of facing — spin attacks
+  roll?: number; // rad, barrel-roll on top of upright — aerial flips
+}
+
+/** Shared phase boundaries (fraction of ATTACK_DURATION) every move follows, so IMPACT_AT keeps lining up with the strike phase. */
+const COIL_END = 0.16;
+const LEAP_END = 0.52;
+const STRIKE_END = 0.7;
+
+/** Baseline dash-smack — wings and talons both contribute, forward reach dominates. */
+function bodyAttackPose(progress: number): AttackPose {
+  if (progress < COIL_END) {
+    const p = progress / COIL_END;
+    const ease = Math.sin(p * Math.PI * 0.5);
+    return { reach: -0.08 * ease, hop: 0, lean: -0.15 * ease, stretch: -ease, wingSwipe: 0, legKick: 0 };
+  }
+  if (progress < LEAP_END) {
+    const p = (progress - COIL_END) / (LEAP_END - COIL_END);
+    const easeOut = 1 - Math.pow(1 - p, 3);
+    const arc = Math.sin(p * Math.PI);
+    return {
+      reach: -0.08 + easeOut * 1.08,
+      hop: arc * 34,
+      lean: 0.3 * easeOut,
+      stretch: arc * 0.6,
+      wingSwipe: p > 0.55 ? -((p - 0.55) / 0.45) * 1.1 : 0,
+      legKick: 0,
+    };
+  }
+  if (progress < STRIKE_END) {
+    const p = (progress - LEAP_END) / (STRIKE_END - LEAP_END);
+    return {
+      reach: 1,
+      hop: (1 - p) * 10,
+      lean: 0.32,
+      stretch: 0,
+      wingSwipe: Math.sin(p * Math.PI) * 2.6,
+      legKick: Math.sin(p * Math.PI * 3) * 2.2,
+    };
+  }
+  const p = (progress - STRIKE_END) / (1 - STRIKE_END);
+  const ease = 1 - Math.pow(1 - p, 2);
+  return { reach: 1 - ease, hop: 0, lean: 0.32 * (1 - ease), stretch: 0, wingSwipe: 0, legKick: 0 };
+}
+
+/** Jump-kick — a bigger vertical hop with the kick winding up early and landing as one strong strike. */
+function legAttackPose(progress: number): AttackPose {
+  if (progress < COIL_END) {
+    const p = progress / COIL_END;
+    const ease = Math.sin(p * Math.PI * 0.5);
+    return { reach: -0.05 * ease, hop: 0, lean: -0.1 * ease, stretch: -ease * 1.1, wingSwipe: 0, legKick: 0 };
+  }
+  if (progress < LEAP_END) {
+    const p = (progress - COIL_END) / (LEAP_END - COIL_END);
+    const easeOut = 1 - Math.pow(1 - p, 3);
+    const arc = Math.sin(p * Math.PI);
+    return {
+      reach: -0.05 + easeOut * 0.9,
+      hop: arc * 52,
+      lean: 0.22 * easeOut,
+      stretch: arc * 0.5,
+      wingSwipe: 0,
+      legKick: p > 0.4 ? -((p - 0.4) / 0.6) * 1.4 : 0,
+    };
+  }
+  if (progress < STRIKE_END) {
+    const p = (progress - LEAP_END) / (STRIKE_END - LEAP_END);
+    return {
+      reach: 0.95,
+      hop: (1 - p) * 22,
+      lean: 0.2,
+      stretch: 0,
+      wingSwipe: Math.sin(p * Math.PI) * 0.6,
+      legKick: Math.sin(p * Math.PI) * 2.8,
+    };
+  }
+  const p = (progress - STRIKE_END) / (1 - STRIKE_END);
+  const ease = 1 - Math.pow(1 - p, 2);
+  return { reach: 0.95 * (1 - ease), hop: 0, lean: 0.2 * (1 - ease), stretch: 0, wingSwipe: 0, legKick: 0 };
+}
+
+/** Wing-buffet — close-range, wings do almost all the work instead of a long dash. */
+function wingAttackPose(progress: number): AttackPose {
+  if (progress < COIL_END) {
+    const p = progress / COIL_END;
+    const ease = Math.sin(p * Math.PI * 0.5);
+    return { reach: -0.1 * ease, hop: 0, lean: -0.12 * ease, stretch: -ease * 0.7, wingSwipe: -ease * 0.8, legKick: 0 };
+  }
+  if (progress < LEAP_END) {
+    const p = (progress - COIL_END) / (LEAP_END - COIL_END);
+    const easeOut = 1 - Math.pow(1 - p, 3);
+    const arc = Math.sin(p * Math.PI);
+    return {
+      reach: -0.1 + easeOut * 0.55,
+      hop: arc * 18,
+      lean: 0.18 * easeOut,
+      stretch: arc * 0.4,
+      wingSwipe: -0.8 - (p > 0.3 ? ((p - 0.3) / 0.7) * 1.2 : 0),
+      legKick: 0,
+    };
+  }
+  if (progress < STRIKE_END) {
+    const p = (progress - LEAP_END) / (STRIKE_END - LEAP_END);
+    return {
+      reach: 0.55,
+      hop: (1 - p) * 6,
+      lean: 0.2,
+      stretch: 0,
+      wingSwipe: Math.sin(p * Math.PI) * 3.4,
+      legKick: Math.sin(p * Math.PI * 2) * 0.5,
+    };
+  }
+  const p = (progress - STRIKE_END) / (1 - STRIKE_END);
+  const ease = 1 - Math.pow(1 - p, 2);
+  return { reach: 0.55 * (1 - ease), hop: 0, lean: 0.2 * (1 - ease), stretch: 0, wingSwipe: 0, legKick: 0 };
+}
+
+/** Peck-lunge — a sharp head-first jab that overextends then snaps back quickly. */
+function peckAttackPose(progress: number): AttackPose {
+  if (progress < COIL_END) {
+    const p = progress / COIL_END;
+    const ease = Math.sin(p * Math.PI * 0.5);
+    return { reach: -0.04 * ease, hop: 0, lean: -0.2 * ease, stretch: -ease * 0.5, wingSwipe: 0, legKick: 0 };
+  }
+  if (progress < LEAP_END) {
+    const p = (progress - COIL_END) / (LEAP_END - COIL_END);
+    const easeOut = 1 - Math.pow(1 - p, 5);
+    const arc = Math.sin(p * Math.PI);
+    return {
+      reach: -0.04 + easeOut * 1.15,
+      hop: arc * 14,
+      lean: 0.4 * easeOut,
+      stretch: arc * 0.3,
+      wingSwipe: 0,
+      legKick: 0,
+    };
+  }
+  if (progress < STRIKE_END) {
+    const p = (progress - LEAP_END) / (STRIKE_END - LEAP_END);
+    return { reach: 1.1, hop: (1 - p) * 4, lean: 0.42, stretch: 0, wingSwipe: Math.sin(p * Math.PI) * 1.0, legKick: 0 };
+  }
+  const p = (progress - STRIKE_END) / (1 - STRIKE_END);
+  const ease = 1 - Math.pow(1 - p, 4);
+  return { reach: 1.1 * (1 - ease), hop: 0, lean: 0.42 * (1 - ease), stretch: 0, wingSwipe: 0, legKick: 0 };
+}
+
+/** Spinning back kick — leg-attack variant: the body whips through a near-full rotation, the kick landing as it comes back around. */
+function spinKickPose(progress: number): AttackPose {
+  // One continuous ease across the whole clip rather than per-phase — a real spin
+  // doesn't stop and restart at each timeline boundary. 2π reads identically to 0,
+  // so this unwinds back to "facing forward" by the time the move ends.
+  const smooth = progress * progress * (3 - 2 * progress);
+  const spin = smooth * Math.PI * 2;
+
+  let base: AttackPose;
+  if (progress < COIL_END) {
+    const p = progress / COIL_END;
+    const ease = Math.sin(p * Math.PI * 0.5);
+    base = { reach: -0.1 * ease, hop: 0, lean: -0.08 * ease, stretch: -ease, wingSwipe: 0, legKick: 0 };
+  } else if (progress < LEAP_END) {
+    const p = (progress - COIL_END) / (LEAP_END - COIL_END);
+    const easeOut = 1 - Math.pow(1 - p, 3);
+    const arc = Math.sin(p * Math.PI);
+    base = {
+      reach: -0.1 + easeOut * 0.85,
+      hop: arc * 40,
+      lean: 0.18 * easeOut,
+      stretch: arc * 0.55,
+      wingSwipe: arc * 0.6,
+      legKick: 0,
+    };
+  } else if (progress < STRIKE_END) {
+    const p = (progress - LEAP_END) / (STRIKE_END - LEAP_END);
+    base = {
+      reach: 0.9,
+      hop: (1 - p) * 14,
+      lean: 0.15,
+      stretch: 0,
+      wingSwipe: 0.3,
+      legKick: Math.sin(p * Math.PI) * 3.2,
+    };
+  } else {
+    const p = (progress - STRIKE_END) / (1 - STRIKE_END);
+    const ease = 1 - Math.pow(1 - p, 2);
+    base = { reach: 0.9 * (1 - ease), hop: 0, lean: 0.15 * (1 - ease), stretch: 0, wingSwipe: 0, legKick: 0 };
+  }
+
+  return { ...base, spin };
+}
+
+/** Back aerial attack — wing-attack variant: a high leap that loops out to the side and flips before striking down on the way past. */
+function aerialPose(progress: number): AttackPose {
+  // Same one-continuous-arc approach as spin above: a single sideways loop-out-
+  // and-back (lateral) and a single flip (roll, resolving to 2π ≡ upright).
+  const lateral = Math.sin(progress * Math.PI) * 0.85;
+  const smooth = progress * progress * (3 - 2 * progress);
+  const roll = smooth * Math.PI * 2;
+
+  let base: AttackPose;
+  if (progress < COIL_END) {
+    const p = progress / COIL_END;
+    const ease = Math.sin(p * Math.PI * 0.5);
+    base = { reach: -0.15 * ease, hop: 0, lean: -0.15 * ease, stretch: -ease * 1.2, wingSwipe: -ease, legKick: 0 };
+  } else if (progress < LEAP_END) {
+    const p = (progress - COIL_END) / (LEAP_END - COIL_END);
+    const easeOut = 1 - Math.pow(1 - p, 3);
+    const arc = Math.sin(p * Math.PI);
+    base = {
+      reach: -0.15 + easeOut * 0.75,
+      hop: arc * 68,
+      lean: 0.15 * easeOut,
+      stretch: arc * 0.5,
+      wingSwipe: -1 - arc * 1.2,
+      legKick: arc * 1.4,
+    };
+  } else if (progress < STRIKE_END) {
+    const p = (progress - LEAP_END) / (STRIKE_END - LEAP_END);
+    base = {
+      reach: 0.8,
+      hop: (1 - p) * 30,
+      lean: 0.28,
+      stretch: 0,
+      wingSwipe: Math.sin(p * Math.PI) * 3,
+      legKick: Math.sin(p * Math.PI) * 2.6,
+    };
+  } else {
+    const p = (progress - STRIKE_END) / (1 - STRIKE_END);
+    const ease = 1 - Math.pow(1 - p, 2);
+    base = { reach: 0.8 * (1 - ease), hop: 0, lean: 0.28 * (1 - ease), stretch: 0, wingSwipe: 0, legKick: 0 };
+  }
+
+  return { ...base, lateral, roll };
+}
+
+/** Server move-kind → the procedural attack STATE the 3D controller should play (design §8). */
+function attackStateForMove(moveKind: MoveKind): AnimState {
+  switch (moveKind) {
+    case "peck":
+      return "peck_attack";
+    case "leg":
+      return "quick_kick";
+    case "spin_kick":
+      return "heavy_kick";
+    case "wing":
+      return "wing_strike";
+    case "aerial":
+      return "flying_kick";
+    default:
+      return "charge_attack";
+  }
+}
+
+/** Phase A.5 — TellKind → the procedural tell STATE that reads it a beat before the action resolves. */
+const TELL_ANIM_STATE: Record<TellKind, AnimState> = {
+  aggression: "tell_aggression",
+  patience: "tell_patience",
+  risk: "tell_risk",
+};
+
+/**
+ * Player-facing readout for a tell (spec Test A: "does a player start saying
+ * 'he's getting predictable, BAIT' out loud"). The pose itself is subtle by
+ * design — this floating callout is the legible confirmation that a tell is
+ * actually firing, separate from `?debugBattle`'s dev-only phase readout.
+ */
+const TELL_LABEL: Record<TellKind, string> = {
+  aggression: "ABOUT TO ENGAGE",
+  patience: "LOOKING FOR AN OPENING",
+  risk: "OVERCOMMITTING!",
+};
+const TELL_COLOR: Record<TellKind, string> = {
+  aggression: "#f97316",
+  patience: "#38bdf8",
+  risk: "#a855f7",
+};
+
+/** Server stagger tier (+ critical flag) → the defender's hit-reaction STATE. */
+function hitStateForStagger(stagger: StaggerLevel, isCritical: boolean): AnimState {
+  if (isCritical) return "hit_critical";
+  switch (stagger) {
+    case "knockdown":
+      return "knockdown";
+    case "heavy":
+      return "hit_heavy";
+    case "stumble":
+      return "stagger";
+    case "medium":
+      return "hit_medium";
+    default:
+      return "hit_light";
+  }
+}
+
+function attackPoseFor(moveKind: MoveKind, progress: number): AttackPose {
+  if (moveKind === "leg") return legAttackPose(progress);
+  if (moveKind === "spin_kick") return spinKickPose(progress);
+  if (moveKind === "wing") return wingAttackPose(progress);
+  if (moveKind === "aerial") return aerialPose(progress);
+  if (moveKind === "peck") return peckAttackPose(progress);
+  return bodyAttackPose(progress);
+}
+
 /**
  * Replays a pre-computed `CombatLogEntry[]` (from `simulateFight`, run server-side)
  * one turn at a time on a canvas. Ported from the legacy `BattleArena` — the
@@ -78,18 +564,88 @@ const HIT_ZONE_LABELS: Record<string, string> = {
 export default function BattleCanvas({
   chickenA,
   chickenB,
-  log,
+  log: replayLog,
   audioEnabled,
   onReplayEnd,
+  onImpact,
+  live = false,
+  logRef: liveLogRef,
+  fightOver = false,
+  onCaughtUp,
 }: BattleCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const audioRef = useRef<AudioEngine | null>(null);
   const animationRef = useRef<number | null>(null);
   const [currentTurn, setCurrentTurn] = useState(0);
 
+  // Callbacks are read through refs so a caller passing an inline (non-memoized)
+  // function — e.g. one that itself triggers a re-render, like /live's comic
+  // commentary — doesn't change the main effect's dependency array and force it
+  // to tear down and restart the whole replay from turn 0 on every impact.
+  const onReplayEndRef = useRef(onReplayEnd);
+  const onImpactRef = useRef(onImpact);
+  const fightOverRef = useRef(fightOver);
+  const onCaughtUpRef = useRef(onCaughtUp);
   useEffect(() => {
+    onReplayEndRef.current = onReplayEnd;
+    onImpactRef.current = onImpact;
+    fightOverRef.current = fightOver;
+    onCaughtUpRef.current = onCaughtUp;
+  });
+
+  // HUD state (React-rendered, updates once per turn — not per frame).
+  const [hudA, setHudA] = useState({ hp: maxHealth(chickenA), maxHp: maxHealth(chickenA), fatigued: false });
+  const [hudB, setHudB] = useState({ hp: maxHealth(chickenB), maxHp: maxHealth(chickenB), fatigued: false });
+
+  // Live per-frame fighter state, read directly by the 3D models (BattleStage3D)
+  // every frame — mutated by the RAF loop below, not by React state.
+  const animR1Ref = useRef<FighterAnim>({
+    offsetX: 0, offsetY: 0, offsetZ: 0, rot: 0, yaw: 0, roll: 0, scaleX: 1, scaleY: 1, flash: 0, wingPhase: 0, legPhase: 0,
+  });
+  const animR2Ref = useRef<FighterAnim>({
+    offsetX: 0, offsetY: 0, offsetZ: 0, rot: 0, yaw: 0, roll: 0, scaleX: 1, scaleY: 1, flash: 0, wingPhase: 0, legPhase: 0,
+  });
+
+  // Imperative handles onto each fighter's rigid body, for the real-physics
+  // knockback/knockdown triggered at impact time below — separate from the
+  // cosmetic FighterAnim refs above, which drive the puppeted bone poses.
+  const physicsR1Ref = useRef<ChickenPhysicsHandle>(null);
+  const physicsR2Ref = useRef<ChickenPhysicsHandle>(null);
+
+  // Procedural-animation intent per fighter — written on turn start (attacker's
+  // attack) and at impact (defender's hit/knockdown/death). The controller in
+  // ChickenModel self-manages the ready/walk/recovery transitions between these.
+  const intentR1Ref = useRef<AnimIntent | null>(null);
+  const intentR2Ref = useRef<AnimIntent | null>(null);
+
+  // Latest attack cue for the 3D camera — same attacker/crit/miss/timing info that
+  // drives the 2D lunge below, mirrored here so BattleStage3D's camera can react
+  // without duplicating combat logic. `seq` moving forward is what tells the
+  // camera a new beat began; it holds the last cue (doesn't reset to null) so the
+  // camera has something to ease back from between turns.
+  const cameraCueRef = useRef<CameraCue | null>(null);
+
+  // V2 presentation plumbing.
+  const vfxRef = useRef<ImpactVFXHandle>(null);
+  /** 0 while a hit-stop freeze is active — the 3D layer (camera, VFX) reads this to freeze in step with the 2D timeline. */
+  const hitStopScaleRef = useRef(1);
+  const debugRef = useRef<BattleDebugState>(makeDebugState());
+  const [showDebug] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).has("debugBattle")
+  );
+
+  useEffect(() => {
+    // Resolved once per effect run (mount, or chickenA/chickenB/live change)
+    // — a ref dereference belongs here, never at the component's top-level
+    // render. Live mode reads the caller's growing array by reference, so
+    // appends after this point are visible without re-running this effect.
+    const log = live && liveLogRef ? liveLogRef.current : (replayLog ?? []);
+
     const audio = new AudioEngine(audioEnabled);
     audioRef.current = audio;
+    audio.playMusic();
 
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -97,9 +653,18 @@ export default function BattleCanvas({
     if (!ctx) return;
 
     let lastTurnTime = Date.now();
-    const TURN_INTERVAL = 550;
+    // Per-move pacing now comes from the choreography table (spec §2 / §16):
+    // each turn sets `turnInterval` to that move's full scripted length plus a
+    // personality-scaled neutral beat, so heavy moves visibly commit the bird
+    // and the fight stops feeling like machine-gun exchanges. Seeded with a
+    // short opening beat before the first turn.
+    let turnInterval = 850;
     let logIndex = 0;
     let replayEnded = false;
+    // Momentum juice (spec Phase B): last-seen momentum per fighter, so a big
+    // swing on the turn that lands can add a touch of extra hit-stop.
+    let prevMomentumA = 0;
+    let prevMomentumB = 0;
 
     const maxHpA = maxHealth(chickenA);
     const maxHpB = maxHealth(chickenB);
@@ -123,16 +688,116 @@ export default function BattleCanvas({
     const particles: Particle[] = [];
     const floatingTexts: FloatingText[] = [];
 
-    const animR1: FighterAnim = { offsetX: 0, offsetY: 0, rot: 0, scaleX: 1, scaleY: 1, flash: 0, wingPhase: 0, legPhase: 0 };
-    const animR2: FighterAnim = { offsetX: 0, offsetY: 0, rot: 0, scaleX: 1, scaleY: 1, flash: 0, wingPhase: 0, legPhase: 0 };
+    const animR1 = animR1Ref.current;
+    const animR2 = animR2Ref.current;
+    Object.assign(animR1, { offsetX: 0, offsetY: 0, offsetZ: 0, rot: 0, yaw: 0, roll: 0, scaleX: 1, scaleY: 1, flash: 0, wingPhase: 0, legPhase: 0 });
+    Object.assign(animR2, { offsetX: 0, offsetY: 0, offsetZ: 0, rot: 0, yaw: 0, roll: 0, scaleX: 1, scaleY: 1, flash: 0, wingPhase: 0, legPhase: 0 });
+
+    // --- arena roam state -------------------------------------------------------
+    // Each fighter's actual ring position in world units, damped toward
+    // roamPose() every frame so the pair circles, gives ground and cuts angles
+    // across the whole pit instead of standing pinned to ±WORLD_HALF_GAP. The
+    // lunge/flinch beats below ride on top of this base, and `engagement`
+    // mirrors it out for the deferred fireImpact closure (knockback direction,
+    // VFX placement) and the debug overlay.
+    const roam = (() => {
+      const seed = roamPose(Date.now(), DEFAULT_ROAM, {
+        styleA: chickenA.fightingStyle,
+        styleB: chickenB.fightingStyle,
+      });
+      return {
+        baseAX: seed.a.x, baseAZ: seed.a.z,
+        baseBX: seed.b.x, baseBZ: seed.b.z,
+        yawA: seed.yawA, yawB: seed.yawB,
+      };
+    })();
+    const engagement = {
+      ax: roam.baseAX, az: roam.baseAZ,
+      bx: roam.baseBX, bz: roam.baseBZ,
+      /** Unit vector from fighter A's ring position toward fighter B's. */
+      ux: 1, uz: 0,
+    };
+    let prevFrameNow = Date.now();
+    // Contact starts a short, explicit break-away beat. This is presentation
+    // state only: it never alters authoritative combat positions or damage.
+    let lastClashAt = -Infinity;
+
+    // Mass is a bounded ~0.85–1.15 multiplier (see lib/physicalProfile) — heavier
+    // birds take proportionally longer to complete a strike, lighter birds snap
+    // faster. Computed once per fighter since physical genetics/style don't change mid-fight.
+    const massA = resolvePhysicalProfile(chickenA).mass;
+    const massB = resolvePhysicalProfile(chickenB).mass;
+    const styleA = styleAnimParams(chickenA.fightingStyle);
+    const styleB = styleAnimParams(chickenB.fightingStyle);
+    const personaA = personalityForStyle(chickenA.fightingStyle);
+    const personaB = personalityForStyle(chickenB.fightingStyle);
+    const powerRatioA = powerRatio(chickenA);
+    const powerRatioB = powerRatio(chickenB);
+    const recoveryRatioA = recoveryRatio(chickenA);
+    const recoveryRatioB = recoveryRatio(chickenB);
+
+    // Centralized virtual clock (spec §8): equals real time except during a
+    // hit-stop freeze, when `now()` holds flat so a heavy hit reads as violent.
+    // requestAnimationFrame / React / unrelated timers keep running.
+    const hitStop = new HitStopController();
+    debugRef.current = makeDebugState();
+    debugRef.current.attacker = chickenA.name;
+    debugRef.current.defender = chickenB.name;
+    debugRef.current.idealDistance = DEFAULT_SPACING.idealCombatDistance;
+    debugRef.current.attackRange = DEFAULT_SPACING.attackRange;
+    debugRef.current.minDistance = DEFAULT_SPACING.minimumCombatDistance;
+    debugRef.current.personaA = personaA.archetype;
+    debugRef.current.personaB = personaB.archetype;
+
+    // Opening establishing shot.
+    let cueSeq = 1;
+    cameraCueRef.current = {
+      attacker: "r1",
+      startTime: Date.now(),
+      isCrit: false,
+      isMiss: false,
+      stagger: "none",
+      seq: cueSeq,
+      cueName: "battle_start",
+      focus: "midpoint",
+    };
+    const emitCue = (partial: Omit<CameraCue, "seq">) => {
+      cueSeq += 1;
+      cameraCueRef.current = { ...partial, seq: cueSeq };
+    };
+
+    // Phase A.5 — when a turn's attacker has a tell, the windup itself is
+    // deferred until the tell has read out, so a player gets a genuine beat
+    // to react before the action commits (spec: "read-and-anticipate, not a
+    // reaction-timing QTE"). Ticked against the same virtual hit-stop clock
+    // as everything else so a freeze mid-tell doesn't desync it.
+    let pendingBeginAttack: { at: number; run: () => void } | null = null;
 
     let activeAttack: {
       attacker: "r1" | "r2";
       startTime: number;
       duration: number;
-      isCrit: boolean;
+      /** Fraction of `duration` at which contact happens — from the move's choreography, not a fixed constant. */
+      impactAtFrac: number;
       isMiss: boolean;
+      stagger: StaggerLevel;
+      isCritical: boolean;
+      moveKind: MoveKind;
+      hitZone: HitZone | null;
+      impactFired: boolean;
+      fireImpact: (impactNow: number) => void;
+      /** Change in the attacker's momentum this turn vs last turn — feeds momentumHitStopBonus. */
+      momentumSwing: number;
     } | null = null;
+
+    /** Camera cue for a resolved hit (spec §21) — mirrors combatPresentation's cameraCueForResult, kept local since BattleCanvas already owns the per-turn entry shape. */
+    const cameraCueForEntry = (entry: CombatLogEntry, isFatal: boolean): CameraCueName => {
+      if (entry.isMiss) return "attack";
+      if (isFatal || entry.isCritical) return "critical";
+      if (entry.stagger === "knockdown") return "knockdown";
+      if (entry.stagger === "heavy" || entry.stagger === "stumble" || entry.stagger === "medium") return "impact_heavy";
+      return "impact_light";
+    };
 
     const spawnFeathers = (x: number, y: number, color: string, count = 12) => {
       for (let i = 0; i < count; i++) {
@@ -151,15 +816,27 @@ export default function BattleCanvas({
       }
     };
 
-    const spawnText = (x: number, y: number, text: string, color: string, fontSize = 20) => {
+    const spawnText = (x: number, y: number, text: string, color: string, fontSize = 20, maxLife = 45) => {
       floatingTexts.push({
         x: x + (Math.random() - 0.5) * 20, y, text, color, fontSize,
-        alpha: 1, life: 0, maxLife: 45,
+        alpha: 1, life: 0, maxLife,
       });
     };
 
     const animate = () => {
-      const now = Date.now();
+      const rawNow = Date.now();
+      hitStop.tick(rawNow);
+      const now = hitStop.now();
+      // Camera/VFX in the 3D layer read this to freeze in lockstep with the 2D timeline.
+      hitStopScaleRef.current = hitStop.frozen ? 0 : 1;
+      debugRef.current.hitStopMs = hitStop.remaining * 1000;
+
+      if (pendingBeginAttack && now >= pendingBeginAttack.at) {
+        const run = pendingBeginAttack.run;
+        pendingBeginAttack = null;
+        run();
+      }
+
       const currentAudio = audioRef.current;
       if (!currentAudio) return;
 
@@ -169,123 +846,570 @@ export default function BattleCanvas({
       const r2BaseX = width * 0.7;
       const roosterBaseY = height - 140;
 
-      if (now - lastTurnTime >= TURN_INTERVAL && logIndex < log.length) {
+      if (now - lastTurnTime >= turnInterval && logIndex < log.length) {
         const entry = log[logIndex];
         logIndex += 1;
         setCurrentTurn(entry.turn);
+        debugRef.current.turn = entry.turn;
 
         const isAAttacking = entry.attackerId === visualA.id;
         const defenderVisual = isAAttacking ? visualB : visualA;
-        defenderVisual.hp = Math.max(0, entry.defenderHp);
-        defenderVisual.fatigued = defenderVisual.hp < defenderVisual.maxHp * 0.3;
-
-        activeAttack = {
-          attacker: isAAttacking ? "r1" : "r2",
-          startTime: now,
-          duration: 350,
-          isCrit: entry.isCrit,
-          isMiss: entry.isMiss,
-        };
-
         const targetX = isAAttacking ? r2BaseX : r1BaseX;
         const targetColor = isAAttacking ? visualB.colorScheme.body : visualA.colorScheme.body;
 
-        if (entry.isMiss) {
-          currentAudio.playMiss();
-          spawnText(targetX, roosterBaseY - 60, "MISS!", "#eab308", 22);
-        } else if (entry.isCritical) {
-          currentAudio.playCrit();
-          spawnFeathers(targetX, roosterBaseY - 20, targetColor, 26);
-          spawnFeathers(targetX, roosterBaseY - 20, "#ff0000", 18);
-          const zoneLabel = entry.hitZone ? HIT_ZONE_LABELS[entry.hitZone] : "";
-          spawnText(targetX, roosterBaseY - 80, `CRITICAL — ${zoneLabel}`, "#ff0000", 24);
-          spawnText(targetX, roosterBaseY - 50, `-${Math.floor(entry.damage)}`, "#ef4444", 20);
-        } else if (entry.isCrit) {
-          currentAudio.playCrit();
-          spawnFeathers(targetX, roosterBaseY - 20, targetColor, 20);
-          spawnFeathers(targetX, roosterBaseY - 20, "#fbbf24", 15);
-          const zoneLabel = entry.hitZone ? HIT_ZONE_LABELS[entry.hitZone] : "";
-          spawnText(targetX, roosterBaseY - 70, `CRIT! -${Math.floor(entry.damage)} ${zoneLabel}`, "#f97316", 24);
+        // Momentum juice: how much the attacker's momentum moved this turn,
+        // vs. the last turn we saw for that same fighter. `entry.momentum`
+        // is keyed by role (whoever attacked this turn), not by fighter.
+        const prevAttackerMomentum = isAAttacking ? prevMomentumA : prevMomentumB;
+        const attackerMomentum = entry.momentum?.attacker ?? prevAttackerMomentum;
+        const momentumSwing = attackerMomentum - prevAttackerMomentum;
+        if (entry.momentum) {
+          if (isAAttacking) {
+            prevMomentumA = entry.momentum.attacker;
+            prevMomentumB = entry.momentum.defender;
+          } else {
+            prevMomentumB = entry.momentum.attacker;
+            prevMomentumA = entry.momentum.defender;
+          }
+        }
+
+        // Effects (HP, sound, particles, flash) are deferred to IMPACT_AT below,
+        // fired once the fighter's wings/talons actually reach the target.
+        const fireImpact = (impactNow: number) => {
+          lastClashAt = impactNow;
+          onImpactRef.current?.(entry);
+          defenderVisual.hp = Math.max(0, entry.defenderHp);
+          defenderVisual.fatigued = defenderVisual.hp < defenderVisual.maxHp * 0.3;
+          const setDefenderHud = isAAttacking ? setHudB : setHudA;
+          setDefenderHud({ hp: defenderVisual.hp, maxHp: defenderVisual.maxHp, fatigued: defenderVisual.fatigued });
+
+          // Side A is always the player's own fighter (both /battle and /spar
+          // pass their fighter as chickenA) — call out the turns where a
+          // pending command actually shaped its action, not just the small
+          // "Following: X" HUD tag that's easy to never notice.
+          const playerFollowedCommand = isAAttacking ? entry.attackerCommandFollowed : entry.defenderCommandFollowed;
+          if (playerFollowedCommand) {
+            spawnText(r1BaseX, roosterBaseY - 110, "🎯 command followed!", "#facc15", 18, 55);
+          }
+
+          if (entry.isMiss) {
+            currentAudio.playMiss();
+            spawnText(targetX, roosterBaseY - 60, "MISS!", "#eab308", 22);
+          } else if (entry.isCritical) {
+            currentAudio.playCrit();
+            spawnFeathers(targetX, roosterBaseY - 20, targetColor, 26);
+            spawnFeathers(targetX, roosterBaseY - 20, "#ff0000", 18);
+            const zoneLabel = entry.hitZone ? HIT_ZONE_LABELS[entry.hitZone] : "";
+            spawnText(targetX, roosterBaseY - 80, `CRITICAL — ${zoneLabel}`, "#ff0000", 24);
+            spawnText(targetX, roosterBaseY - 50, `-${Math.floor(entry.damage)}`, "#ef4444", 20);
+          } else if (entry.isCrit) {
+            currentAudio.playCrit();
+            spawnFeathers(targetX, roosterBaseY - 20, targetColor, 20);
+            spawnFeathers(targetX, roosterBaseY - 20, "#fbbf24", 15);
+            const zoneLabel = entry.hitZone ? HIT_ZONE_LABELS[entry.hitZone] : "";
+            spawnText(targetX, roosterBaseY - 70, `CRIT! -${Math.floor(entry.damage)} ${zoneLabel}`, "#f97316", 24);
+          } else {
+            currentAudio.playHit();
+            spawnFeathers(targetX, roosterBaseY - 20, targetColor, 10);
+            const zoneLabel = entry.hitZone ? HIT_ZONE_LABELS[entry.hitZone] : "";
+            spawnText(targetX, roosterBaseY - 50, `-${Math.floor(entry.damage)} ${zoneLabel}`, "#ef4444", 18);
+          }
+
+          if (!entry.isMiss) {
+            if (isAAttacking) animR2.flash = 1;
+            else animR1.flash = 1;
+
+            const defenderPhysics = isAAttacking ? physicsR2Ref.current : physicsR1Ref.current;
+            // Knockback now follows the live attacker→defender axis (the pair can
+            // be at any angle in the ring), not a fixed ±X.
+            const knockDirX = isAAttacking ? engagement.ux : -engagement.ux;
+            const knockDirZ = isAAttacking ? engagement.uz : -engagement.uz;
+            const attackerPowerRatio = isAAttacking ? powerRatioA : powerRatioB;
+            const defenderRecoveryRatio = isAAttacking ? recoveryRatioB : recoveryRatioA;
+
+            // Drive the defender's procedural reaction (and the attacker's
+            // victory pose on a KO). The 3D controller self-returns to
+            // ready/walk afterwards, so nothing needs resetting here.
+            const defenderIntent = isAAttacking ? intentR2Ref : intentR1Ref;
+            const defenderFacing: "left" | "right" = isAAttacking ? "left" : "right";
+            const fatal = entry.defenderHp <= 0;
+
+            // Impact VFX (spec §19/§20): spawn at the defender's actual
+            // presentation-collider contact point when we can resolve one,
+            // falling back to a nominal chest-height point above the model.
+            const vfxKind = impactKindFor({
+              isMiss: entry.isMiss,
+              isCritical: entry.isCritical,
+              stagger: entry.stagger,
+            });
+            if (vfxKind && vfxRef.current) {
+              const zone = entry.hitZone ?? "body";
+              const zonePos = defenderPhysics?.getZonePosition(zone as HitZone) ?? null;
+              const fallbackX = isAAttacking ? engagement.bx : engagement.ax;
+              const fallbackZ = isAAttacking ? engagement.bz : engagement.az;
+              const pos =
+                zonePos ??
+                new THREE.Vector3(fallbackX, -0.2, fallbackZ);
+              const normal = new THREE.Vector3(knockDirX, 0.15, knockDirZ);
+              vfxRef.current.spawn(vfxKind, pos, normal);
+              const bloodIntensity = entry.isCritical
+                ? 1.8
+                : entry.isCrit
+                  ? 1.35
+                  : entry.stagger === "heavy" || entry.stagger === "knockdown"
+                    ? 1.2
+                    : 0.8;
+              vfxRef.current.spawnBlood(pos, normal, bloodIntensity);
+            }
+
+            debugRef.current.stagger = entry.stagger;
+            debugRef.current.knockback = KNOCKBACK_STAGGERS.has(entry.stagger);
+            debugRef.current.knockdown = entry.stagger === "knockdown" || fatal;
+
+            if (fatal) {
+              defenderIntent.current = {
+                state: "death",
+                startedAt: impactNow,
+                speed: 1,
+                fatal: true,
+                facing: defenderFacing,
+              };
+              // KO always topples the body and never rights it (design decision 4).
+              defenderPhysics?.applyKnockback(knockDirX, knockDirZ, "knockdown", attackerPowerRatio, defenderRecoveryRatio, {
+                suppressRecovery: true,
+              });
+              const attackerIntent = isAAttacking ? intentR1Ref : intentR2Ref;
+              // Recognition beat (spec §15): the winner doesn't celebrate
+              // instantly — a short hold on the defeated bird first.
+              attackerIntent.current = {
+                state: "victory",
+                startedAt: impactNow + KO_RECOGNITION_MS,
+                speed: 1,
+                facing: isAAttacking ? "right" : "left",
+              };
+              emitCue({
+                attacker: isAAttacking ? "r1" : "r2",
+                startTime: impactNow,
+                isCrit: true,
+                isMiss: false,
+                stagger: entry.stagger,
+                cueName: "death",
+                focus: isAAttacking ? "r2" : "r1",
+              });
+              setTimeout(() => {
+                emitCue({
+                  attacker: isAAttacking ? "r1" : "r2",
+                  startTime: impactNow + KO_RECOGNITION_MS,
+                  isCrit: true,
+                  isMiss: false,
+                  stagger: entry.stagger,
+                  cueName: "victory",
+                  focus: isAAttacking ? "r1" : "r2",
+                });
+              }, KO_RECOGNITION_MS);
+            } else {
+              defenderIntent.current = {
+                state: hitStateForStagger(entry.stagger, entry.isCritical),
+                startedAt: impactNow,
+                speed: 1,
+                stagger: entry.stagger,
+                facing: defenderFacing,
+              };
+              defenderPhysics?.applyKnockback(knockDirX, knockDirZ, entry.stagger, attackerPowerRatio, defenderRecoveryRatio);
+
+              // A non-fatal knockdown holds its final pose by design (see
+              // ProceduralAnimationController) until something explicitly
+              // requests "getup" — nothing did, so a downed-but-alive bird
+              // used to stay on the ground forever. Fire that beat once the
+              // physics rig is done toppling it back upright.
+              if (entry.stagger === "knockdown") {
+                const getUpDelay = scaledRecoveryMs(KNOCKDOWN_RECOVER_MS, defenderRecoveryRatio);
+                setTimeout(() => {
+                  // Only stand up if nothing else (a later hit, a KO) has
+                  // since moved this fighter on to a different intent.
+                  if (defenderIntent.current?.state === "knockdown") {
+                    defenderIntent.current = {
+                      state: "getup",
+                      startedAt: Date.now(),
+                      speed: 1,
+                      facing: defenderFacing,
+                    };
+                  }
+                }, getUpDelay);
+              }
+
+              emitCue({
+                attacker: isAAttacking ? "r1" : "r2",
+                startTime: impactNow,
+                isCrit: entry.isCrit || entry.isCritical,
+                isMiss: false,
+                stagger: entry.stagger,
+                cueName: cameraCueForEntry(entry, false),
+                focus: isAAttacking ? "r2" : "r1",
+              });
+            }
+          } else {
+            emitCue({
+              attacker: isAAttacking ? "r1" : "r2",
+              startTime: impactNow,
+              isCrit: false,
+              isMiss: true,
+              stagger: entry.stagger,
+              cueName: "attack",
+              focus: isAAttacking ? "r1" : "r2",
+            });
+          }
+
+          if (defenderVisual.fatigued) {
+            currentAudio.playFatigue();
+          }
+
+          // Live mode: tell the caller the moment there's nothing left queued
+          // to animate, whether or not the fight is over yet — this is what
+          // lets a self-pacing poll loop (Spar, main battle) hold off
+          // fetching the next turn until this one has actually finished
+          // playing, instead of racing ahead of the visuals on a fixed timer.
+          if (live && logIndex >= log.length) {
+            onCaughtUpRef.current?.();
+          }
+
+          // Draining every currently-known entry just means "no new exchange
+          // has resolved yet" in live mode — only end once the caller also
+          // confirms the fight is over (fightOverRef), so this can idle here
+          // indefinitely across many appended entries.
+          if (logIndex >= log.length && !replayEnded && (!live || fightOverRef.current)) {
+            replayEnded = true;
+            currentAudio.playVictory();
+            setTimeout(() => onReplayEndRef.current(), 1000);
+          }
+        };
+
+        const moveKind = moveKindForZone(entry.hitZone, entry.turn, entry.isCrit || entry.isCritical);
+        const attackState = attackStateForMove(moveKind);
+        // Choreography (spec §2): per-move anticipation/active/recovery beats
+        // and the contact fraction, mass- and personality-scaled uniformly so
+        // the impact frame stays lined up with the strike regardless of speed.
+        const choreo = getChoreography(attackState);
+        const attackerMass = isAAttacking ? massA : massB;
+        const attackerStyle = isAAttacking ? styleA : styleB;
+        const attackerPersona = isAAttacking ? personaA : personaB;
+        const scriptedDuration = choreographyDuration(choreo);
+        const durationMs = scriptedDuration * 1000 * attackerMass * attackerStyle.windupMult;
+        const impactAtFrac = impactTime(choreo) / scriptedDuration;
+
+        const attackerIntent = isAAttacking ? intentR1Ref : intentR2Ref;
+
+        // The windup takes an explicit `startAt` (rather than closing over
+        // `now`) so a tell below can genuinely push it back in time instead
+        // of just overlaying on top of it — the read-then-commit beat is the
+        // whole point of the mechanic (spec Phase A.5).
+        const beginWindup = (startAt: number) => {
+          activeAttack = {
+            attacker: isAAttacking ? "r1" : "r2",
+            startTime: startAt,
+            duration: durationMs,
+            impactAtFrac,
+            isMiss: entry.isMiss,
+            stagger: entry.stagger,
+            isCritical: entry.isCritical,
+            moveKind,
+            hitZone: entry.hitZone,
+            impactFired: false,
+            fireImpact,
+            momentumSwing,
+          };
+          emitCue({
+            attacker: activeAttack.attacker,
+            startTime: activeAttack.startTime,
+            isCrit: entry.isCrit || entry.isCritical,
+            isMiss: entry.isMiss,
+            stagger: entry.stagger,
+            cueName: "attack",
+            focus: activeAttack.attacker,
+          });
+          debugRef.current.move = moveKind;
+          if (isAAttacking) debugRef.current.attackerAnim = attackState;
+          else debugRef.current.defenderAnim = attackState;
+          debugRef.current.phase = "ANTICIPATION";
+
+          // Attacker plays its attack windup — hit or miss (a MISS just never
+          // triggers a defender reaction; the animation still swings).
+          attackerIntent.current = {
+            state: attackState,
+            startedAt: startAt,
+            speed: 1 / (attackerMass * attackerStyle.windupMult),
+            moveKind,
+            facing: isAAttacking ? "right" : "left",
+          };
+        };
+
+        // Phase A.5 tells: the attacker's own tell (aggression/patience/risk)
+        // plays first and genuinely delays the windup below — never the
+        // exact move, just the coarse intent, so a player has a real beat to
+        // read and react before anything commits. The defender's tell (their
+        // own independently-chosen action for this same turn) is a
+        // concurrent read only — it doesn't gate pacing since the defender
+        // isn't the one about to swing.
+        const tellState = entry.attackerTell ? TELL_ANIM_STATE[entry.attackerTell] : null;
+        const tellDelayMs = tellState ? ANIMATIONS[tellState].duration * 1000 : 0;
+
+        if (tellState) {
+          attackerIntent.current = {
+            state: tellState,
+            startedAt: now,
+            speed: 1,
+            facing: isAAttacking ? "right" : "left",
+          };
+          debugRef.current.phase = "TELL";
+          pendingBeginAttack = { at: now + tellDelayMs, run: () => beginWindup(hitStop.now()) };
+          // Held for the tell's full readout, not the ~0.75s default (a "-12
+          // dmg" number can fade fast; a tell needs to still be on screen
+          // when the pose it's labeling is still playing).
+          spawnText(
+            isAAttacking ? r1BaseX : r2BaseX,
+            roosterBaseY - 100,
+            TELL_LABEL[entry.attackerTell!],
+            TELL_COLOR[entry.attackerTell!],
+            16,
+            (tellDelayMs / 1000) * 60
+          );
         } else {
-          currentAudio.playHit();
-          spawnFeathers(targetX, roosterBaseY - 20, targetColor, 10);
-          const zoneLabel = entry.hitZone ? HIT_ZONE_LABELS[entry.hitZone] : "";
-          spawnText(targetX, roosterBaseY - 50, `-${Math.floor(entry.damage)} ${zoneLabel}`, "#ef4444", 18);
+          beginWindup(now);
         }
 
-        if (!entry.isMiss) {
-          if (isAAttacking) animR2.flash = 1;
-          else animR1.flash = 1;
+        if (entry.defenderTell) {
+          const defenderTellIntent = isAAttacking ? intentR2Ref : intentR1Ref;
+          defenderTellIntent.current = {
+            state: TELL_ANIM_STATE[entry.defenderTell],
+            startedAt: now,
+            speed: 1,
+            facing: isAAttacking ? "left" : "right",
+          };
+          const defenderTellDurationMs = ANIMATIONS[TELL_ANIM_STATE[entry.defenderTell]].duration * 1000;
+          spawnText(
+            isAAttacking ? r2BaseX : r1BaseX,
+            roosterBaseY - 100,
+            TELL_LABEL[entry.defenderTell],
+            TELL_COLOR[entry.defenderTell],
+            16,
+            (defenderTellDurationMs / 1000) * 60
+          );
         }
 
-        if (defenderVisual.fatigued) {
-          currentAudio.playFatigue();
-        }
-
-        if (logIndex >= log.length && !replayEnded) {
-          replayEnded = true;
-          currentAudio.playVictory();
-          setTimeout(() => onReplayEnd(), 1000);
-        }
+        // Next turn begins only once this attack's full choreography (including
+        // its own recovery) has played out, plus a personality-scaled neutral
+        // beat (spec §16) — eliminates back-to-back "machine-gun" exchanges.
+        // A tell extends this, since the windup itself was pushed back by
+        // tellDelayMs.
+        turnInterval = tellDelayMs + durationMs + (choreo.minNeutralBeat + BASE_PACING_S) * 1000 * attackerPersona.neutralBeatMul;
 
         lastTurnTime = now;
       }
 
       const t = now / 250;
-      animR1.offsetY = Math.sin(t) * 4;
-      animR2.offsetY = Math.cos(t * 0.9) * 4;
-      animR1.rot = Math.sin(t * 0.5) * 0.04;
-      animR2.rot = -Math.cos(t * 0.5) * 0.04;
-      animR1.scaleX = 1 + Math.sin(t) * 0.02;
-      animR1.scaleY = 1 - Math.sin(t) * 0.02;
-      animR2.scaleX = 1 + Math.cos(t) * 0.02;
-      animR2.scaleY = 1 - Math.cos(t) * 0.02;
-      animR1.wingPhase = Math.sin(t * 3);
-      animR2.wingPhase = Math.cos(t * 3);
-      animR1.legPhase = Math.sin(t * 5);
-      animR2.legPhase = Math.cos(t * 5);
+
+      // Advance the shared ring-position target and damp both fighters toward
+      // it — pulled tighter (engageBias) while an attack is live so the roamer
+      // doesn't drag a lunging bird back out of its own strike range.
+      const frameDt = Math.min(Math.max((now - prevFrameNow) / 1000, 0), 1 / 15);
+      prevFrameNow = now;
+      const resetBias = clamp(1 - (now - lastClashAt) / 1900, 0, 1);
+      const targetPose = roamPose(now, DEFAULT_ROAM, {
+        styleA: chickenA.fightingStyle,
+        styleB: chickenB.fightingStyle,
+        activeAttacker: activeAttack?.attacker,
+        resetBias,
+      });
+      const ROAM_LAMBDA = 2.4;
+      roam.baseAX = damp(roam.baseAX, targetPose.a.x, ROAM_LAMBDA, frameDt);
+      roam.baseAZ = damp(roam.baseAZ, targetPose.a.z, ROAM_LAMBDA, frameDt);
+      roam.baseBX = damp(roam.baseBX, targetPose.b.x, ROAM_LAMBDA, frameDt);
+      roam.baseBZ = damp(roam.baseBZ, targetPose.b.z, ROAM_LAMBDA, frameDt);
+      roam.yawA = dampFacingYaw(roam.yawA, targetPose.yawA, 3, frameDt);
+      roam.yawB = dampFacingYaw(roam.yawB, targetPose.yawB, 3, frameDt);
+
+      const gapX = roam.baseBX - roam.baseAX;
+      const gapZ = roam.baseBZ - roam.baseAZ;
+      const gapDist = Math.max(0.1, Math.hypot(gapX, gapZ));
+      const ux = gapX / gapDist;
+      const uz = gapZ / gapDist;
+      // Perpendicular to the engagement axis — aerial loop-arounds swing out
+      // along this before striking back in.
+      const perpX = -uz;
+      const perpZ = ux;
+      engagement.ax = roam.baseAX;
+      engagement.az = roam.baseAZ;
+      engagement.bx = roam.baseBX;
+      engagement.bz = roam.baseBZ;
+      engagement.ux = ux;
+      engagement.uz = uz;
+
+      if (!activeAttack || activeAttack.attacker !== "r1") {
+        animR1.offsetX = worldToAnimPx(roam.baseAX - -WORLD_HALF_GAP);
+        animR1.offsetZ = worldToAnimPx(roam.baseAZ);
+        animR1.yaw = roam.yawA;
+        animR1.roll = 0;
+        animR1.offsetY = Math.sin(t) * 4 * styleA.idleBobMult;
+        // idleLean is signed toward the opponent (r1 faces right, so +lean tilts forward).
+        animR1.rot = Math.sin(t * 0.5) * 0.04 + styleA.idleLean;
+        animR1.scaleX = 1 + Math.sin(t) * 0.02;
+        animR1.scaleY = 1 - Math.sin(t) * 0.02;
+        animR1.wingPhase = Math.sin(t * 3);
+        animR1.legPhase = Math.sin(t * 5);
+      }
+      if (!activeAttack || activeAttack.attacker !== "r2") {
+        animR2.offsetX = worldToAnimPx(roam.baseBX - WORLD_HALF_GAP);
+        animR2.offsetZ = worldToAnimPx(roam.baseBZ);
+        animR2.yaw = roam.yawB;
+        animR2.roll = 0;
+        animR2.offsetY = Math.cos(t * 0.9) * 4 * styleB.idleBobMult;
+        // r2 faces left, so its forward lean is the negative direction.
+        animR2.rot = -Math.cos(t * 0.5) * 0.04 - styleB.idleLean;
+        animR2.scaleX = 1 + Math.cos(t) * 0.02;
+        animR2.scaleY = 1 - Math.cos(t) * 0.02;
+        animR2.wingPhase = Math.cos(t * 3);
+        animR2.legPhase = Math.cos(t * 5);
+      }
 
       if (activeAttack) {
         const elapsed = now - activeAttack.startTime;
         const progress = Math.min(1, elapsed / activeAttack.duration);
+        const impactAt = activeAttack.impactAtFrac;
+
+        if (!activeAttack.impactFired && progress >= impactAt) {
+          activeAttack.impactFired = true;
+          // Trigger with THIS frame's clock — fireImpact was built at attack-start and
+          // would otherwise freeze against a stale timestamp from turns ago.
+          const choreo = getChoreography(attackStateForMove(activeAttack.moveKind));
+          const hitStopSeconds = activeAttack.isMiss
+            ? 0
+            : hitStopFor(choreo, activeAttack.stagger, activeAttack.isCritical) +
+              momentumHitStopBonus(activeAttack.momentumSwing);
+          hitStop.trigger(hitStopSeconds, rawNow);
+          debugRef.current.hitStopMs = hitStopSeconds * 1000;
+          debugRef.current.phase = "IMPACT";
+          activeAttack.fireImpact(now);
+        } else if (activeAttack.impactFired) {
+          debugRef.current.phase = "RECOVERY";
+        } else {
+          debugRef.current.phase = "ANTICIPATION";
+        }
 
         if (progress < 1) {
-          const lungePhase = Math.sin(progress * Math.PI);
-          const distance = (r2BaseX - r1BaseX) * 0.45;
+          const attackerIsA = activeAttack.attacker === "r1";
+          // Pitch (rot, ChickenModel's rotation.x) convention is per-rig, not
+          // per-frame facing — r1's base facing is +X, r2's is −X, so a
+          // "leaning forward" pitch needs the opposite sign for r2.
+          const dir = attackerIsA ? 1 : -1;
+          const attackerAnim = attackerIsA ? animR1 : animR2;
+          const defenderAnim = attackerIsA ? animR2 : animR1;
+          const attackerAnchorX = attackerIsA ? -WORLD_HALF_GAP : WORLD_HALF_GAP;
+          const defenderAnchorX = attackerIsA ? WORLD_HALF_GAP : -WORLD_HALF_GAP;
+          const attackerBaseX = attackerIsA ? roam.baseAX : roam.baseBX;
+          const attackerBaseZ = attackerIsA ? roam.baseAZ : roam.baseBZ;
+          const defenderBaseX = attackerIsA ? roam.baseBX : roam.baseAX;
+          const defenderBaseZ = attackerIsA ? roam.baseBZ : roam.baseAZ;
+          const attackerStyle = attackerIsA ? styleA : styleB;
+          // Commitment crosses almost the whole live gap.  Unlike the old 42%
+          // lunge this stays visibly direct from medium/long range, while the
+          // clearance clamp below still prevents crossing through the defender.
+          const distanceWorld = Math.max(0, gapDist - BODY_CLEARANCE_WORLD) * attackerStyle.lungeMult;
 
-          if (activeAttack.attacker === "r1") {
-            animR1.offsetX = lungePhase * distance;
-            animR1.offsetY -= lungePhase * 25;
-            animR1.rot += lungePhase * 0.35;
-            if (progress > 0.4 && !activeAttack.isMiss) {
-              animR2.offsetX = lungePhase * 15;
-              animR2.rot = -lungePhase * 0.2;
-            }
-          } else {
-            animR2.offsetX = -lungePhase * distance;
-            animR2.offsetY -= lungePhase * 25;
-            animR2.rot -= lungePhase * 0.35;
-            if (progress > 0.4 && !activeAttack.isMiss) {
-              animR1.offsetX = -lungePhase * 15;
-              animR1.rot = lungePhase * 0.2;
-            }
+          // Phase timeline, as a fraction of (mass-scaled) attack duration — shared
+          // across move kinds so the choreography's contact fraction keeps lining
+          // up with the strike phase:
+          //   0.00–0.16  coil    — crouch and pull back before the leap
+          //   0.16–0.52  leap    — jump forward on an arc toward the opponent
+          //   ~impactAt  strike  — full extension, the move's signature hit
+          //   0.70–1.00  recover — settle back down to the base stance
+          const { reach, hop, lean, stretch, wingSwipe, legKick, lateral, spin, roll } = attackPoseFor(
+            activeAttack.moveKind,
+            progress
+          );
+
+          // Forward lunge rides the live attacker→defender axis (any angle in
+          // the ring), clamped so a dash always leaves body clearance and can
+          // never sail through the opponent. Aerial moves add a perpendicular
+          // `lateral` swing-out so an aerial reads as looping around, not just
+          // dashing straight in.
+          const maxLungeWorld = Math.max(0, gapDist - BODY_CLEARANCE_WORLD);
+          const rawLungeWorld = reach * distanceWorld;
+          const lungeMagWorld =
+            Math.sign(rawLungeWorld) * Math.min(Math.abs(rawLungeWorld), maxLungeWorld);
+          const lateralWorld = (lateral ?? 0) * distanceWorld * 0.7;
+
+          const attackerX = attackerBaseX + ux * lungeMagWorld + perpX * lateralWorld;
+          const attackerZ = attackerBaseZ + uz * lungeMagWorld + perpZ * lateralWorld;
+
+          attackerAnim.offsetX = worldToAnimPx(attackerX - attackerAnchorX);
+          attackerAnim.offsetZ = worldToAnimPx(attackerZ);
+          attackerAnim.offsetY = -hop;
+          attackerAnim.yaw = (attackerIsA ? roam.yawA : roam.yawB) + (spin ?? 0);
+          attackerAnim.roll = roll ?? 0;
+          attackerAnim.rot = lean * dir;
+          attackerAnim.scaleX = 1 - stretch * 0.08;
+          attackerAnim.scaleY = 1 + stretch * 0.12;
+          attackerAnim.wingPhase = wingSwipe;
+          attackerAnim.legPhase = legKick;
+
+          const flinchStart = Math.max(0.1, impactAt - 0.07);
+          if (progress > flinchStart && !activeAttack.isMiss) {
+            // Defender flinches on impact: knocked back a step, wings flare, braces.
+            // Scaled by stagger tier — knockdown is suppressed here entirely since
+            // ChickenPhysicsRig's real knockback/topple physics drives it instead.
+            const flinchMult = STAGGER_FLINCH_MULT[activeAttack.stagger];
+            const flinchP = Math.min(1, (progress - flinchStart) / Math.max(0.05, 1 - flinchStart));
+            const flinch = Math.sin(flinchP * Math.PI);
+            const flinchMaxWorld = Math.max(0, gapDist - BODY_CLEARANCE_WORLD) * 0.35;
+            const flinchWorld = Math.min(flinch * 0.4 * flinchMult, flinchMaxWorld);
+
+            const defenderX = defenderBaseX + ux * flinchWorld;
+            const defenderZ = defenderBaseZ + uz * flinchWorld;
+            defenderAnim.offsetX = worldToAnimPx(defenderX - defenderAnchorX);
+            defenderAnim.offsetZ = worldToAnimPx(defenderZ);
+            defenderAnim.rot = -flinch * 0.22 * dir * flinchMult;
+            defenderAnim.wingPhase = flinch * 0.5 * Math.max(flinchMult, 0.6);
           }
         } else {
           activeAttack = null;
+          debugRef.current.phase = "COMPLETE";
+          emitCue({
+            attacker: "r1",
+            startTime: now,
+            isCrit: false,
+            isMiss: false,
+            stagger: "none",
+            cueName: "neutral",
+            focus: "midpoint",
+          });
         }
+      } else {
+        // A pending tell also holds `activeAttack` null (the whole point —
+        // the windup is genuinely delayed, not just overlaid), so without
+        // this check the debug phase gets stomped back to APPROACH the very
+        // next frame and "TELL" never has a chance to actually be visible.
+        debugRef.current.phase = pendingBeginAttack ? "TELL" : "APPROACH";
       }
+
+      debugRef.current.distance = gapDist;
+      debugRef.current.preferredA = targetPose.preferredA;
+      debugRef.current.preferredB = targetPose.preferredB;
+      debugRef.current.bandA = targetPose.distanceBandA;
+      debugRef.current.bandB = targetPose.distanceBandB;
+      debugRef.current.intentA = targetPose.intentA;
+      debugRef.current.intentB = targetPose.intentB;
+      debugRef.current.pressureA = targetPose.pressureA;
+      debugRef.current.pressureB = targetPose.pressureB;
+      debugRef.current.arenaRadius = DEFAULT_ROAM.arenaRadius;
+      debugRef.current.posA = `${roam.baseAX.toFixed(1)}, ${roam.baseAZ.toFixed(1)}`;
+      debugRef.current.posB = `${roam.baseBX.toFixed(1)}, ${roam.baseBZ.toFixed(1)}`;
+      debugRef.current.cameraTarget = `${((roam.baseAX + roam.baseBX) / 2).toFixed(1)}, ${((roam.baseAZ + roam.baseBZ) / 2).toFixed(1)}`;
+      debugRef.current.cameraDesiredDistance = 13.5 + gapDist * .9;
 
       animR1.flash = Math.max(0, animR1.flash - 0.08);
       animR2.flash = Math.max(0, animR2.flash - 0.08);
 
       ctx.clearRect(0, 0, width, height);
-      drawArenaGround(ctx, width, height);
-
-      drawFighter(ctx, r1BaseX + animR1.offsetX, roosterBaseY + animR1.offsetY, visualA, "right", animR1);
-      drawHealthBar(ctx, r1BaseX - 60, roosterBaseY - 95, visualA.hp, visualA.maxHp, visualA.name, "#ef4444", visualA.fatigued);
-
-      drawFighter(ctx, r2BaseX + animR2.offsetX, roosterBaseY + animR2.offsetY, visualB, "left", animR2);
-      drawHealthBar(ctx, r2BaseX - 60, roosterBaseY - 95, visualB.hp, visualB.maxHp, visualB.name, "#3b82f6", visualB.fatigued);
 
       for (let i = particles.length - 1; i >= 0; i--) {
         const p = particles[i];
@@ -331,19 +1455,43 @@ export default function BattleCanvas({
         ctx.restore();
       }
 
-      if (logIndex < log.length || particles.length > 0 || floatingTexts.length > 0) {
+      // Live mode must keep ticking even when it's caught up to every entry
+      // seen so far — that's not "done", it's "waiting for the next step
+      // response" (see the matching comment at the log-drain check above).
+      // Stopping here would freeze the roam/idle poses at whatever they were
+      // on the very first frame, since logRef starts empty before the first
+      // fetch resolves.
+      if (
+        logIndex < log.length ||
+        activeAttack ||
+        particles.length > 0 ||
+        floatingTexts.length > 0 ||
+        (live && !fightOverRef.current)
+      ) {
         animationRef.current = requestAnimationFrame(animate);
       }
     };
 
     animationRef.current = requestAnimationFrame(animate);
 
+    const vfxHandle = vfxRef.current;
     return () => {
       if (animationRef.current) {
         cancelAnimationFrame(animationRef.current);
       }
+      audio.stopMusic();
+      hitStop.reset();
+      hitStopScaleRef.current = 1;
+      vfxHandle?.clear();
     };
-  }, [chickenA, chickenB, log, audioEnabled, onReplayEnd]);
+    // `replayLog`/`liveLogRef` intentionally excluded: a live caller pushes
+    // new entries into `liveLogRef.current` in place rather than ever
+    // swapping the array or ref identity, so the effect must not restart
+    // (and re-trigger audio/camera/roam init) just because more entries
+    // arrived. Pre-baked replay callers never change `replayLog` after
+    // mount anyway, so this is a no-op for them.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chickenA, chickenB, audioEnabled, live]);
 
   useEffect(() => {
     if (audioRef.current) {
@@ -352,223 +1500,73 @@ export default function BattleCanvas({
   }, [audioEnabled]);
 
   return (
-    <div className="relative">
-      <canvas
-        ref={canvasRef}
-        width={800}
-        height={400}
-        className="w-full border-2 border-slate-700 rounded-2xl bg-gradient-to-b from-slate-950 via-gray-900 to-slate-950 shadow-2xl"
-      />
-      <div className="absolute top-4 left-1/2 transform -translate-x-1/2 bg-slate-900/90 px-5 py-2 rounded-xl border border-slate-700 shadow-lg backdrop-blur">
-        <span className="text-yellow-400 font-black text-sm uppercase tracking-widest">
-          Turn {currentTurn}
+    <div className="relative mx-auto aspect-[16/9] w-full max-w-[142.2vh] overflow-hidden">
+      <div className="absolute inset-0">
+        <BattleStage3D
+          fighterA={chickenA}
+          fighterB={chickenB}
+          animA={animR1Ref}
+          animB={animR2Ref}
+          intentA={intentR1Ref}
+          intentB={intentR2Ref}
+          physicsA={physicsR1Ref}
+          physicsB={physicsR2Ref}
+          cameraCue={cameraCueRef}
+          vfxRef={vfxRef}
+          hitStopScaleRef={hitStopScaleRef}
+        />
+      </div>
+      <canvas ref={canvasRef} width={1600} height={686} className="absolute inset-0 h-full w-full" />
+
+      {showDebug && <BattleDebugOverlay stateRef={debugRef} />}
+
+      <div className="absolute top-4 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-xl border border-(--color-gold)/30 bg-black/70 px-5 py-2 shadow-lg backdrop-blur">
+        <span className="font-display text-sm font-semibold uppercase tracking-widest text-(--color-gold-bright)">
+          Round {currentTurn}
         </span>
       </div>
+
+      <FighterHudCard name={chickenA.name} hud={hudA} accent="#ef4444" side="left" />
+      <FighterHudCard name={chickenB.name} hud={hudB} accent="#3b82f6" side="right" />
     </div>
   );
 }
 
-function drawArenaGround(ctx: CanvasRenderingContext2D, width: number, height: number) {
-  const groundY = height - 100;
-  const grad = ctx.createLinearGradient(0, groundY, 0, height);
-  grad.addColorStop(0, "#2d1810");
-  grad.addColorStop(0.3, "#1c110b");
-  grad.addColorStop(1, "#0a0705");
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, groundY, width, 100);
+function FighterHudCard({
+  name,
+  hud,
+  accent,
+  side,
+}: {
+  name: string;
+  hud: { hp: number; maxHp: number; fatigued: boolean };
+  accent: string;
+  side: "left" | "right";
+}) {
+  const percent = Math.max(0, Math.min(1, hud.hp / hud.maxHp)) * 100;
+  const barColor = percent > 35 ? accent : hud.fatigued ? "#a855f7" : "#f59e0b";
 
-  ctx.strokeStyle = "#78350f";
-  ctx.lineWidth = 4;
-  ctx.beginPath();
-  ctx.moveTo(0, groundY);
-  ctx.lineTo(width, groundY);
-  ctx.stroke();
-
-  ctx.strokeStyle = "rgba(254, 240, 138, 0.15)";
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.ellipse(width / 2, groundY + 40, width * 0.42, 35, 0, 0, Math.PI * 2);
-  ctx.stroke();
-}
-
-function drawFighter(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  fighter: FighterVisual,
-  facing: "left" | "right",
-  anim: FighterAnim
-) {
-  const flip = facing === "right" ? -1 : 1;
-
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.scale(flip * anim.scaleX, anim.scaleY);
-  ctx.rotate(flip * anim.rot);
-
-  ctx.save();
-  ctx.scale(1, 0.3);
-  ctx.fillStyle = "rgba(0, 0, 0, 0.45)";
-  ctx.beginPath();
-  ctx.ellipse(0, 170, 38, 22, 0, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-
-  const bodyColor = anim.flash > 0.3 ? "#ffffff" : fighter.colorScheme.body;
-  const headColor = anim.flash > 0.3 ? "#ffffff" : fighter.colorScheme.head;
-  const combColor = anim.flash > 0.3 ? "#ffffff" : fighter.colorScheme.comb;
-  const tailColor = anim.flash > 0.3 ? "#ffffff" : fighter.colorScheme.tail;
-
-  ctx.fillStyle = tailColor;
-  ctx.beginPath();
-  ctx.moveTo(20, -10);
-  ctx.quadraticCurveTo(55, -35, 65, -55);
-  ctx.quadraticCurveTo(50, -15, 25, 5);
-  ctx.closePath();
-  ctx.fill();
-
-  ctx.beginPath();
-  ctx.moveTo(22, -5);
-  ctx.quadraticCurveTo(60, -15, 68, -35);
-  ctx.quadraticCurveTo(45, 5, 22, 12);
-  ctx.closePath();
-  ctx.fill();
-
-  ctx.strokeStyle = fighter.colorScheme.feet;
-  ctx.lineWidth = 5;
-  ctx.lineCap = "round";
-  ctx.beginPath();
-  const legTwitch = anim.legPhase * 3;
-  ctx.moveTo(-8 + legTwitch, 30);
-  ctx.lineTo(-12 + legTwitch, 54);
-  ctx.lineTo(-20 + legTwitch, 56);
-  ctx.moveTo(8 + legTwitch, 30);
-  ctx.lineTo(12 + legTwitch, 54);
-  ctx.lineTo(4 + legTwitch, 56);
-  ctx.stroke();
-
-  ctx.strokeStyle = "#e2e8f0";
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.moveTo(-12, 48);
-  ctx.lineTo(-24, 45);
-  ctx.stroke();
-
-  ctx.fillStyle = bodyColor;
-  ctx.beginPath();
-  ctx.ellipse(0, 5, 32, 40, -0.2, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.strokeStyle = "#0f172a";
-  ctx.lineWidth = 2;
-  ctx.stroke();
-
-  ctx.fillStyle = tailColor;
-  ctx.beginPath();
-  const wingY = 6 + anim.wingPhase * 5;
-  const wingScale = 1 + anim.wingPhase * 0.1;
-  ctx.ellipse(8, wingY, 18 * wingScale, 26, 0.4, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.fillStyle = headColor;
-  ctx.beginPath();
-  ctx.moveTo(-10, -15);
-  ctx.quadraticCurveTo(-28, -25, -24, -48);
-  ctx.arc(-22, -48, 16, 0, Math.PI * 2);
-  ctx.lineTo(-2, -20);
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
-
-  ctx.fillStyle = combColor;
-  ctx.beginPath();
-  ctx.moveTo(-24, -64);
-  ctx.lineTo(-30, -74);
-  ctx.lineTo(-22, -70);
-  ctx.lineTo(-15, -77);
-  ctx.lineTo(-10, -68);
-  ctx.lineTo(-3, -73);
-  ctx.lineTo(-8, -60);
-  ctx.closePath();
-  ctx.fill();
-
-  ctx.fillStyle = combColor;
-  ctx.beginPath();
-  ctx.ellipse(-32, -38, 6, 10, 0.2, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.fillStyle = "#f59e0b";
-  ctx.beginPath();
-  ctx.moveTo(-34, -52);
-  ctx.lineTo(-52, -46);
-  ctx.lineTo(-34, -42);
-  ctx.closePath();
-  ctx.fill();
-  ctx.strokeStyle = "#b45309";
-  ctx.lineWidth = 1.5;
-  ctx.stroke();
-
-  ctx.fillStyle = "#facc15";
-  ctx.beginPath();
-  ctx.arc(-28, -52, 4.5, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = "#000000";
-  ctx.beginPath();
-  ctx.arc(-29, -52, 2.2, 0, Math.PI * 2);
-  ctx.fill();
-
-  if (fighter.fatigued) {
-    ctx.strokeStyle = "#a855f7";
-    ctx.lineWidth = 3;
-    ctx.setLineDash([6, 6]);
-    ctx.beginPath();
-    ctx.ellipse(0, -5, 52, 60, 0, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.setLineDash([]);
-  }
-
-  ctx.restore();
-}
-
-function drawHealthBar(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  hp: number,
-  maxHp: number,
-  name: string,
-  color: string,
-  fatigued: boolean
-) {
-  const barWidth = 120;
-  const barHeight = 14;
-  const hpPercent = Math.max(0, Math.min(1, hp / maxHp));
-
-  ctx.save();
-  ctx.font = "900 13px ui-sans-serif, system-ui, sans-serif";
-  ctx.fillStyle = "#ffffff";
-  ctx.shadowColor = "rgba(0,0,0,0.8)";
-  ctx.shadowBlur = 4;
-  ctx.textAlign = "left";
-  ctx.fillText(name, x, y - 8);
-
-  ctx.fillStyle = "#0f172a";
-  ctx.fillRect(x, y, barWidth, barHeight);
-
-  const fillColor = hpPercent > 0.35 ? color : fatigued ? "#a855f7" : "#f59e0b";
-  ctx.fillStyle = fillColor;
-  ctx.fillRect(x + 2, y + 2, (barWidth - 4) * hpPercent, barHeight - 4);
-
-  ctx.strokeStyle = "#475569";
-  ctx.lineWidth = 2;
-  ctx.strokeRect(x, y, barWidth, barHeight);
-
-  ctx.font = "bold 10px ui-sans-serif, system-ui, sans-serif";
-  ctx.fillStyle = "#ffffff";
-  ctx.textAlign = "center";
-  ctx.fillText(
-    `${Math.max(0, Math.floor(hp))} / ${Math.floor(maxHp)}`,
-    x + barWidth / 2,
-    y + barHeight - 3
+  return (
+    <div
+      className={`absolute bottom-4 flex w-56 flex-col gap-1.5 rounded-xl border bg-black/70 px-4 py-3 shadow-lg backdrop-blur ${
+        side === "left" ? "left-4" : "right-4 items-end text-right"
+      }`}
+      style={{ borderColor: `${accent}55` }}
+    >
+      <div className={`flex items-center gap-2 ${side === "right" ? "flex-row-reverse" : ""}`}>
+        <span className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: accent }} />
+        <span className="truncate font-display text-sm font-semibold text-(--foreground)">{name}</span>
+      </div>
+      <div className="h-3 w-full overflow-hidden rounded-full bg-black/60">
+        <div
+          className="h-full rounded-full transition-[width] duration-300"
+          style={{ width: `${percent}%`, backgroundColor: barColor, marginLeft: side === "right" ? `${100 - percent}%` : 0 }}
+        />
+      </div>
+      <span className="font-display text-xs font-bold uppercase tracking-wide text-(--color-gold-bright)">
+        {Math.max(0, Math.floor(hud.hp))} / {Math.floor(hud.maxHp)}
+        {hud.fatigued && <span className="ml-1 text-purple-300">FATIGUED</span>}
+      </span>
+    </div>
   );
-  ctx.restore();
 }

@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 
-import { createChicken, generateChickName } from "@/lib/chickenGenerator";
+import { createChicken, generateUniqueChickName } from "@/lib/chickenGenerator";
 import { prisma } from "@/lib/db";
 import { getOrCreatePlayer } from "@/lib/player";
-import type { StatBlock, Trait } from "@/lib/types";
+import type { ChickenColorScheme, MutationGenome, PhysicalBlock, StatBlock, Trait } from "@/lib/types";
 
 export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -17,13 +17,22 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     return NextResponse.json({ error: "Egg has already hatched" }, { status: 400 });
   }
 
+  const name = await generateUniqueChickName(async (candidate) => {
+    const existing = await prisma.chicken.findFirst({ where: { name: candidate }, select: { id: true } });
+    return existing !== null;
+  });
+
   const chick = createChicken({
-    name: generateChickName(),
+    name,
     sex: egg.sex as "rooster" | "hen",
     generation: egg.generation,
     parents: { fatherId: egg.fatherId, motherId: egg.motherId },
     bloodlineId: egg.bloodlineId,
+    breed: egg.breed ?? undefined,
     iv: egg.iv as unknown as StatBlock,
+    physical: egg.physical as unknown as PhysicalBlock,
+    colorScheme: egg.colorScheme as unknown as ChickenColorScheme,
+    mutations: egg.mutations as unknown as MutationGenome,
     traits: egg.traits as unknown as Trait[],
     growthStage: "chick",
   });
@@ -39,8 +48,11 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
         fatherId: chick.parents.fatherId,
         motherId: chick.parents.motherId,
         bloodlineId: chick.bloodlineId,
+        breed: chick.breed,
         iv: chick.iv,
         ev: chick.ev,
+        physical: chick.physical,
+        mutations: chick.mutations,
         traits: chick.traits,
         age: chick.age,
         health: chick.health,
@@ -48,6 +60,9 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
         record: chick.record,
         status: chick.status,
         growthStage: chick.growthStage,
+        fightingStyle: chick.fightingStyle,
+        colorScheme: chick.colorScheme,
+        injured: chick.injured,
       },
     }),
     prisma.egg.delete({ where: { id: egg.id } }),

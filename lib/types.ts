@@ -16,12 +16,25 @@ export const STAT_KEYS: readonly StatKey[] = [
   "luck",
 ];
 
-export type RoosterColorScheme = {
-  body: string;
-  head: string;
-  comb: string;
-  tail: string;
-  feet: string;
+/** Feather pattern gene — drives the shader-based pattern on the M_Feathers material. */
+export const FEATHER_PATTERNS = ["SOLID", "BARRED", "LACED", "MOTTLED", "SPANGLED"] as const;
+export type FeatherPattern = (typeof FEATHER_PATTERNS)[number];
+
+/** Color genes, mapped 1:1 onto rooster_rigged.glb's 7 materials plus a shader pattern. */
+export type ChickenColorScheme = {
+  body: string; // M_Feathers
+  hackle: string; // M_Hackle
+  wings: string; // M_Wing
+  tail: string; // M_Tail
+  comb: string; // M_Comb (comb + wattle share one material)
+  beak: string; // M_Beak
+  shanks: string; // M_Legs
+  pattern: FeatherPattern;
+  patternColor: string;
+  /** Legacy palette aliases retained for imported fixtures. */
+  feathers?: string;
+  details?: string;
+  eyes?: string;
 };
 
 export type Rooster = {
@@ -37,7 +50,7 @@ export type Rooster = {
   maxHp: number;
   hp: number;
   fatigued: boolean;
-  colorScheme: RoosterColorScheme;
+  colorScheme: ChickenColorScheme;
 };
 
 export type BattleLogEntry = {
@@ -97,6 +110,88 @@ export const GENETIC_STAT_KEYS: readonly GeneticStatKey[] = [
 /** A full set of values across all genetic stats (used for both IV and EV). */
 export type StatBlock = Record<GeneticStatKey, number>;
 
+/**
+ * The 18 body-proportion genes rooster_rigged.glb's 23-joint skeleton can
+ * render (per-bone world scale, see roosterGenome.ts's TRAIT_RANGE). A single
+ * genetic block — proportions aren't trained, so there's no IV/EV split like
+ * the combat stats.
+ */
+export type PhysicalTraitKey =
+  | "scale"
+  | "bodyGirth"
+  | "bodyLength"
+  | "chest"
+  | "neckLength"
+  | "neckThick"
+  | "headSize"
+  | "combSize"
+  | "wattleSize"
+  | "beakLength"
+  | "wingSpan"
+  | "wingSize"
+  | "legLength"
+  | "legThick"
+  | "footSize"
+  | "tailLength"
+  | "tailSpread"
+  | "tailArc";
+
+export const PHYSICAL_TRAIT_KEYS: readonly PhysicalTraitKey[] = [
+  "scale",
+  "bodyGirth",
+  "bodyLength",
+  "chest",
+  "neckLength",
+  "neckThick",
+  "headSize",
+  "combSize",
+  "wattleSize",
+  "beakLength",
+  "wingSpan",
+  "wingSize",
+  "legLength",
+  "legThick",
+  "footSize",
+  "tailLength",
+  "tailSpread",
+  "tailArc",
+];
+
+/** Inheritance/randomization clamp range per physical trait, matching the rig's slider bounds (roosterGenome.ts TRAIT_RANGE). */
+export const PHYSICAL_TRAIT_RANGE: Record<PhysicalTraitKey, { min: number; max: number }> = {
+  scale: { min: 0.7, max: 1.4 },
+  bodyGirth: { min: 0.7, max: 1.6 },
+  bodyLength: { min: 0.75, max: 1.45 },
+  chest: { min: 0.75, max: 1.5 },
+  neckLength: { min: 0.6, max: 2.0 },
+  neckThick: { min: 0.6, max: 1.7 },
+  headSize: { min: 0.65, max: 1.7 },
+  combSize: { min: 0.2, max: 2.6 },
+  wattleSize: { min: 0.2, max: 2.2 },
+  beakLength: { min: 0.7, max: 1.9 },
+  wingSpan: { min: 0.7, max: 2.0 },
+  wingSize: { min: 0.7, max: 1.6 },
+  legLength: { min: 0.55, max: 1.9 },
+  legThick: { min: 0.6, max: 1.8 },
+  footSize: { min: 0.7, max: 1.6 },
+  tailLength: { min: 0.5, max: 1.8 },
+  tailSpread: { min: 0.6, max: 1.8 },
+  tailArc: { min: 0.6, max: 1.8 },
+};
+
+export type PhysicalBlock = Record<PhysicalTraitKey, number> & { body?: number; neck?: number; legs?: number; tail?: number; wings?: number };
+
+/** How a mutation gene resolves between two alleles into an offspring's expressed trait. */
+export type MutationInheritance = "dominant" | "recessive" | "codominant" | "random";
+
+export type MutationRarity = "common" | "uncommon" | "rare" | "epic" | "legendary" | "anomalous";
+
+/** A chicken's state for one mutation gene: does it carry an allele, and is it expressed? */
+export type MutationGeneState = { carrier: boolean; expressed: boolean };
+
+/** Keyed by MutationDefinition.id (see lib/mutations.ts) — only genes the chicken carries/expresses are present. */
+export type MutationGenome = Record<string, MutationGeneState>;
+
 export type ChickenSex = "rooster" | "hen";
 
 export type ChickenStatus = "active" | "injured" | "retired" | "deceased";
@@ -143,6 +238,108 @@ export type CombatRecord = {
   decisions: number;
 };
 
+/** Persistent, event-derived combat history. These counters describe what a
+ * rooster actually lived through; they are never direct purchasable stats. */
+export type CombatCareerTelemetry = {
+  heavyHitsTaken: number;
+  lightHitsTaken: number;
+  clashesWon: number;
+  clashesLost: number;
+  knockdownsTaken: number;
+  knockdownsRecovered: number;
+  fightsWon: number;
+  fightsLost: number;
+  comebackWins: number;
+  dominantWins: number;
+  closeLosses: number;
+  damageTakenWhilePressing: number;
+  damageTakenWhileRetreating: number;
+  successfulCounters: number;
+  failedCounters: number;
+  successfulChases: number;
+  punishedChases: number;
+  lowStaminaClashesWon: number;
+  retaliationDamageAfterHit: number;
+  successfulDisengagements: number;
+  timesIntimidated: number;
+  strongerOpponentsFaced: number;
+  openingClashesWon: number;
+  openingClashesLost: number;
+  lateFightPerformance: number;
+  playerCommandCompliance: number;
+  playerCommandSuccess: number;
+  playerCommandsIssued: number;
+};
+
+export type CombatEvolutionTrait = {
+  id: string;
+  name: string;
+  level: 1 | 2 | 3;
+  stage: string;
+  progress: number;
+  active: boolean;
+  advantages: string[];
+  tradeoffs: string[];
+};
+
+export type SignatureTechnique = {
+  id: "relentless-rush" | "sky-counter" | "ghost-step" | "second-wind";
+  name: string;
+  progress: number;
+  developed: boolean;
+  attempts: number;
+  successes: number;
+};
+
+export type RivalryRecord = {
+  opponentId: string;
+  opponentName: string;
+  fights: number;
+  wins: number;
+  losses: number;
+  familiarity: number;
+  counterSuccesses: number;
+};
+
+export type AwakeningState = {
+  id: "unbreakable" | "berserker" | "flow-state" | "second-wind" | "apex";
+  name: string;
+  unlocked: boolean;
+  triggerCount: number;
+};
+
+export type CombatDevelopmentNotice = {
+  kind: "trait" | "trait_level" | "signature" | "awakening" | "rivalry";
+  id: string;
+  title: string;
+  detail: string;
+};
+
+export type CombatCareerState = {
+  version: 1;
+  fightsProcessed: number;
+  telemetry: CombatCareerTelemetry;
+  evolutionTraits: CombatEvolutionTrait[];
+  signatures: SignatureTechnique[];
+  rivalries: RivalryRecord[];
+  awakenings: AwakeningState[];
+  recentDevelopment: CombatDevelopmentNotice[];
+};
+
+export type CombatCareerFightDelta = {
+  telemetry: Partial<CombatCareerTelemetry>;
+  opponentId: string;
+  opponentName: string;
+  opponentStrength: number;
+  ownStrength: number;
+  won: boolean;
+  finalHealthRatio: number;
+  opponentFinalHealthRatio: number;
+  signatureAttempts: Partial<Record<SignatureTechnique["id"], number>>;
+  signatureSuccesses: Partial<Record<SignatureTechnique["id"], number>>;
+  awakeningTriggered?: AwakeningState["id"];
+};
+
 /** A chicken's combat fighting style — persistent, set once at creation. */
 export type FightingStyle = "aggressive" | "counter" | "endurance" | "balanced";
 
@@ -165,8 +362,12 @@ export type Chicken = {
   generation: number;
   parents: ChickenParentage;
   bloodlineId: string;
+  /** Named breed archetype (see lib/breeds.ts), or undefined for "mixed". Cosmetic/flavor only — never read by combat. */
+  breed?: string;
   iv: StatBlock;
   ev: StatBlock;
+  physical: PhysicalBlock;
+  mutations: MutationGenome;
   traits: Trait[];
   age: number;
   health: number;
@@ -175,10 +376,328 @@ export type Chicken = {
   status: ChickenStatus;
   growthStage: GrowthStage;
   fightingStyle: FightingStyle;
-  colorScheme: RoosterColorScheme;
+  colorScheme: ChickenColorScheme;
   injured: boolean;
   createdAt: number;
+  /**
+   * V2 gameplay layer (decision tendencies, battle-earned experience, career
+   * readiness/injuries, training capacity) — optional so pre-V2 fixtures and
+   * rows still type-check; every reader falls back to a fresh default via the
+   * respective lib/combat|training|career module instead of assuming presence.
+   */
+  behavior?: BehavioralProfile;
+  experience?: CombatExperience;
+  condition?: number;
+  injuries?: InjuryRecord[];
+  /** Active illnesses (spec §34) — optional so pre-medical rows still type-check. */
+  illnesses?: IllnessRecord[];
+  /** Accumulated stress 0-100 (spec §48); recovery brings it down. */
+  stress?: number;
+  /** Morale 0-100 (spec §46); wins/good recovery raise it, losses/injury/overtraining lower it. */
+  morale?: number;
+  /** Battle self-belief 0-100 (spec §44); wins/streaks raise it, losses/bad injuries lower it — read by combat decision-weighting, not a flat stat buff. */
+  confidence?: number;
+  /** Lifetime count of fights survived without a career-altering injury (spec §44) — feeds veteran trait eligibility, never decays. */
+  battleHardening?: number;
+  /** Emergent career identity built from combat telemetry, rival familiarity,
+   * signature patterns and earned awakenings. */
+  combatCareer?: CombatCareerState;
+  trainingState?: TrainingState;
 };
+
+// ---------------------------------------------------------------------------
+// Combat V2 — actions, behavior, experience, fatigue, momentum, position
+// (see docs/superpowers/specs/2026-09-07-rooster-game-v2.md). Genetics/IV/EV
+// stay authoritative; everything here is a decision/experience/readiness layer
+// on top, per that spec's non-negotiable rules.
+// ---------------------------------------------------------------------------
+
+/** Discrete server-side combat actions (V2 spec §11). */
+export type CombatAction =
+  | "LIGHT_ATTACK"
+  | "HEAVY_ATTACK"
+  | "PRESSURE"
+  | "EVADE"
+  | "COUNTER"
+  | "GUARD"
+  | "RECOVER"
+  | "REPOSITION";
+
+export const COMBAT_ACTIONS: readonly CombatAction[] = [
+  "LIGHT_ATTACK",
+  "HEAVY_ATTACK",
+  "PRESSURE",
+  "EVADE",
+  "COUNTER",
+  "GUARD",
+  "RECOVER",
+  "REPOSITION",
+];
+
+export type CombatActionDefinition = {
+  id: CombatAction;
+  staminaCost: number;
+  commitment: number;
+  recovery: number;
+  damagePotential: number;
+  staggerPotential: number;
+  positionalEffect: number;
+  /**
+   * Base wall-clock duration (ms) of the action at a neutral (1.0/1.0)
+   * mass/mobility physical profile and zero fatigue — see
+   * combat/timeline.ts::exchangeTiming for how a fighter's actual physical
+   * profile and fatigue scale this into the exchange's real duration.
+   */
+  baseDurationMs: number;
+};
+
+/** Abstract server-side distance band (V2 spec §7) — the 3D client translates this into physical blocking, it is never simulated as literal coordinates. */
+export type CombatDistance = "CLOSE" | "MID" | "FAR";
+
+export type CombatContextState =
+  | "NEUTRAL"
+  | "ADVANTAGE"
+  | "DISADVANTAGE"
+  | "PRESSURING"
+  | "PRESSURED"
+  | "EXHAUSTED"
+  | "STAGGERED"
+  | "RECOVERING"
+  | "VULNERABLE"
+  | "DOMINANT";
+
+/** Decision-weighting tendencies (V2 spec §16) — read only by lib/combat/behavior.ts's action scorer, never a flat combat bonus. */
+export type BehavioralProfile = {
+  aggression: number;
+  caution: number;
+  patience: number;
+  riskTolerance: number;
+  pressurePreference: number;
+  counterPreference: number;
+  recoveryPreference: number;
+  persistence: number;
+};
+
+export type CombatExperienceCategory =
+  | "offensive"
+  | "defensive"
+  | "evasion"
+  | "counter"
+  | "pressure"
+  | "recovery"
+  | "adaptation";
+
+export const COMBAT_EXPERIENCE_CATEGORIES: readonly CombatExperienceCategory[] = [
+  "offensive",
+  "defensive",
+  "evasion",
+  "counter",
+  "pressure",
+  "recovery",
+  "adaptation",
+];
+
+/** Earned only from actual battles (V2 spec §19) — never feeds effectiveStat() directly, only decision quality/prediction. */
+export type CombatExperience = Record<CombatExperienceCategory, number>;
+
+/** A rolling, imperfect read on one specific opponent (V2 spec §20) — built up during a single battle, not persisted across battles. */
+export type OpponentModel = {
+  aggressionRead: number;
+  counterLikelihood: number;
+  preferredDistance: CombatDistance;
+  staminaTendency: number;
+  pressureTendency: number;
+  recentActions: CombatAction[];
+  sampleSize: number;
+};
+
+// ---------------------------------------------------------------------------
+// Career — condition, injuries, training limits (V2 spec §22-34)
+// ---------------------------------------------------------------------------
+
+export type InjurySeverity = "minor" | "serious" | "career_altering";
+
+export type InjuryRecord = {
+  id: string;
+  severity: InjurySeverity;
+  label: string;
+  incurredAt: number;
+  /** Battles/rest cycles remaining before this heals; 0 for a permanent (career_altering) injury. */
+  recoveryRemaining: number;
+  permanent: boolean;
+  statPenalty?: Partial<StatBlock>;
+  /** Body region — drives training locks (spec §86-87) and reinjury risk (spec §42). Optional for pre-medical rows. */
+  location?: InjuryLocation;
+  /** Set once a clinic treatment has been started against this injury (spec §41). */
+  inTreatment?: boolean;
+};
+
+/** Injury body regions (spec §27). */
+export type InjuryLocation =
+  | "head"
+  | "neck"
+  | "chest"
+  | "wing"
+  | "leg"
+  | "foot"
+  | "joint"
+  | "muscle"
+  | "internal";
+
+export const INJURY_LOCATIONS: readonly InjuryLocation[] = [
+  "head",
+  "neck",
+  "chest",
+  "wing",
+  "leg",
+  "foot",
+  "joint",
+  "muscle",
+  "internal",
+];
+
+/** Illness is separate from injury (spec §34) — it comes from condition/stress/overtraining, not combat. */
+export type IllnessType =
+  | "fatigue_illness"
+  | "respiratory"
+  | "digestive"
+  | "infection"
+  | "environmental"
+  | "stress_condition";
+
+export type IllnessRecord = {
+  id: string;
+  type: IllnessType;
+  label: string;
+  severity: "minor" | "moderate" | "severe";
+  incurredAt: number;
+  /** Rest/treatment cycles remaining before it clears. */
+  recoveryRemaining: number;
+};
+
+/** Player-facing medical state (spec §35). Derived, never stored. */
+export type MedicalStatus =
+  | "healthy"
+  | "minor_issue"
+  | "needs_attention"
+  | "injured"
+  | "ill"
+  | "recovering"
+  | "critical";
+
+/** Return-to-training ladder after a serious injury (spec §41, §87). */
+export type RehabStage =
+  | "critical"
+  | "stabilized"
+  | "recovery"
+  | "rehabilitation"
+  | "light_training"
+  | "normal_training"
+  | "recovered";
+
+export type TrainingCategory =
+  | "strength"
+  | "speed"
+  | "agility"
+  | "defense"
+  | "stamina"
+  | "technique"
+  | "recovery"
+  | "discipline";
+
+export const TRAINING_CATEGORIES: readonly TrainingCategory[] = [
+  "strength",
+  "speed",
+  "agility",
+  "defense",
+  "stamina",
+  "technique",
+  "recovery",
+  "discipline",
+];
+
+export type TrainingState = {
+  /** Remaining finite session capacity before overtraining risk kicks in (V2 spec §23); regenerates with rest. */
+  trainingPoints: number;
+  /** Accumulated overtraining load, 0-100 — pushes effectiveness down the diminishing-returns curve. */
+  trainingFatigue: number;
+  history: TrainingHistoryEntry[];
+};
+
+/** `moderate` is accepted as a legacy API alias and normalized to `normal` for V3 sessions. */
+export type TrainingIntensity = "light" | "normal" | "moderate" | "hard" | "extreme";
+
+export const TRAINING_INTENSITIES: readonly TrainingIntensity[] = [
+  "light",
+  "normal",
+  "moderate",
+  "hard",
+  "extreme",
+];
+
+export type TrainingTraitId = "iron_body" | "fast_learner" | "overtrained" | "counter_specialist" | "pressure_fighter" | "iron_conditioning" | "sharp_eyes" | "disciplined_fighter" | "elusive_fighter" | "heavy_hitter" | "patient_reader";
+
+export type TrainingTrait = {
+  id: TrainingTraitId;
+  grantedAt: number;
+};
+
+export type XpPool = "physicalXP" | "combatXP" | "tacticalXP" | "disciplineXP" | "recoveryXP";
+
+export const XP_POOLS: readonly XpPool[] = [
+  "physicalXP",
+  "combatXP",
+  "tacticalXP",
+  "disciplineXP",
+  "recoveryXP",
+];
+
+export type BreakthroughLogEntry = {
+  stat: GeneticStatKey;
+  category: TrainingCategory;
+  at: number;
+  kind: "bonus_ev" | "trait";
+  traitId?: TrainingTraitId;
+};
+
+/** Per-chicken aggregate progression row (V2 spec, Training Phase 1) — mirrors the RoosterTraining Prisma model. */
+export type RoosterTrainingState = {
+  physicalXP: number;
+  combatXP: number;
+  tacticalXP: number;
+  disciplineXP: number;
+  recoveryXP: number;
+  effortSpent: StatBlock;
+  trainingPotential: StatBlock;
+  discovered: Partial<Record<GeneticStatKey, boolean>>;
+  traits: TrainingTrait[];
+  breakthroughs: BreakthroughLogEntry[];
+  traitProgress: Record<string, number>;
+  specializationProgress: Record<string, number>;
+};
+
+export type TrainingHistoryEntry = {
+  sessionId?: string;
+  category: TrainingCategory;
+  programId?: string;
+  intensity?: TrainingIntensity;
+  at: number;
+  startedAt?: number;
+  completedAt?: number;
+  evChanges?: Partial<Record<GeneticStatKey, number>>;
+  experienceChanges?: Partial<Record<CombatExperienceCategory, number>>;
+  behaviorChanges?: Partial<Record<keyof BehavioralProfile, number>>;
+  fatigueChange?: number;
+  energyChange?: number;
+  stressChange?: number;
+  conditionChange?: number;
+  breakthroughId?: string;
+  traitProgress?: Record<string, number>;
+  injuryId?: string;
+};
+
+/** Derived, never stored directly — emerges from growthStage + condition + experience + training (V2 spec §30). */
+export type CareerLifeStage = "developing" | "prime" | "veteran" | "decline";
 
 // ---------------------------------------------------------------------------
 // Combat
@@ -203,6 +722,29 @@ export const HIT_ZONES: readonly HitZone[] = [
   "right_leg",
 ];
 
+/**
+ * How hard a hit rocks the defender — server-decided, the 3D layer only renders it (V2 battle spec §28).
+ * "stumble" shares "medium"'s damage-severity band but is rolled instead of it specifically for leg-zone
+ * hits against low-agility defenders — a trip/loss-of-footing reaction distinct from a generic flinch.
+ */
+export type StaggerLevel = "none" | "light" | "stumble" | "medium" | "heavy" | "knockdown";
+
+export const STAGGER_LEVELS: readonly StaggerLevel[] = [
+  "none",
+  "light",
+  "stumble",
+  "medium",
+  "heavy",
+  "knockdown",
+];
+
+/**
+ * The 3 coarse intent tiers a player can read off a fighter one beat before
+ * it commits (spec Phase A.5) — see combat/tells.ts::selectTell for how one
+ * gets chosen each turn.
+ */
+export type TellKind = "aggression" | "patience" | "risk";
+
 export type CombatLogEntry = {
   turn: number;
   attackerId: string;
@@ -214,16 +756,70 @@ export type CombatLogEntry = {
   isCounter: boolean;
   isCritical: boolean;
   defenderHp: number;
+  stagger: StaggerLevel;
   timestamp: number;
+  /**
+   * V2 turn-loop metadata (spec §11-13, §42) — additive and optional so any
+   * existing reader of CombatLogEntry (3D replay, UI) that only looks at the
+   * fields above keeps working unchanged.
+   */
+  attackerAction?: CombatAction;
+  defenderAction?: CombatAction;
+  attackerState?: CombatContextState;
+  defenderState?: CombatContextState;
+  momentum?: { attacker: number; defender: number };
+  position?: number;
+  distance?: CombatDistance;
+  fatigue?: { attacker: number; defender: number };
+  /**
+   * Phase A.5 tells — each fighter's own intent tier for the action it
+   * committed to *this turn* (not "the attacker's tell", since the
+   * attacker/defender roles are assigned per-exchange while both fighters
+   * decide independently). Only set on the turn's first log entry, not on
+   * a same-turn return exchange, so a tell animation never double-fires.
+   */
+  attackerTell?: TellKind | null;
+  defenderTell?: TellKind | null;
+  /**
+   * Whether the attacker/defender had a live coaching instruction and the
+   * action they actually took this exchange is one that command biases
+   * toward (combat/command.ts::commandTargetsAction) — lets the UI say "your
+   * PRESS worked" instead of the command's only visible trace being a small
+   * HUD tag the player has to notice and correlate themselves.
+   */
+  attackerCommandFollowed?: boolean;
+  defenderCommandFollowed?: boolean;
+  /**
+   * Wall-clock duration (ms) this exchange takes to play out, from
+   * combat/timeline.ts::exchangeTiming — a heavy attack from a massive
+   * rooster takes longer than a light attack from a nimble one. Presentation
+   * layers should pace playback off this instead of a fixed per-turn tick.
+   */
+  durationMs?: number;
 };
 
 export type CombatResult = {
   winnerId: string;
   loserId: string;
+  isDraw?: boolean;
+  finishReason?: "KNOCKOUT" | "DOUBLE_KO" | "MEDICAL_STOPPAGE" | "DOUBLE_MEDICAL_STOPPAGE" | "TIME_LIMIT_DECISION" | "TIME_LIMIT_DRAW" | "FORFEIT";
   log: CombatLogEntry[];
   totalTurns: number;
   outcomeReason: "ko" | "timeout" | "critical_injury";
   injuredChickenId: string | null;
+  /** V2 per-fighter deltas earned from this fight (spec §19, §27, §49) — additive, optional for back-compat. */
+  experienceGained?: Record<string, CombatExperience>;
+  newInjuries?: Record<string, InjuryRecord[]>;
+  conditionDelta?: Record<string, number>;
+  /** Human-readable "why you won/lost" breakdown (spec §49), keyed by chicken id. */
+  analysis?: Record<string, string>;
+  /** Raw per-fight behavioral evidence. Persistence applies opponent-quality
+   * weighting and anti-farming before merging it into the career. */
+  combatCareerGained?: Record<string, CombatCareerFightDelta>;
+  /** Seed used by the authoritative continuous simulation. Presentation replays must use this exact seed. */
+  matchSeed?: number;
+  /** Authoritative final HP snapshot, including each fighter's differently-sized health pool. */
+  finalHealth?: Record<string, { current: number; max: number; percent: number }>;
 };
 
 export type EggStatus = "incubating";
@@ -237,9 +833,13 @@ export type Egg = {
   fatherId: string;
   motherId: string;
   bloodlineId: string;
+  breed?: string;
   generation: number;
   sex: ChickenSex;
   iv: StatBlock;
+  physical: PhysicalBlock;
+  colorScheme: ChickenColorScheme;
+  mutations: MutationGenome;
   traits: Trait[];
   laidAt: number;
   status: EggStatus;

@@ -80,3 +80,16 @@ test("POST /api/chickens/:id/age-up returns 400 for a senior chicken", async () 
   const response = await POST(postRequest(id), { params: Promise.resolve({ id }) });
   assert.equal(response.status, 400);
 });
+
+test("POST /api/chickens/:id/age-up returns requirements when the chicken is not ready", async () => {
+  const player = await getOrCreatePlayer();
+  const id = await seedChicken(player.id, "chick");
+  await prisma.chicken.update({ where: { id }, data: { energy: 20 } });
+
+  const response = await POST(postRequest(id), { params: Promise.resolve({ id }) });
+  assert.equal(response.status, 400);
+
+  const body = await response.json();
+  assert.equal(body.error, "Chicken is not ready to age up");
+  assert.deepEqual(body.unmetRequirements.map((requirement: { id: string }) => requirement.id), ["energy"]);
+});

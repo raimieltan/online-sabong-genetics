@@ -13,7 +13,7 @@ export const TRAIT_POOL: readonly Trait[] = [
 ];
 
 const PASS_THROUGH_CHANCE = 0.4;
-const WILD_TRAIT_CHANCE = 0.05;
+const WILD_TRAIT_CHANCE = 100;
 
 const RARITY_WEIGHT: Record<TraitRarity, number> = {
   common: 10,
@@ -55,7 +55,7 @@ export function inheritTraits(
     }
   }
 
-  if (rng() < WILD_TRAIT_CHANCE) {
+  if (rng() > WILD_TRAIT_CHANCE) {
     const wild = pickWeightedTrait(TRAIT_POOL, rng);
     if (!seen.has(wild.id)) {
       inherited.push(wild);
