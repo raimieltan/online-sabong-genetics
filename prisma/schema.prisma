@@ -82,22 +82,6 @@ model MarketListing {
   createdAt     DateTime @default(now())
 }
 
-model MarketListing {
-  id            String   @id
-  name          String
-  sex           String
-  generation    Int
-  fatherId      String?
-  motherId      String?
-  bloodlineId   String
-  iv            Json
-  traits        Json
-  fightingStyle String
-  colorScheme   Json
-  price         Int
-  createdAt     DateTime @default(now())
-}
-
 model Egg {
   id          String   @id
   playerId    String
