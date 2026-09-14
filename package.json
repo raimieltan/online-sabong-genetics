@@ -16,7 +16,8 @@
     "seed:strategy": "node --import ./scripts/test-ts-loader.mjs scripts/seed-strategy-fighter-roster.ts",
     "backfill:colors": "node --import ./scripts/test-ts-loader.mjs scripts/backfill-color-jitter.ts",
     "postinstall": "prisma generate",
-    "verify:launch-commands": "node --import ./scripts/test-ts-loader.mjs scripts/verify-launch-commands.ts"
+    "verify:launch-commands": "node --import ./scripts/test-ts-loader.mjs scripts/verify-launch-commands.ts",
+    "link-legacy-player": "node --import ./scripts/test-ts-loader.mjs scripts/link-legacy-player.ts"
   },
   "dependencies": {
     "@prisma/client": "^6",
