@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --import ./scripts/test-ts-loader.mjs --test --test-concurrency=1 lib/__tests__/*.test.ts",
+    "test": "node --conditions=react-server --import ./scripts/test-ts-loader.mjs --test --test-concurrency=1 lib/__tests__/*.test.ts",
     "db:up": "docker compose up -d",
     "seed:god": "node --import ./scripts/test-ts-loader.mjs scripts/seed-god-chickens.ts",
     "seed:endgame": "node --import ./scripts/test-ts-loader.mjs scripts/seed-endgame.ts",
