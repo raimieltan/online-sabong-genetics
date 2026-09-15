@@ -46,7 +46,9 @@ export async function refreshPlayer() {
   if (res.status === 401) {
     snapshot = { credits: 0, tournamentTokens: 0, displayName: null };
     emit();
-    if (typeof window !== "undefined") window.location.href = "/login";
+    if (typeof window !== "undefined" && window.location.pathname !== "/login") {
+      window.location.href = "/login";
+    }
     return;
   }
   if (!res.ok) return;
