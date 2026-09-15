@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 
 import { prisma } from "@/lib/db";
-import { getOrCreatePlayer } from "@/lib/player";
-import { listBosses, campaignProgress } from "@/lib/pve/service";
+import { getOrCreatePlayerId } from "@/lib/player";
+import { loadPveDashboard } from "@/lib/pve/service";
+import { serverTiming } from "@/lib/serverTiming";
 import { currentOpponent, type TournamentState } from "@/lib/tournament";
 import { getTournamentDefinition } from "@/lib/tournament";
 
@@ -21,18 +22,19 @@ type Activity = {
  * chicken, facility, medical, PvE, and tournament records.
  */
 export async function GET() {
-  const player = await getOrCreatePlayer();
-  const [chickens, eggs, activeTraining, completedTraining, treatments, activeTournament, bosses, campaign, pveClears] = await Promise.all([
-    prisma.chicken.findMany({ where: { playerId: player.id }, orderBy: { createdAt: "asc" } }),
-    prisma.egg.findMany({ where: { playerId: player.id }, orderBy: { laidAt: "desc" } }),
-    prisma.trainingSession.findMany({ where: { playerId: player.id, status: "ACTIVE" }, orderBy: { startedAt: "asc" } }),
-    prisma.trainingSession.findMany({ where: { playerId: player.id, status: "COMPLETED", completedAt: { not: null } }, orderBy: { completedAt: "desc" }, take: 8 }),
-    prisma.medicalTreatment.findMany({ where: { playerId: player.id }, orderBy: { completedAt: "desc" }, take: 8 }),
-    prisma.tournament.findFirst({ where: { playerId: player.id, status: "IN_PROGRESS" }, orderBy: { updatedAt: "desc" } }),
-    listBosses(player.id),
-    campaignProgress(player.id),
-    prisma.pveProgress.findMany({ where: { playerId: player.id, firstClearedAt: { not: null } }, orderBy: { firstClearedAt: "desc" }, take: 8 }),
+  const startedAt = performance.now();
+  const playerId = await getOrCreatePlayerId();
+  const playerReadyAt = performance.now();
+  const [chickens, eggs, activeTraining, completedTraining, treatments, activeTournament, pve] = await Promise.all([
+    prisma.chicken.findMany({ where: { playerId }, orderBy: { createdAt: "asc" } }),
+    prisma.egg.findMany({ where: { playerId }, orderBy: { laidAt: "desc" } }),
+    prisma.trainingSession.findMany({ where: { playerId, status: "ACTIVE" }, orderBy: { startedAt: "asc" } }),
+    prisma.trainingSession.findMany({ where: { playerId, status: "COMPLETED", completedAt: { not: null } }, orderBy: { completedAt: "desc" }, take: 8 }),
+    prisma.medicalTreatment.findMany({ where: { playerId }, orderBy: { completedAt: "desc" }, take: 8 }),
+    prisma.tournament.findFirst({ where: { playerId, status: "IN_PROGRESS" }, orderBy: { updatedAt: "desc" } }),
+    loadPveDashboard(playerId),
   ]);
+  const { bosses, campaign, recentClears: pveClears } = pve;
 
   const chickenById = new Map(chickens.map((chicken) => [chicken.id, chicken]));
   const trainingByChickenId = new Map(activeTraining.map((session) => [session.chickenId, session]));
@@ -109,6 +111,7 @@ export async function GET() {
     };
   })() : null;
 
+  const completedAt = performance.now();
   return NextResponse.json({
     chickens,
     eggs,
@@ -119,5 +122,5 @@ export async function GET() {
     tournament,
     progression: availableBoss ? { boss: availableBoss.boss, completed: campaign.completedCount, total: campaign.totalCount, rank: campaign.rank } : null,
     activities,
-  });
+  }, { headers: { "Server-Timing": serverTiming(["player", playerReadyAt - startedAt], ["queries", completedAt - playerReadyAt], ["total", completedAt - startedAt]) } });
 }

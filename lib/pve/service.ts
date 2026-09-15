@@ -1,4 +1,4 @@
-import type { PveOpponentHistory, PveProgress } from "@prisma/client";
+import type { PveCampaignState, PveOpponentHistory, PveProgress } from "@prisma/client";
 
 import { applyFightOutcome, canFight } from "../combat";
 import { buildBattleReport, type BattleReport } from "../combat/battleReport";
@@ -150,6 +150,10 @@ export async function markCampaignEventsSeen(playerId: string, ids: string[]): P
 
 export async function listBosses(playerId: string): Promise<BossListEntry[]> {
   const [rows, historyRows] = await Promise.all([progressRows(playerId), opponentHistoryRows(playerId)]);
+  return bossEntries(rows, historyRows);
+}
+
+function bossEntries(rows: Map<string, PveProgress>, historyRows: Map<string, PveOpponentHistory>): BossListEntry[] {
   return LAUNCH_PVE_BOSS_ORDER.map((id) => PVE_BOSSES[id]).map((boss) => {
     const history = historySummary(historyRows.get(boss.id));
     return {
@@ -170,6 +174,14 @@ export async function listSideEncounters(playerId: string): Promise<BossListEntr
     opponentHistoryRows(playerId),
     prisma.pveCampaignState.findUnique({ where: { playerId } }),
   ]);
+  return sideEncounterEntries(rows, historyRows, campaignState);
+}
+
+function sideEncounterEntries(
+  rows: Map<string, PveProgress>,
+  historyRows: Map<string, PveOpponentHistory>,
+  campaignState: PveCampaignState | null,
+): BossListEntry[] {
   const ctx: SideEncounterUnlockContext = {
     reputation: campaignState?.reputation ?? 0,
     completedCircuitIds: completedCircuitIds(rows),
@@ -192,6 +204,10 @@ export async function listSideEncounters(playerId: string): Promise<BossListEntr
  * presentation layer extensible without a second, competing progression store. */
 export async function campaignProgress(playerId: string): Promise<CampaignProgressView> {
   const [rows, state] = await Promise.all([progressRows(playerId), prisma.pveCampaignState.findUnique({ where: { playerId } })]);
+  return campaignProgressView(rows, state);
+}
+
+function campaignProgressView(rows: Map<string, PveProgress>, state: PveCampaignState | null): CampaignProgressView {
   const completed = LAUNCH_PVE_BOSS_ORDER.filter((id) => (rows.get(id)?.clearCount ?? 0) > 0);
   const unlockedCircuitIds = LAUNCH_PVE_CIRCUITS.filter((c) => c.order === 1 || c.bossIds.some((id) => isUnlocked(id, rows))).map((c) => c.id);
   return {
@@ -200,6 +216,35 @@ export async function campaignProgress(playerId: string): Promise<CampaignProgre
     reputation: state?.reputation ?? completed.reduce((sum, id) => sum + Math.round(PVE_BOSSES[id].rewards.firstClearCredits / 10), 0),
     rank: Math.max(1, 100 - completed.length * 5),
     unlockedCircuitIds,
+  };
+}
+
+/**
+ * Loads the complete PvE read model once for composite screens. The previous
+ * route composition called the three public helpers independently, repeating
+ * progress, history, and campaign-state queries several times per request.
+ */
+export async function loadPveDashboard(playerId: string): Promise<{
+  bosses: BossListEntry[];
+  campaign: CampaignProgressView;
+  sideEncounters: BossListEntry[];
+  recentClears: PveProgress[];
+}> {
+  const [rows, historyRows, campaignState] = await Promise.all([
+    progressRows(playerId),
+    opponentHistoryRows(playerId),
+    prisma.pveCampaignState.findUnique({ where: { playerId } }),
+  ]);
+  const recentClears = [...rows.values()]
+    .filter((row) => row.firstClearedAt !== null)
+    .sort((a, b) => b.firstClearedAt!.getTime() - a.firstClearedAt!.getTime())
+    .slice(0, 8);
+
+  return {
+    bosses: bossEntries(rows, historyRows),
+    campaign: campaignProgressView(rows, campaignState),
+    sideEncounters: sideEncounterEntries(rows, historyRows, campaignState),
+    recentClears,
   };
 }
 

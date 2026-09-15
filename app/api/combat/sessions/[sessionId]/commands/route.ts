@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 
 import { CombatServiceError, issueCommand } from "@/lib/combat/service";
-import { getOrCreatePlayer } from "@/lib/player";
+import { getOrCreatePlayerId } from "@/lib/player";
 
 export async function POST(request: Request, { params }: { params: Promise<{ sessionId: string }> }) {
   try {
-    const [{ sessionId }, player, body] = await Promise.all([params, getOrCreatePlayer(), request.json().catch(() => ({}))]);
-    return NextResponse.json(await issueCommand(sessionId, body, player.id));
+    const [{ sessionId }, playerId, body] = await Promise.all([params, getOrCreatePlayerId(), request.json().catch(() => ({}))]);
+    return NextResponse.json(await issueCommand(sessionId, body, playerId));
   } catch (error) {
     if (error instanceof CombatServiceError) return NextResponse.json({ error: error.code }, { status: error.status });
     throw error;

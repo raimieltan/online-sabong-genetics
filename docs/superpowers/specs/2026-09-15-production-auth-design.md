@@ -5,6 +5,7 @@
 **Priority:** P0 production launch blocker  
 **Owner:** Application/backend  
 **Parent spec:** `docs/superpowers/specs/gamefowl_dynasty_full_mechanics.md`, especially starter-account anti-abuse (§2), server authority (§50), and player profiles (§54)  
+**Companion spec:** `docs/superpowers/specs/2026-09-15-new-player-onboarding-design.md` owns the starter grant, first-run state machine, and post-confirmation onboarding experience
 **Target stack:** Next.js 16 App Router, Supabase Auth, Supabase Postgres, Prisma 6, Vercel
 
 ---
@@ -165,7 +166,7 @@ Implement `getOrProvisionPlayer(authUserId)` as an idempotent transaction:
 
 1. look up `Player` by unique `authUserId`;
 2. if present, return it;
-3. otherwise create the `Player`, starter facility/roster/entitlements required by current onboarding, and a provisioning marker in one transaction;
+3. otherwise create the `Player`, versioned onboarding progress, starter pair, starter facilities, trade locks, entitlements, and provisioning marker defined by the onboarding companion spec in one transaction;
 4. on unique-conflict from concurrent requests, re-read and return the winning row;
 5. never accept starting credits, assets, or identity fields from the browser.
 
@@ -481,7 +482,7 @@ High-risk mandatory cases:
 
 ### 13.3 Browser tests
 
-- signup → confirmation → first player provisioning → ranch;
+- signup → confirmation → first player provisioning → resumable onboarding → ranch;
 - sign in, refresh, token refresh, and sign out;
 - forgot/reset password;
 - protected deep-link round trip through `next`;
@@ -586,6 +587,7 @@ Auth is launch-ready only when all are true:
 - [ ] `yarn prisma validate`, the complete test suite, and the production build pass.
 - [ ] Every active game-data API returns `401` without a verified session.
 - [ ] Two real accounts receive distinct `Player` rows, starter grants, rosters, facilities, currencies, progress, tournaments, live matches, and combat sessions.
+- [ ] A newly confirmed account receives exactly one onboarding progress row and follows the companion spec's isolated, resumable first-dynasty flow before the ranch becomes its default destination.
 - [ ] The two-player integration matrix proves no cross-account read or mutation across every route group.
 - [ ] No runtime production path calls `Player.findFirst()` to determine identity.
 - [ ] No handler accepts caller ownership from request data.
@@ -608,4 +610,3 @@ Auth is launch-ready only when all are true:
 - [Next.js authentication guide](https://nextjs.org/docs/app/guides/authentication) — centralize secure authorization in a data-access layer and treat Proxy checks as optimistic only.
 - [Next.js 16 Proxy convention](https://nextjs.org/docs/app/getting-started/proxy) — use `proxy.ts`; do not perform slow database authorization there.
 - [OWASP Session Management Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html) — HTTPS, Secure/HttpOnly/SameSite cookie controls, rotation, and session handling.
-

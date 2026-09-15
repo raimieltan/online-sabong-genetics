@@ -45,6 +45,8 @@ const COMMAND_ORDER: PlayerTacticalMode[] = ['pressure', 'defensive', 'counter',
  * only physically hinted, not yet a real read). */
 const TELL_HUD_THRESHOLD = 0.22;
 const AWAKENING_LABELS: Record<string, string> = { unbreakable: 'Unbreakable', berserker: 'Berserker', 'flow-state': 'Flow State', 'second-wind': 'Second Wind', apex: 'Apex' };
+const AUTHORITATIVE_SYNC_INTERVAL_MS = 250;
+const MAX_EVENT_REPLAY_WINDOW_MS = 450;
 
 function coachCaption(phase: string | null, tellType?: string, command?: string): string {
   if (tellType) {
@@ -59,10 +61,11 @@ function coachCaption(phase: string | null, tellType?: string, command?: string)
 }
 
 /** Production presentation for the deterministic V2 combat session. */
+type AuthoritativeEvent = { id: string; cursor: number; logicalTick: number; exchangeIndex: number; type: string; payload: Record<string, unknown> };
 type AuthoritativeView = {
   sessionId: string; status: string; revision: number; phase: string | null; exchangeIndex: number;
-  logicalTick: number; phaseDeadlineTick?: number | null; phaseDeadlineAt?: string | null; activeCommand: CoachingCommand; latestEventCursor: number; fighters: [Chicken, Chicken];
-  projection: PublicFighterState[]; events: { id: string; cursor: number; exchangeIndex: number; type: string; payload: Record<string, unknown> }[];
+  logicalTick: number; phaseDeadlineTick?: number | null; phaseDeadlineAt?: string | null; activeCommand: CoachingCommand; latestEventCursor: number; fighters?: [Chicken, Chicken];
+  projection: PublicFighterState[]; events: AuthoritativeEvent[];
   result: AuthoritativeCombatResult | null; settlement: Record<string, unknown> | null;
   allowedActions: { command: boolean; awakening: boolean; sync: boolean };
 };
@@ -73,7 +76,7 @@ type ContinuousBattleProps = {
   audioEnabled?: boolean; onToggleAudio?: () => void;
 };
 
-// The HUD receives network state at 10 Hz, but the expensive Three.js tree
+// The HUD receives network state at up to 4 Hz, while the expensive Three.js tree
 // only consumes stable fighter assets and mutable animation refs. Memoizing
 // this boundary prevents every sync response from reconciling the full arena.
 const AuthoritativeBattleStage = memo(function AuthoritativeBattleStage({
@@ -179,7 +182,10 @@ function AuthoritativeContinuousBattle({ sessionId, initialView, onComplete, aud
   useEffect(() => {
     let stopped = false;
     let timer: number | undefined;
+    const eventTimers = new Set<number>();
+    let eventReplayAvailableAt = performance.now();
     const sync = async () => {
+      const syncStartedAt = performance.now();
       try {
         const response = await fetch(`/api/combat/sessions/${sessionId}/sync`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ afterCursor: cursor.current, observedRevision: revision.current }) });
         const body = await response.json();
@@ -196,10 +202,10 @@ function AuthoritativeContinuousBattle({ sessionId, initialView, onComplete, aud
         }
         cursor.current = next.latestEventCursor;
         setRecaps(current => enqueueExchangeRecaps(current, newEvents));
-        // Drive discrete clips from the ordered semantic stream. This keeps
-        // quick or repeated strikes visible even when both occur between two
-        // projection samples.
-        for (const event of newEvents) {
+        // A response often contains several ticks of semantic events. Present
+        // them in logical-time order instead of collapsing the entire batch
+        // into one frame (which made production combat look like a slideshow).
+        const presentEvent = (event: AuthoritativeEvent) => {
           const fighterIndex = next.projection.findIndex(fighter => fighter.fighterId === event.payload.fighterId);
           const side = fighterIndex === 0 ? 'left' : 'right';
           const burst = (text: string, kind: CommentaryBurst['kind']) => {
@@ -249,8 +255,26 @@ function AuthoritativeContinuousBattle({ sessionId, initialView, onComplete, aud
           const intent: AnimIntent = { state, startedAt: event.cursor, speed: 1, moveKind: String(event.payload.actionId ?? state), facing: index === 0 ? 'right' : 'left', tacticalMode: index === 0 ? commandModeForPresentation(next.activeCommand) : 'balanced', fatal: false };
           if (index === 0) { actionA.current = state; intentA.current = intent; }
           else { actionB.current = state; intentB.current = intent; }
+        };
+        if (newEvents.length) {
+          const firstTick = newEvents[0].logicalTick;
+          const lastTick = newEvents[newEvents.length - 1].logicalTick;
+          const authoritativeSpanMs = Math.max(0, (lastTick - firstTick) * 1000 / 60);
+          const replayWindowMs = Math.min(authoritativeSpanMs, MAX_EVENT_REPLAY_WINDOW_MS);
+          const now = performance.now();
+          const replayStartedAt = Math.max(now, eventReplayAvailableAt);
+          for (const event of newEvents) {
+            const relativeDelay = lastTick === firstTick ? 0 : (event.logicalTick - firstTick) / (lastTick - firstTick) * replayWindowMs;
+            const delay = replayStartedAt - now + relativeDelay;
+            const eventTimer = window.setTimeout(() => {
+              eventTimers.delete(eventTimer);
+              if (!stopped) presentEvent(event);
+            }, delay);
+            eventTimers.add(eventTimer);
+          }
+          eventReplayAvailableAt = replayStartedAt + replayWindowMs;
         }
-        if (!sceneFighters) setSceneFighters(next.fighters);
+        if (!sceneFighters && next.fighters) setSceneFighters(next.fighters);
         next.projection.forEach((fighter, index) => {
           const target = index === 0 ? targetA.current : targetB.current;
           target.offsetX = (fighter.position.x - (index === 0 ? -WORLD_HALF_GAP : WORLD_HALF_GAP)) / ANIM_PX_TO_WORLD;
@@ -302,7 +326,10 @@ function AuthoritativeContinuousBattle({ sessionId, initialView, onComplete, aud
         // Keep authoritative targets frequent enough that the frame-rate
         // interpolator never catches and waits on the next snapshot.
         setError('');
-        if (next.allowedActions.sync) timer = window.setTimeout(sync, 100);
+        if (next.allowedActions.sync) {
+          const remaining = Math.max(0, AUTHORITATIVE_SYNC_INTERVAL_MS - (performance.now() - syncStartedAt));
+          timer = window.setTimeout(sync, remaining);
+        }
       } catch (cause) {
         if (!stopped) {
           setError(cause instanceof Error ? cause.message : 'Combat connection lost');
@@ -314,7 +341,12 @@ function AuthoritativeContinuousBattle({ sessionId, initialView, onComplete, aud
       }
     };
     void sync();
-    return () => { stopped = true; if (timer) clearTimeout(timer); };
+    return () => {
+      stopped = true;
+      if (timer) clearTimeout(timer);
+      eventTimers.forEach(eventTimer => clearTimeout(eventTimer));
+      eventTimers.clear();
+    };
   }, [sceneFighters, sessionId]);
 
   const issue = useCallback(async (command: CoachingCommand) => {
