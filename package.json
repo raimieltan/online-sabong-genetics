@@ -17,7 +17,8 @@
     "backfill:colors": "node --import ./scripts/test-ts-loader.mjs scripts/backfill-color-jitter.ts",
     "postinstall": "prisma generate",
     "verify:launch-commands": "node --import ./scripts/test-ts-loader.mjs scripts/verify-launch-commands.ts",
-    "link-legacy-player": "node --import ./scripts/test-ts-loader.mjs scripts/link-legacy-player.ts"
+    "link-legacy-player": "node --import ./scripts/test-ts-loader.mjs scripts/link-legacy-player.ts",
+    "restock-marketplace": "node --import ./scripts/test-ts-loader.mjs scripts/restock-marketplace.ts"
   },
   "dependencies": {
     "@prisma/client": "^6",
