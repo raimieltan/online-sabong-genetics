@@ -229,7 +229,16 @@ export async function getSession(sessionId: string, actorPlayerId: string, after
 }
 
 export async function syncSession(sessionId: string, actorPlayerId: string, after = 0): Promise<CombatView> {
-  return getSession(sessionId, actorPlayerId, after);
+  const view = await getSession(sessionId, actorPlayerId, after);
+  if (view.status !== "CREATED") return view;
+
+  // A sync request means the arena is mounted and ready to present combat.
+  // Recover here when a launch surface missed (or lost) its explicit /begin
+  // handoff; otherwise CREATED returns sync:false and the client can freeze
+  // forever immediately after its countdown.
+  const begun = await beginSession(sessionId, actorPlayerId);
+  begun.events = begun.events.filter(event => event.cursor > after);
+  return begun;
 }
 
 export async function issueCommand(sessionId: string, input: { commandId: string; command: unknown; observedRevision: number }, actorPlayerId: string) {

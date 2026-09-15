@@ -4,7 +4,7 @@ import test from "node:test";
 
 import { POST } from "../../app/api/chickens/[id]/fight/route";
 import { generateRandomChicken } from "../chickenGenerator";
-import { createCombatEncounter, createSession, getSession, issueCommand, syncSession, triggerSessionAwakening } from "../combat/service";
+import { beginSession, createCombatEncounter, createSession, getSession, issueCommand, syncSession, triggerSessionAwakening } from "../combat/service";
 import { emptyCombatCareer } from "../combat/evolution";
 import { prisma } from "../db";
 import { getOrCreatePlayer } from "../player";
@@ -48,10 +48,15 @@ test("fight route creates an unresolved authoritative session from a server enco
   const response = await POST(request(fighterId, { encounterId: encounter.id, openingCommand: "WAIT" }), { params: Promise.resolve({ id: fighterId }) });
   assert.equal(response.status, 200);
   const body = await response.json();
-  assert.equal(body.status, "ACTIVE");
+  assert.equal(body.status, "CREATED");
   assert.equal(body.phase, "READ");
   assert.equal(body.result, null);
   assert.ok(body.events.some((event: { type: string }) => event.type === "SESSION_STARTED"));
+  assert.equal(body.allowedActions.sync, false);
+
+  const active = await syncSession(body.sessionId, player.id, body.latestEventCursor);
+  assert.equal(active.status, "ACTIVE");
+  assert.equal(active.allowedActions.sync, true);
 });
 
 test("fight route rejects client-authored opponents", async () => {
@@ -85,7 +90,8 @@ test("command ids deduplicate and commands lock at commitment", async () => {
   const player = await getOrCreatePlayer();
   const fighterId = await seedChicken(player.id);
   const encounter = await createCombatEncounter({ ownerPlayerId: player.id, fighterId, opponent: generateRandomChicken({ name: "NPC" }), mode: "NORMAL" });
-  const view = await createSession({ fighterId, encounterId: encounter.id, coachingMode: "MANUAL", openingCommand: "WAIT", disconnectPolicy: "KEEP_INSTRUCTION", idempotencyKey: randomUUID() }, player.id);
+  const created = await createSession({ fighterId, encounterId: encounter.id, coachingMode: "MANUAL", openingCommand: "WAIT", disconnectPolicy: "KEEP_INSTRUCTION", idempotencyKey: randomUUID() }, player.id);
+  const view = await beginSession(created.sessionId, player.id);
   const commandId = randomUUID();
   const first = await issueCommand(view.sessionId, { commandId, command: "PRESS", observedRevision: view.revision }, player.id);
   const duplicate = await issueCommand(view.sessionId, { commandId, command: "RECOVER", observedRevision: view.revision }, player.id);
@@ -105,7 +111,8 @@ test("manual awakening is authoritative, visible in projections, and idempotent"
   const player = await getOrCreatePlayer();
   const fighterId = await seedChicken(player.id, { awakening: "unbreakable" });
   const encounter = await createCombatEncounter({ ownerPlayerId: player.id, fighterId, opponent: generateRandomChicken({ name: "NPC" }), mode: "NORMAL" });
-  const view = await createSession({ fighterId, encounterId: encounter.id, coachingMode: "MANUAL", openingCommand: "WAIT", disconnectPolicy: "KEEP_INSTRUCTION", idempotencyKey: randomUUID() }, player.id);
+  const created = await createSession({ fighterId, encounterId: encounter.id, coachingMode: "MANUAL", openingCommand: "WAIT", disconnectPolicy: "KEEP_INSTRUCTION", idempotencyKey: randomUUID() }, player.id);
+  const view = await beginSession(created.sessionId, player.id);
   assert.deepEqual(view.projection[0].unlockedAwakenings, ["unbreakable"]);
   assert.equal(view.allowedActions.awakening, true);
 
@@ -154,7 +161,8 @@ test("terminal retries return one settlement and never duplicate consequences", 
   const fighterId = await seedChicken(player.id);
   const opponent = generateRandomChicken({ name: "NPC" });
   const encounter = await createCombatEncounter({ ownerPlayerId: player.id, fighterId, opponent, mode: "NORMAL" });
-  let view = await createSession({ fighterId, encounterId: encounter.id, coachingMode: "AUTO", openingCommand: "PRESS", disconnectPolicy: "AUTO_COACH", idempotencyKey: randomUUID() }, player.id);
+  const created = await createSession({ fighterId, encounterId: encounter.id, coachingMode: "AUTO", openingCommand: "PRESS", disconnectPolicy: "AUTO_COACH", idempotencyKey: randomUUID() }, player.id);
+  let view = await beginSession(created.sessionId, player.id);
   for (let index = 0; index < 40 && view.status === "ACTIVE"; index++) {
     await prisma.combatSessionRecord.update({ where: { id: view.sessionId }, data: { lastAdvancedAt: new Date(Date.now() - 10_000) } });
     view = await syncSession(view.sessionId, player.id, view.latestEventCursor);
@@ -174,7 +182,8 @@ test("authoritative tournament combat settles before resolving the bracket", asy
   const opponent = currentOpponent(tournament);
   assert.ok(opponent);
   const encounter = await createCombatEncounter({ ownerPlayerId: player.id, fighterId, opponent: opponent.chicken, mode: "TOURNAMENT", modeContextId: tournament.id });
-  let view = await createSession({ fighterId, encounterId: encounter.id, coachingMode: "AUTO", openingCommand: "PRESS", disconnectPolicy: "AUTO_COACH", idempotencyKey: randomUUID() }, player.id);
+  const created = await createSession({ fighterId, encounterId: encounter.id, coachingMode: "AUTO", openingCommand: "PRESS", disconnectPolicy: "AUTO_COACH", idempotencyKey: randomUUID() }, player.id);
+  let view = await beginSession(created.sessionId, player.id);
 
   for (let index = 0; index < 40 && view.status === "ACTIVE"; index += 1) {
     await prisma.combatSessionRecord.update({ where: { id: view.sessionId }, data: { lastAdvancedAt: new Date(Date.now() - 10_000) } });

@@ -56,7 +56,13 @@ export default function BossFightPage({ params }: { params: Promise<{ bossId: st
   const p = entry.boss.presentation;
   if (phase === "tape" && start) return <main className="pve-tape"><MatchupScreen chicken={start.chicken} opponent={start.bossFighter} fighting={false} onFight={() => setPhase("intro")} eyebrow={p.venue.name} title="Tale of the Tape" subtitle={start.rivalry.isRival ? `RIVALRY · ${start.rivalry.record.wins}–${start.rivalry.record.losses}${start.rivalry.deciderDue ? " · DECIDER" : ""}` : `${p.nodeType} · ${entry.boss.name}`} matchInfo={`${p.venue.location} · ${p.title}`} /></main>;
   if (!start) return null;
-  if (phase === "intro") return <ArenaIntro player={start.chicken} boss={start.bossFighter} entry={entry} start={start} onFightStart={async () => { const begun = await fetch(`/api/combat/sessions/${start.sessionId}/begin`, { method: "POST" }).then(r => r.json()).catch(() => null); if (begun && !begun.error) setBattleView(begun); setPhase("battle"); }} />;
+  if (phase === "intro") return <ArenaIntro player={start.chicken} boss={start.bossFighter} entry={entry} start={start} onFightStart={async () => {
+    const response = await fetch(`/api/combat/sessions/${start.sessionId}/begin`, { method: "POST" }).catch(() => null);
+    if (response?.ok) setBattleView(await response.json());
+    // Enter the arena even if the explicit handoff was dropped. Its first sync
+    // will activate a still-CREATED session and retry transient failures.
+    setPhase("battle");
+  }} />;
   const consequence = outcome ? campaignConsequence(outcome.won, entry.boss, outcome.rewards.firstClear, outcome.rivalry) : null;
   return <main className="min-h-screen bg-(--color-ink)"><div className="relative"><ContinuousBattle sessionId={start.sessionId} initialView={(battleView ?? start.combatView) as never} onComplete={(result, settlement) => { const payload = settlement as unknown as BossFightResult | null; if (payload) setOutcome({ ...payload, result: (payload as unknown as { legacyResult: BossFightResult["result"] }).legacyResult, won: (result as { winnerId: string | null }).winnerId === start.chicken.id, bossFighter: start.bossFighter, rivalry: start.rivalry } as BossFightResult); setPresentationComplete(true); setPhase("result"); }} />{phase === "result" && presentationComplete && outcome && consequence && <PostFightOverlay result={outcome.result} playerChicken={outcome.chicken as Chicken} creditsEarned={outcome.rewards.credits} battleReport={outcome.battleReport} actionLabel="Return to Road" onContinue={() => router.push("/pve")} campaign={{ ...consequence, bossName: entry.boss.name, unlocked: outcome.won && outcome.rewards.firstClear ? `Next fight: ${nextBossName(entry.boss.order)}` : undefined }} />}</div></main>;
 }

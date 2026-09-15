@@ -301,8 +301,17 @@ function AuthoritativeContinuousBattle({ sessionId, initialView, onComplete, aud
         if (next.result && !completed.current) { completed.current = true; onCompleteRef.current?.(next.result, next.settlement); }
         // Keep authoritative targets frequent enough that the frame-rate
         // interpolator never catches and waits on the next snapshot.
+        setError('');
         if (next.allowedActions.sync) timer = window.setTimeout(sync, 100);
-      } catch (cause) { if (!stopped) setError(cause instanceof Error ? cause.message : 'Combat connection lost'); }
+      } catch (cause) {
+        if (!stopped) {
+          setError(cause instanceof Error ? cause.message : 'Combat connection lost');
+          // A single dropped begin/sync request must not permanently stop the
+          // authoritative clock. The service makes CREATED syncs self-starting,
+          // so retrying also repairs the countdown-to-battle handoff.
+          timer = window.setTimeout(sync, 750);
+        }
+      }
     };
     void sync();
     return () => { stopped = true; if (timer) clearTimeout(timer); };
