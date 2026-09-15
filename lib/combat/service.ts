@@ -181,19 +181,24 @@ function elapsedTicks(lastAdvancedAt: Date | null): number {
   return Math.max(1, Math.min(60 * 120, Math.floor((Date.now() - lastAdvancedAt.getTime()) * 60 / 1000)));
 }
 
-async function advanceSession(sessionId: string, actorPlayerId: string): Promise<CombatView> {
+// Returns the cursor the row had *before* this advance alongside the view, so
+// callers can tell whether the client's `after` cursor is already covered by
+// `view.events` (the events this call just drained) without a second
+// `combatEventRecord` round trip on every poll — the hot path for an active
+// fight hitting a rate-limited Supabase pool.
+async function advanceSession(sessionId: string, actorPlayerId: string): Promise<{ view: CombatView; priorCursor: number }> {
   for (let attempt = 0; attempt < 4; attempt++) {
     const row = await prisma.combatSessionRecord.findUnique({ where: { id: sessionId } });
     if (!row || row.ownerPlayerId !== actorPlayerId) throw new CombatServiceError("SESSION_NOT_OWNED", 404);
-    if (row.status !== "ACTIVE") return rowView(row, []);
+    if (row.status !== "ACTIVE") return { view: rowView(row, []), priorCursor: row.latestEventCursor };
     if (row.expiresAt <= new Date()) {
       const expired = await prisma.$transaction(async tx => {
         const write = await tx.combatSessionRecord.updateMany({ where: { id: row.id, revision: row.revision, status: "ACTIVE" }, data: { status: "EXPIRED", phase: null, revision: { increment: 1 } } });
         if (write.count !== 1) return null;
         await tx.chicken.updateMany({ where: { id: row.fighterId, activeCombatSessionId: row.id }, data: { activeCombatSessionId: null } });
-        return tx.combatSessionRecord.findUnique({ where: { id: row.id } });
+        return { ...row, status: "EXPIRED", phase: null, revision: row.revision + 1 };
       });
-      if (expired) return rowView(expired, []);
+      if (expired) return { view: rowView(expired, []), priorCursor: row.latestEventCursor };
       continue;
     }
     const runtime = CanonicalCombatRuntime.restore(row.engineCheckpoint as unknown as CanonicalCheckpoint);
@@ -204,27 +209,34 @@ async function advanceSession(sessionId: string, actorPlayerId: string): Promise
     const priorEvents = checkpoint.state.phase === "finished" ? await eventRows(row.id) : [];
     const result = checkpoint.state.phase === "finished" ? runtime.result([...priorEvents, ...events]) : null;
     const now = new Date();
+    const nextData = {
+      status: result ? "TERMINAL_UNSETTLED" : "ACTIVE", phase: checkpoint.phase,
+      exchangeIndex: checkpoint.exchangeIndex, logicalTick: checkpoint.state.tick, revision: row.revision + 1,
+      latestEventCursor: checkpoint.nextCursor - 1, engineCheckpoint: json(checkpoint), activeCommand: checkpoint.activeCommand,
+      terminalResult: result ? json(result) : row.terminalResult, terminalAt: result ? now : row.terminalAt, lastAdvancedAt: now,
+    };
     const updated = await prisma.$transaction(async tx => {
       const write = await tx.combatSessionRecord.updateMany({ where: { id: row.id, revision: row.revision, status: "ACTIVE" }, data: {
-        status: result ? "TERMINAL_UNSETTLED" : "ACTIVE", phase: checkpoint.phase,
-        exchangeIndex: checkpoint.exchangeIndex, logicalTick: checkpoint.state.tick, revision: { increment: 1 },
-        latestEventCursor: checkpoint.nextCursor - 1, engineCheckpoint: json(checkpoint), activeCommand: checkpoint.activeCommand,
-        terminalResult: result ? json(result) : undefined, terminalAt: result ? now : undefined, lastAdvancedAt: now,
+        ...nextData, revision: { increment: 1 },
+        terminalResult: result ? json(result) : undefined, terminalAt: result ? now : undefined,
       } });
       if (write.count !== 1) return null;
       if (events.length) await tx.combatEventRecord.createMany({ data: events.map(eventData), skipDuplicates: true });
-      return tx.combatSessionRecord.findUnique({ where: { id: row.id } });
+      return { ...row, ...nextData };
     });
     if (!updated) continue;
-    if (result) return settleSession(updated.id, actorPlayerId);
-    return rowView(updated, events);
+    if (result) return { view: await settleSession(updated.id, actorPlayerId), priorCursor: row.latestEventCursor };
+    return { view: rowView(updated, events), priorCursor: row.latestEventCursor };
   }
   throw new CombatServiceError("STALE_SESSION", 409);
 }
 
 export async function getSession(sessionId: string, actorPlayerId: string, after = 0): Promise<CombatView> {
-  const view = await advanceSession(sessionId, actorPlayerId);
-  view.events = await eventRows(sessionId, after);
+  const { view, priorCursor } = await advanceSession(sessionId, actorPlayerId);
+  // The events this advance drained already cover everything past `priorCursor`.
+  // Only fall back to a DB read when the client is behind that (a genuine gap
+  // to recover, e.g. a missed poll) — the common in-sync poll needs no query.
+  view.events = after >= priorCursor ? view.events.filter(event => event.cursor > after) : await eventRows(sessionId, after);
   return view;
 }
 
@@ -252,7 +264,7 @@ export async function issueCommand(sessionId: string, input: { commandId: string
   if (duplicate) return duplicate.receipt;
   if (!isCoachingCommand(input.command)) throw new CombatServiceError("INVALID_COMMAND", 400);
   const command = input.command;
-  const advanced = await advanceSession(sessionId, actorPlayerId);
+  const { view: advanced } = await advanceSession(sessionId, actorPlayerId);
   if (advanced.status !== "ACTIVE") throw new CombatServiceError(advanced.status === "EXPIRED" ? "SESSION_EXPIRED" : "SESSION_TERMINAL", 409);
   for (let attempt = 0; attempt < 4; attempt++) {
     const row = await prisma.combatSessionRecord.findUnique({ where: { id: sessionId } });
@@ -288,7 +300,7 @@ export async function triggerSessionAwakening(sessionId: string, input: { action
   if (duplicate) return duplicate.receipt;
   if (!launchSurfaceAllowsAwakening(owned.mode as CombatMode)) throw new CombatServiceError("AWAKENING_UNAVAILABLE", 409);
   const type = input.type as AwakeningType;
-  const advanced = await advanceSession(sessionId, actorPlayerId);
+  const { view: advanced } = await advanceSession(sessionId, actorPlayerId);
   if (advanced.status !== "ACTIVE") throw new CombatServiceError(advanced.status === "EXPIRED" ? "SESSION_EXPIRED" : "SESSION_TERMINAL", 409);
   for (let attempt = 0; attempt < 4; attempt++) {
     const row = await prisma.combatSessionRecord.findUnique({ where: { id: sessionId } });
