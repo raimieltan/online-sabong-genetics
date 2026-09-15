@@ -9,20 +9,26 @@ import { BattleSession } from "./simulator";
  * strategy-fighter behavior, not a scored/rated match) — a restart drops any
  * sessions in flight.
  */
-const sessions = new Map<string, BattleSession>();
+type OwnedSession = { session: BattleSession; ownerPlayerId: string };
+
+const sessions = new Map<string, OwnedSession>();
 
 let nextId = 1;
 
-export function createSparSession(session: BattleSession): string {
+export function createSparSession(session: BattleSession, ownerPlayerId: string): string {
   const id = `spar-${nextId++}-${Date.now().toString(36)}`;
-  sessions.set(id, session);
+  sessions.set(id, { session, ownerPlayerId });
   return id;
 }
 
-export function getSparSession(id: string): BattleSession | undefined {
-  return sessions.get(id);
+export function getSparSession(id: string, ownerPlayerId: string): BattleSession | undefined {
+  const entry = sessions.get(id);
+  if (!entry || entry.ownerPlayerId !== ownerPlayerId) return undefined;
+  return entry.session;
 }
 
-export function endSparSession(id: string): void {
+export function endSparSession(id: string, ownerPlayerId: string): void {
+  const entry = sessions.get(id);
+  if (!entry || entry.ownerPlayerId !== ownerPlayerId) return;
   sessions.delete(id);
 }

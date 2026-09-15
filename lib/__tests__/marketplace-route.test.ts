@@ -4,8 +4,9 @@ import { randomUUID } from "node:crypto";
 
 import { prisma } from "../db";
 import { getOrCreatePlayer } from "../player";
+import { UnauthenticatedError } from "../auth/errors";
 import { generateListing, MARKET_STOCK_SIZE } from "../marketplace";
-import { GET as marketGET } from "../../app/api/marketplace/route";
+import { handleGetMarketplace } from "../../app/api/marketplace/route";
 import { POST as buyPOST } from "../../app/api/marketplace/[id]/buy/route";
 import { POST as sellPOST } from "../../app/api/chickens/[id]/sell/route";
 import { GENETIC_STAT_KEYS, type StatBlock } from "../types";
@@ -53,26 +54,44 @@ test.beforeEach(async () => {
   await prisma.player.deleteMany();
 });
 
-test("GET /api/marketplace restocks up to MARKET_STOCK_SIZE listings when empty", async () => {
-  const response = await marketGET();
+async function seedMarketStock() {
+  const listings = Array.from({ length: MARKET_STOCK_SIZE }, () => generateListing());
+  await prisma.marketListing.createMany({ data: listings });
+  return listings.map((l) => l.id);
+}
+
+test("GET /api/marketplace returns the seeded listings without restocking", async () => {
+  const player = await getOrCreatePlayer();
+  const seededIds = await seedMarketStock();
+
+  const response = await handleGetMarketplace({ requirePlayer: async () => player });
   assert.equal(response.status, 200);
 
   const listings = await response.json();
-  assert.equal(listings.length, MARKET_STOCK_SIZE);
+  assert.deepEqual(
+    listings.map((l: { id: string }) => l.id).sort(),
+    seededIds.sort(),
+  );
 });
 
-test("GET /api/marketplace does not restock when already at full stock", async () => {
-  await marketGET();
-  const before = await prisma.marketListing.findMany();
+test("GET /api/marketplace does not create new listings as a side effect", async () => {
+  const player = await getOrCreatePlayer();
+  await seedMarketStock();
 
-  await marketGET();
-  const after = await prisma.marketListing.findMany();
+  const before = await prisma.marketListing.count();
+  await handleGetMarketplace({ requirePlayer: async () => player });
+  const after = await prisma.marketListing.count();
 
-  assert.equal(after.length, MARKET_STOCK_SIZE);
-  assert.deepEqual(
-    before.map((l) => l.id).sort(),
-    after.map((l) => l.id).sort(),
-  );
+  assert.equal(after, before);
+});
+
+test("GET /api/marketplace returns 401 when unauthenticated", async () => {
+  const response = await handleGetMarketplace({
+    requirePlayer: async () => {
+      throw new UnauthenticatedError();
+    },
+  });
+  assert.equal(response.status, 401);
 });
 
 test("POST /api/marketplace/:id/buy returns 404 for an unknown listing", async () => {

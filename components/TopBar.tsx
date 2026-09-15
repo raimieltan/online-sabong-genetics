@@ -4,8 +4,16 @@ import { useEffect, useSyncExternalStore } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-import { mockPlayer } from "@/lib/mockPlayer";
-import { getPlayerSnapshot, refreshPlayer, subscribePlayer } from "@/lib/playerStore";
+import { getPlayerSnapshot, refreshPlayer, signOut, subscribePlayer } from "@/lib/playerStore";
+
+/** Level/XP/energy have no backing system yet — see spec §9.3. */
+const PLACEHOLDER_PROGRESSION = {
+  avatar: "🐓",
+  level: 25,
+  xp: 1350,
+  xpToNext: 2500,
+  energy: 120,
+};
 
 const NAV_ITEMS = [
   { href: "/", label: "Ranch", icon: "⌂" },
@@ -46,17 +54,17 @@ function CurrencyPill({
 
 /**
  * Sticky top bar with player identity/level and currency readouts, matching the
- * Cockfight Chronicles concept art. Player level/energy/currency have no backing
- * system yet, so this reads from `mockPlayer` — see that file's note.
+ * Cockfight Chronicles concept art. Identity/wallet come from the real player
+ * record; level/XP/energy have no backing system yet (see PLACEHOLDER_PROGRESSION).
  */
 export function TopBar() {
   const pathname = usePathname();
-  const { credits, tournamentTokens } = useSyncExternalStore(
+  const { credits, tournamentTokens, displayName } = useSyncExternalStore(
     subscribePlayer,
     getPlayerSnapshot,
     getPlayerSnapshot,
   );
-  const xpPct = Math.round((mockPlayer.xp / mockPlayer.xpToNext) * 100);
+  const xpPct = Math.round((PLACEHOLDER_PROGRESSION.xp / PLACEHOLDER_PROGRESSION.xpToNext) * 100);
 
   useEffect(() => {
     refreshPlayer();
@@ -70,13 +78,13 @@ export function TopBar() {
       </Link>
       <div className="flex min-w-0 items-center gap-2.5">
         <span className="hud-resource-pill flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-lg leading-none shadow-[0_0_0_3px_rgba(212,162,78,0.08)]">
-          {mockPlayer.avatar}
+          {PLACEHOLDER_PROGRESSION.avatar}
         </span>
         <div className="min-w-0">
-          <p className="truncate text-xs font-semibold text-(--foreground)">{mockPlayer.name}</p>
+          <p className="truncate text-xs font-semibold text-(--foreground)">{displayName ?? "Unnamed Breeder"}</p>
           <div className="flex items-center gap-1.5">
             <span className="text-[10px] font-bold uppercase tracking-wide text-(--color-gold-bright)">
-              Lv. {mockPlayer.level}
+              Lv. {PLACEHOLDER_PROGRESSION.level}
             </span>
             <div className="h-1.5 w-20 overflow-hidden rounded-full bg-black/40">
               <div
@@ -105,7 +113,7 @@ export function TopBar() {
       </nav>
 
       <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
-        <span className="hidden sm:block"><CurrencyPill icon="⚡" value={mockPlayer.energy} /></span>
+        <span className="hidden sm:block"><CurrencyPill icon="⚡" value={PLACEHOLDER_PROGRESSION.energy} /></span>
         <CurrencyPill icon="🪙" value={credits} />
         <span className="hidden md:block"><CurrencyPill icon="🎟️" value={tournamentTokens} purchasable={false} /></span>
         <button
@@ -122,6 +130,14 @@ export function TopBar() {
           className="hud-icon-button flex h-10 w-10 shrink-0 cursor-not-allowed items-center justify-center rounded-lg text-sm text-(--color-text-muted)"
         >
           ⚙️
+        </button>
+        <button
+          type="button"
+          aria-label="Sign out"
+          onClick={() => signOut()}
+          className="hud-icon-button flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-sm text-(--color-text-muted) hover:text-(--color-gold-bright)"
+        >
+          ⏻
         </button>
       </div>
     </header>

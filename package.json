@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "node --import ./scripts/test-ts-loader.mjs --test --test-concurrency=1 lib/__tests__/*.test.ts",
+    "test": "node --conditions=react-server --import ./scripts/test-ts-loader.mjs --test --test-concurrency=1 lib/__tests__/*.test.ts",
     "db:up": "docker compose up -d",
     "seed:god": "node --import ./scripts/test-ts-loader.mjs scripts/seed-god-chickens.ts",
     "seed:endgame": "node --import ./scripts/test-ts-loader.mjs scripts/seed-endgame.ts",
@@ -16,16 +16,21 @@
     "seed:strategy": "node --import ./scripts/test-ts-loader.mjs scripts/seed-strategy-fighter-roster.ts",
     "backfill:colors": "node --import ./scripts/test-ts-loader.mjs scripts/backfill-color-jitter.ts",
     "postinstall": "prisma generate",
-    "verify:launch-commands": "node --import ./scripts/test-ts-loader.mjs scripts/verify-launch-commands.ts"
+    "verify:launch-commands": "node --import ./scripts/test-ts-loader.mjs scripts/verify-launch-commands.ts",
+    "link-legacy-player": "node --import ./scripts/test-ts-loader.mjs scripts/link-legacy-player.ts",
+    "restock-marketplace": "node --import ./scripts/test-ts-loader.mjs scripts/restock-marketplace.ts"
   },
   "dependencies": {
     "@prisma/client": "^6",
     "@react-three/drei": "^10.7.8",
     "@react-three/fiber": "^9.7.0",
     "@react-three/rapier": "^2.2.0",
+    "@supabase/ssr": "^0.12.7",
+    "@supabase/supabase-js": "^2.116.0",
     "next": "16.3.4",
     "react": "19.2.8",
     "react-dom": "19.2.8",
+    "server-only": "^0.0.1",
     "three": "^0.185.1"
   },
   "devDependencies": {

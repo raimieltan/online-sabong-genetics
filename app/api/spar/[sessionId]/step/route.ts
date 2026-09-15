@@ -4,6 +4,8 @@ import { autoCoachPolicy } from "@/lib/combat/autoCoach";
 import { MAX_TURNS } from "@/lib/combat/simulator";
 import { endSparSession, getSparSession } from "@/lib/combat/sparSessions";
 import type { CoachingCommand } from "@/lib/combat/command";
+import { requirePlayer } from "@/lib/auth/player";
+import { toErrorResponse } from "@/lib/auth/responses";
 
 type StepBody = { command?: CoachingCommand | null };
 
@@ -15,26 +17,31 @@ type StepBody = { command?: CoachingCommand | null };
  * forgotten tab doesn't leak sessions indefinitely.
  */
 export async function POST(request: Request, { params }: { params: Promise<{ sessionId: string }> }) {
-  const { sessionId } = await params;
-  const session = getSparSession(sessionId);
-  if (!session) {
-    return NextResponse.json({ error: "Spar session not found or already ended." }, { status: 404 });
+  try {
+    const player = await requirePlayer();
+    const { sessionId } = await params;
+    const session = getSparSession(sessionId, player.id);
+    if (!session) {
+      return NextResponse.json({ error: "Spar session not found or already ended." }, { status: 404 });
+    }
+
+    const body: StepBody = await request.json().catch(() => ({}));
+    const step = session.step(body.command ?? null, autoCoachPolicy());
+
+    const done = step.fightOver || session.turn >= MAX_TURNS;
+    const result = done ? session.finalize() : undefined;
+    if (done) endSparSession(sessionId, player.id);
+
+    return NextResponse.json({
+      turn: step.turn,
+      entries: step.entries,
+      fightOver: done,
+      durationMs: step.durationMs,
+      snapshotA: session.snapshotA(),
+      snapshotB: session.snapshotB(),
+      result,
+    });
+  } catch (error) {
+    return toErrorResponse(error);
   }
-
-  const body: StepBody = await request.json().catch(() => ({}));
-  const step = session.step(body.command ?? null, autoCoachPolicy());
-
-  const done = step.fightOver || session.turn >= MAX_TURNS;
-  const result = done ? session.finalize() : undefined;
-  if (done) endSparSession(sessionId);
-
-  return NextResponse.json({
-    turn: step.turn,
-    entries: step.entries,
-    fightOver: done,
-    durationMs: step.durationMs,
-    snapshotA: session.snapshotA(),
-    snapshotB: session.snapshotB(),
-    result,
-  });
 }

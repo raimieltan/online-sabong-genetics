@@ -4,7 +4,8 @@ import { canFight, generatePveOpponent } from "@/lib/combat";
 import { BattleSession, MAX_TURNS } from "@/lib/combat/simulator";
 import { createSparSession } from "@/lib/combat/sparSessions";
 import { prisma } from "@/lib/db";
-import { getOrCreatePlayer } from "@/lib/player";
+import { requirePlayer } from "@/lib/auth/player";
+import { toErrorResponse } from "@/lib/auth/responses";
 import type { Chicken } from "@/lib/types";
 
 type StartBody = { chickenId?: string };
@@ -18,33 +19,37 @@ type StartBody = { chickenId?: string };
  * scored match).
  */
 export async function POST(request: Request) {
-  const body: StartBody = await request.json();
-  const { chickenId } = body;
-  if (!chickenId) {
-    return NextResponse.json({ error: "Missing chickenId." }, { status: 400 });
-  }
+  try {
+    const body: StartBody = await request.json();
+    const { chickenId } = body;
+    if (!chickenId) {
+      return NextResponse.json({ error: "Missing chickenId." }, { status: 400 });
+    }
 
-  const player = await getOrCreatePlayer();
-  const row = await prisma.chicken.findUnique({ where: { id: chickenId } });
-  if (!row || row.playerId !== player.id) {
-    return NextResponse.json({ error: "Chicken not found." }, { status: 404 });
-  }
-  const chickenA = row as unknown as Chicken;
-  if (!canFight(chickenA)) {
-    return NextResponse.json({ error: "Chicken cannot battle right now." }, { status: 400 });
-  }
+    const player = await requirePlayer();
+    const row = await prisma.chicken.findUnique({ where: { id: chickenId } });
+    if (!row || row.playerId !== player.id) {
+      return NextResponse.json({ error: "Chicken not found." }, { status: 404 });
+    }
+    const chickenA = row as unknown as Chicken;
+    if (!canFight(chickenA)) {
+      return NextResponse.json({ error: "Chicken cannot battle right now." }, { status: 400 });
+    }
 
-  const { opponent: chickenB, encounter } = generatePveOpponent(chickenA);
-  const session = new BattleSession(chickenA, chickenB);
-  const sessionId = createSparSession(session);
+    const { opponent: chickenB, encounter } = generatePveOpponent(chickenA);
+    const session = new BattleSession(chickenA, chickenB);
+    const sessionId = createSparSession(session, player.id);
 
-  return NextResponse.json({
-    sessionId,
-    chickenA,
-    chickenB,
-    encounter,
-    maxTurns: MAX_TURNS,
-    snapshotA: session.snapshotA(),
-    snapshotB: session.snapshotB(),
-  });
+    return NextResponse.json({
+      sessionId,
+      chickenA,
+      chickenB,
+      encounter,
+      maxTurns: MAX_TURNS,
+      snapshotA: session.snapshotA(),
+      snapshotB: session.snapshotB(),
+    });
+  } catch (error) {
+    return toErrorResponse(error);
+  }
 }
