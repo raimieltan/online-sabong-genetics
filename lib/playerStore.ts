@@ -8,10 +8,10 @@
  * on mount, so a loss/win/purchase wouldn't show up until a manual refresh.
  */
 
-type PlayerSnapshot = { credits: number; tournamentTokens: number };
+type PlayerSnapshot = { credits: number; tournamentTokens: number; displayName: string | null };
 type Listener = () => void;
 
-let snapshot: PlayerSnapshot = { credits: 0, tournamentTokens: 0 };
+let snapshot: PlayerSnapshot = { credits: 0, tournamentTokens: 0, displayName: null };
 const listeners = new Set<Listener>();
 
 function emit() {
@@ -43,8 +43,21 @@ export function setPlayerTournamentTokens(tournamentTokens: number) {
 /** Re-pulls the whole wallet from the server — used by TopBar on mount. */
 export async function refreshPlayer() {
   const res = await fetch("/api/player");
+  if (res.status === 401) {
+    snapshot = { credits: 0, tournamentTokens: 0, displayName: null };
+    emit();
+    if (typeof window !== "undefined") window.location.href = "/login";
+    return;
+  }
   if (!res.ok) return;
   const player: PlayerSnapshot = await res.json();
   snapshot = player;
   emit();
+}
+
+export async function signOut() {
+  await fetch("/auth/signout", { method: "POST" });
+  snapshot = { credits: 0, tournamentTokens: 0, displayName: null };
+  emit();
+  if (typeof window !== "undefined") window.location.href = "/login";
 }
