@@ -248,9 +248,9 @@ function AuthoritativeContinuousBattle({ sessionId, initialView, onComplete, aud
               vfx.current?.spawnBlood(point, normal, amount >= 9 ? 1.45 : 0.85);
             }
           }
-          if (event.type !== 'ACTION_STARTED' && event.type !== 'ACTION_CHAINED') continue;
+          if (event.type !== 'ACTION_STARTED' && event.type !== 'ACTION_CHAINED') return;
           const index = next.projection.findIndex(fighter => fighter.fighterId === event.payload.fighterId);
-          if (index < 0) continue;
+          if (index < 0) return;
           const state = animation[String(event.payload.actionId ?? '')] ?? 'ready';
           const intent: AnimIntent = { state, startedAt: event.cursor, speed: 1, moveKind: String(event.payload.actionId ?? state), facing: index === 0 ? 'right' : 'left', tacticalMode: index === 0 ? commandModeForPresentation(next.activeCommand) : 'balanced', fatal: false };
           if (index === 0) { actionA.current = state; intentA.current = intent; }
