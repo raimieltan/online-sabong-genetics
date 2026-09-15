@@ -15,6 +15,8 @@ const PLACEHOLDER_PROGRESSION = {
   energy: 120,
 };
 
+const AUTH_ONLY_PATHS = ["/login", "/forgot-password", "/reset-password"];
+
 const NAV_ITEMS = [
   { href: "/", label: "Ranch", icon: "⌂" },
   { href: "/coop", label: "Coop", icon: "♞" },
@@ -65,10 +67,14 @@ export function TopBar() {
     getPlayerSnapshot,
   );
   const xpPct = Math.round((PLACEHOLDER_PROGRESSION.xp / PLACEHOLDER_PROGRESSION.xpToNext) * 100);
+  const isAuthOnlyPath = AUTH_ONLY_PATHS.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 
   useEffect(() => {
+    if (isAuthOnlyPath) return;
     refreshPlayer();
-  }, []);
+  }, [isAuthOnlyPath]);
+
+  if (isAuthOnlyPath) return null;
 
   return (
     <header className="smoked-glass-topbar sticky top-0 z-30 flex min-h-[5.5rem] items-center gap-3 px-3 py-2 sm:gap-5 sm:px-5">
