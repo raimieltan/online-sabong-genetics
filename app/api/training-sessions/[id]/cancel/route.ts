@@ -5,11 +5,18 @@ import { toErrorResponse } from "@/lib/auth/responses";
 import { cancelTrainingSession } from "@/lib/facilities/service";
 import { FacilityError } from "@/lib/facilities/errors";
 
-export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(_request: Request, context: { params: Promise<{ id: string }> }) {
+  return handleCancelTrainingSession(context);
+}
+
+export async function handleCancelTrainingSession(
+  { params }: { params: Promise<{ id: string }> },
+  deps: { requirePlayer: typeof requirePlayer } = { requirePlayer }
+) {
   const { id } = await params;
 
   try {
-    const player = await requirePlayer();
+    const player = await deps.requirePlayer();
     const session = await cancelTrainingSession(player.id, id);
     return NextResponse.json(session);
   } catch (err) {

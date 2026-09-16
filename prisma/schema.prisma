@@ -9,7 +9,7 @@ datasource db {
 
 model Player {
   id                 String               @id @default(uuid())
-  authUserId         String?              @unique @db.Uuid
+  authUserId         String               @unique @db.Uuid
   displayName        String?
   onboardingState    String               @default("PENDING")
   provisionedAt      DateTime?

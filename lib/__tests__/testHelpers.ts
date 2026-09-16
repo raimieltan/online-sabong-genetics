@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import type { Player } from "@prisma/client";
 
 import { prisma } from "../db";
@@ -13,6 +15,15 @@ export async function getOrCreateTestPlayer(): Promise<Player> {
 /** Injectable `requirePlayer` stand-in for route handlers' `deps` param, so tests can bypass real auth. */
 export function testRequirePlayer(player: Player) {
   return { requirePlayer: async () => player };
+}
+
+/** Two distinct players with distinct authUserIds, for cross-account isolation tests. */
+export async function createTestPlayerPair(): Promise<{ playerA: Player; playerB: Player }> {
+  const [playerA, playerB] = await Promise.all([
+    prisma.player.create({ data: { authUserId: randomUUID() } }),
+    prisma.player.create({ data: { authUserId: randomUUID() } }),
+  ]);
+  return { playerA, playerB };
 }
 
 export function statBlock(value: number): StatBlock {

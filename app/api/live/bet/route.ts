@@ -16,14 +16,21 @@ type BetBody = { matchId?: string; side?: BetSide; amount?: number };
  * is ever live per match.
  */
 export async function POST(request: Request) {
+  return handleBet(request);
+}
+
+export async function handleBet(
+  request: Request,
+  deps: { requirePlayer: typeof requirePlayer } = { requirePlayer }
+) {
   try {
-    return await handlePost(request);
+    return await handlePost(request, deps);
   } catch (error) {
     return toErrorResponse(error);
   }
 }
 
-async function handlePost(request: Request) {
+async function handlePost(request: Request, deps: { requirePlayer: typeof requirePlayer }) {
   const body: BetBody = await request.json();
   const { matchId, side, amount } = body;
 
@@ -31,7 +38,7 @@ async function handlePost(request: Request) {
     return NextResponse.json({ error: "Invalid bet." }, { status: 400 });
   }
 
-  const player = await requirePlayer();
+  const player = await deps.requirePlayer();
   const match = await prisma.liveMatch.findUnique({ where: { id: matchId } });
 
   if (!match || match.playerId !== player.id) {

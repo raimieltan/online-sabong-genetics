@@ -18,7 +18,8 @@
     "postinstall": "prisma generate",
     "verify:launch-commands": "node --import ./scripts/test-ts-loader.mjs scripts/verify-launch-commands.ts",
     "link-legacy-player": "node --import ./scripts/test-ts-loader.mjs scripts/link-legacy-player.ts",
-    "restock-marketplace": "node --import ./scripts/test-ts-loader.mjs scripts/restock-marketplace.ts"
+    "restock-marketplace": "node --import ./scripts/test-ts-loader.mjs scripts/restock-marketplace.ts",
+    "check-unlinked-players": "node --import ./scripts/test-ts-loader.mjs scripts/check-unlinked-players.ts"
   },
   "dependencies": {
     "@prisma/client": "^6",

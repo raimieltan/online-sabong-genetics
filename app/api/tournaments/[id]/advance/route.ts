@@ -6,11 +6,18 @@ import { TournamentError } from "@/lib/tournament/errors";
 import { advanceRound } from "@/lib/tournament/service";
 
 /** Resolves the current round of a saved tournament and returns the round's battle report plus the updated bracket. */
-export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(_request: Request, context: { params: Promise<{ id: string }> }) {
+  return handleAdvanceTournament(context);
+}
+
+export async function handleAdvanceTournament(
+  { params }: { params: Promise<{ id: string }> },
+  deps: { requirePlayer: typeof requirePlayer } = { requirePlayer }
+) {
   const { id } = await params;
 
   try {
-    const player = await requirePlayer();
+    const player = await deps.requirePlayer();
     const result = await advanceRound(player.id, id);
     return NextResponse.json(result);
   } catch (err) {
