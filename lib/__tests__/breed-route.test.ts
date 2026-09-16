@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 
 import { prisma } from "../db";
-import { getOrCreatePlayer } from "../player";
-import { POST } from "../../app/api/breed/route";
+import { handleBreed } from "../../app/api/breed/route";
 import { GENETIC_STAT_KEYS, type StatBlock } from "../types";
+import { getOrCreateTestPlayer, testRequirePlayer } from "./testHelpers";
 
 function zeroBlock(): StatBlock {
   const block = {} as StatBlock;
@@ -16,7 +16,7 @@ function zeroBlock(): StatBlock {
 async function seedChicken(
   overrides: Partial<{ sex: string; generation: number; bloodlineId: string; growthStage: string }>
 ) {
-  const player = await getOrCreatePlayer();
+  const player = await getOrCreateTestPlayer();
   const id = randomUUID();
   await prisma.chicken.create({
     data: {
@@ -58,7 +58,8 @@ test("POST /api/breed creates an egg with the rooster's bloodline and generation
   const fatherId = await seedChicken({ sex: "rooster", generation: 2, bloodlineId: "father-line" });
   const motherId = await seedChicken({ sex: "hen", generation: 1 });
 
-  const response = await POST(postRequest({ fatherId, motherId }));
+  const player = await getOrCreateTestPlayer();
+  const response = await handleBreed(postRequest({ fatherId, motherId }), testRequirePlayer(player));
   assert.equal(response.status, 201);
 
   const egg = await response.json();
@@ -74,7 +75,11 @@ test("POST /api/breed rejects two roosters", async () => {
   const fatherId = await seedChicken({ sex: "rooster" });
   const secondRoosterId = await seedChicken({ sex: "rooster" });
 
-  const response = await POST(postRequest({ fatherId, motherId: secondRoosterId }));
+  const player = await getOrCreateTestPlayer();
+  const response = await handleBreed(
+    postRequest({ fatherId, motherId: secondRoosterId }),
+    testRequirePlayer(player)
+  );
   assert.equal(response.status, 400);
 });
 
@@ -82,13 +87,18 @@ test("POST /api/breed rejects a chick that hasn't reached adulthood", async () =
   const fatherId = await seedChicken({ sex: "rooster", growthStage: "chick" });
   const motherId = await seedChicken({ sex: "hen" });
 
-  const response = await POST(postRequest({ fatherId, motherId }));
+  const player = await getOrCreateTestPlayer();
+  const response = await handleBreed(postRequest({ fatherId, motherId }), testRequirePlayer(player));
   assert.equal(response.status, 400);
 });
 
 test("POST /api/breed rejects a missing parent id", async () => {
   const fatherId = await seedChicken({ sex: "rooster" });
 
-  const response = await POST(postRequest({ fatherId, motherId: "does-not-exist" }));
+  const player = await getOrCreateTestPlayer();
+  const response = await handleBreed(
+    postRequest({ fatherId, motherId: "does-not-exist" }),
+    testRequirePlayer(player)
+  );
   assert.equal(response.status, 404);
 });

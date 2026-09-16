@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 
+import { requirePlayer } from "@/lib/auth/player";
+import { toErrorResponse } from "@/lib/auth/responses";
 import { prisma } from "@/lib/db";
 import { BETTING_WINDOW_MS } from "@/lib/live/bets";
 import { pickLiveMatchup } from "@/lib/live/matchup";
 import { estimateOdds } from "@/lib/live/odds";
-import { getOrCreatePlayer } from "@/lib/player";
 import type { Chicken } from "@/lib/types";
 
 /**
@@ -15,7 +16,15 @@ import type { Chicken } from "@/lib/types";
  * tamper with either combatant's stats between quoting odds and resolving.
  */
 export async function POST() {
-  const player = await getOrCreatePlayer();
+  try {
+    return await handlePost();
+  } catch (error) {
+    return toErrorResponse(error);
+  }
+}
+
+async function handlePost() {
+  const player = await requirePlayer();
   const rows = await prisma.chicken.findMany({ where: { playerId: player.id } });
   const owned = rows as unknown as Chicken[];
 

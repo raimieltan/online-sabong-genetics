@@ -3,13 +3,13 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 
 import { prisma } from "../db";
-import { getOrCreatePlayer } from "../player";
 import { UnauthenticatedError } from "../auth/errors";
 import { generateListing, MARKET_STOCK_SIZE } from "../marketplace";
 import { handleGetMarketplace } from "../../app/api/marketplace/route";
-import { POST as buyPOST } from "../../app/api/marketplace/[id]/buy/route";
-import { POST as sellPOST } from "../../app/api/chickens/[id]/sell/route";
+import { handleBuy } from "../../app/api/marketplace/[id]/buy/route";
+import { handleSell } from "../../app/api/chickens/[id]/sell/route";
 import { GENETIC_STAT_KEYS, type StatBlock } from "../types";
+import { getOrCreateTestPlayer, testRequirePlayer } from "./testHelpers";
 
 function statBlock(value: number): StatBlock {
   const block = {} as StatBlock;
@@ -61,7 +61,7 @@ async function seedMarketStock() {
 }
 
 test("GET /api/marketplace returns the seeded listings without restocking", async () => {
-  const player = await getOrCreatePlayer();
+  const player = await getOrCreateTestPlayer();
   const seededIds = await seedMarketStock();
 
   const response = await handleGetMarketplace({ requirePlayer: async () => player });
@@ -75,7 +75,7 @@ test("GET /api/marketplace returns the seeded listings without restocking", asyn
 });
 
 test("GET /api/marketplace does not create new listings as a side effect", async () => {
-  const player = await getOrCreatePlayer();
+  const player = await getOrCreateTestPlayer();
   await seedMarketStock();
 
   const before = await prisma.marketListing.count();
@@ -95,30 +95,30 @@ test("GET /api/marketplace returns 401 when unauthenticated", async () => {
 });
 
 test("POST /api/marketplace/:id/buy returns 404 for an unknown listing", async () => {
-  await getOrCreatePlayer();
-  const response = await buyPOST(new Request("http://localhost/api/marketplace/missing/buy", { method: "POST" }), {
+  const player = await getOrCreateTestPlayer();
+  const response = await handleBuy({
     params: Promise.resolve({ id: "missing" }),
-  });
+  }, testRequirePlayer(player));
   assert.equal(response.status, 404);
 });
 
 test("POST /api/marketplace/:id/buy returns 400 when the player can't afford it", async () => {
-  const player = await getOrCreatePlayer();
+  const player = await getOrCreateTestPlayer();
   const id = await seedListing(player.credits + 1000);
 
-  const response = await buyPOST(new Request(`http://localhost/api/marketplace/${id}/buy`, { method: "POST" }), {
+  const response = await handleBuy({
     params: Promise.resolve({ id }),
-  });
+  }, testRequirePlayer(player));
   assert.equal(response.status, 400);
 });
 
 test("POST /api/marketplace/:id/buy deducts credits, creates the chicken, and removes the listing", async () => {
-  const player = await getOrCreatePlayer();
+  const player = await getOrCreateTestPlayer();
   const id = await seedListing(100);
 
-  const response = await buyPOST(new Request(`http://localhost/api/marketplace/${id}/buy`, { method: "POST" }), {
+  const response = await handleBuy({
     params: Promise.resolve({ id }),
-  });
+  }, testRequirePlayer(player));
   assert.equal(response.status, 200);
 
   const body = await response.json();
@@ -132,12 +132,12 @@ test("POST /api/marketplace/:id/buy deducts credits, creates the chicken, and re
 });
 
 test("POST /api/chickens/:id/sell pays out credits and deletes the chicken", async () => {
-  const player = await getOrCreatePlayer();
+  const player = await getOrCreateTestPlayer();
   const id = await seedChicken(player.id);
 
-  const response = await sellPOST(new Request(`http://localhost/api/chickens/${id}/sell`, { method: "POST" }), {
+  const response = await handleSell({
     params: Promise.resolve({ id }),
-  });
+  }, testRequirePlayer(player));
   assert.equal(response.status, 200);
 
   const body = await response.json();
@@ -151,12 +151,12 @@ test("POST /api/chickens/:id/sell pays out credits and deletes the chicken", asy
 });
 
 test("POST /api/chickens/:id/sell returns 404 for a chicken owned by another player", async () => {
-  await getOrCreatePlayer();
+  const player = await getOrCreateTestPlayer();
   const otherPlayer = await prisma.player.create({ data: {} });
   const id = await seedChicken(otherPlayer.id);
 
-  const response = await sellPOST(new Request(`http://localhost/api/chickens/${id}/sell`, { method: "POST" }), {
+  const response = await handleSell({
     params: Promise.resolve({ id }),
-  });
+  }, testRequirePlayer(player));
   assert.equal(response.status, 404);
 });

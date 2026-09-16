@@ -1,13 +1,24 @@
 import { NextResponse } from "next/server";
 
+import { requirePlayer } from "@/lib/auth/player";
+import { toErrorResponse } from "@/lib/auth/responses";
 import { prisma } from "@/lib/db";
-import { getOrCreatePlayer } from "@/lib/player";
 
 export async function GET() {
-  const player = await getOrCreatePlayer();
-  const eggs = await prisma.egg.findMany({
-    where: { playerId: player.id },
-    orderBy: { laidAt: "asc" },
-  });
-  return NextResponse.json(eggs);
+  return handleGetEggs();
+}
+
+export async function handleGetEggs(
+  deps: { requirePlayer: typeof requirePlayer } = { requirePlayer }
+) {
+  try {
+    const player = await deps.requirePlayer();
+    const eggs = await prisma.egg.findMany({
+      where: { playerId: player.id },
+      orderBy: { laidAt: "asc" },
+    });
+    return NextResponse.json(eggs);
+  } catch (error) {
+    return toErrorResponse(error);
+  }
 }

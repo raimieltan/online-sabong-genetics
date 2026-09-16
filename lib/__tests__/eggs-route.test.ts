@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 
 import { prisma } from "../db";
-import { getOrCreatePlayer } from "../player";
-import { GET } from "../../app/api/eggs/route";
+import { handleGetEggs } from "../../app/api/eggs/route";
 import { GENETIC_STAT_KEYS, type StatBlock } from "../types";
+import { getOrCreateTestPlayer, testRequirePlayer } from "./testHelpers";
 
 test.beforeEach(async () => {
   await prisma.egg.deleteMany();
@@ -14,7 +14,7 @@ test.beforeEach(async () => {
 });
 
 test("GET /api/eggs lists the player's eggs", async () => {
-  const player = await getOrCreatePlayer();
+  const player = await getOrCreateTestPlayer();
   const block = {} as StatBlock;
   GENETIC_STAT_KEYS.forEach((key) => (block[key] = 50));
 
@@ -33,7 +33,7 @@ test("GET /api/eggs lists the player's eggs", async () => {
     },
   });
 
-  const response = await GET();
+  const response = await handleGetEggs(testRequirePlayer(player));
   const eggs = await response.json();
   assert.equal(eggs.length, 1);
   assert.equal(eggs[0].bloodlineId, "line-1");

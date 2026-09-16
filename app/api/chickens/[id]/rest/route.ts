@@ -1,13 +1,30 @@
 import { NextResponse } from "next/server";
 
 import { prisma } from "@/lib/db";
-import { getOrCreatePlayer } from "@/lib/player";
+import { requirePlayer } from "@/lib/auth/player";
+import { toErrorResponse } from "@/lib/auth/responses";
 import { applyRecovery, type RecoveryMethod } from "@/lib/recovery/engine";
 import type { Chicken } from "@/lib/types";
 
-export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
+  return handleRest(request, context);
+}
+
+export async function handleRest(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> },
+  deps: { requirePlayer: typeof requirePlayer } = { requirePlayer }
+) {
+  try {
+    return await handlePost(request, params, deps);
+  } catch (error) {
+    return toErrorResponse(error);
+  }
+}
+
+async function handlePost(request: Request, params: Promise<{ id: string }>, deps: { requirePlayer: typeof requirePlayer }) {
   const { id } = await params;
-  const player = await getOrCreatePlayer();
+  const player = await deps.requirePlayer();
   const row = await prisma.chicken.findUnique({ where: { id } });
 
   if (!row || row.playerId !== player.id) {

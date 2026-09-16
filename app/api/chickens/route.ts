@@ -1,11 +1,24 @@
 import { NextResponse } from "next/server";
 
+import { requirePlayer } from "@/lib/auth/player";
+import { toErrorResponse } from "@/lib/auth/responses";
 import { generateUniqueRandomChicken } from "@/lib/chickenGenerator";
 import { prisma } from "@/lib/db";
-import { getOrCreatePlayer } from "@/lib/player";
 
 export async function GET() {
-  const player = await getOrCreatePlayer();
+  return handleGetChickens();
+}
+
+export async function handleGetChickens(deps: { requirePlayer: typeof requirePlayer } = { requirePlayer }) {
+  try {
+    return await handleGet(deps);
+  } catch (error) {
+    return toErrorResponse(error);
+  }
+}
+
+async function handleGet(deps: { requirePlayer: typeof requirePlayer }) {
+  const player = await deps.requirePlayer();
   const chickens = await prisma.chicken.findMany({
     where: { playerId: player.id },
     orderBy: { createdAt: "asc" },
@@ -36,7 +49,19 @@ export async function GET() {
 }
 
 export async function POST() {
-  const player = await getOrCreatePlayer();
+  return handleCreateChicken();
+}
+
+export async function handleCreateChicken(deps: { requirePlayer: typeof requirePlayer } = { requirePlayer }) {
+  try {
+    return await handlePost(deps);
+  } catch (error) {
+    return toErrorResponse(error);
+  }
+}
+
+async function handlePost(deps: { requirePlayer: typeof requirePlayer }) {
+  const player = await deps.requirePlayer();
   const generated = await generateUniqueRandomChicken({}, async (name) => {
     const existing = await prisma.chicken.findFirst({ where: { name }, select: { id: true } });
     return existing !== null;

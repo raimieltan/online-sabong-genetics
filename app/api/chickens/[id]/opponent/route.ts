@@ -1,14 +1,30 @@
 import { NextResponse } from "next/server";
 
 import { prisma } from "@/lib/db";
+import { requirePlayer } from "@/lib/auth/player";
+import { toErrorResponse } from "@/lib/auth/responses";
 import { canFight, generatePveOpponent } from "@/lib/combat";
-import { getOrCreatePlayer } from "@/lib/player";
 import type { Chicken } from "@/lib/types";
 import { createCombatEncounter } from "@/lib/combat/service";
 
-export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(_request: Request, context: { params: Promise<{ id: string }> }) {
+  return handleOpponent(context);
+}
+
+export async function handleOpponent(
+  { params }: { params: Promise<{ id: string }> },
+  deps: { requirePlayer: typeof requirePlayer } = { requirePlayer }
+) {
+  try {
+    return await handlePost(params, deps);
+  } catch (error) {
+    return toErrorResponse(error);
+  }
+}
+
+async function handlePost(params: Promise<{ id: string }>, deps: { requirePlayer: typeof requirePlayer }) {
   const { id } = await params;
-  const player = await getOrCreatePlayer();
+  const player = await deps.requirePlayer();
   const chicken = await prisma.chicken.findUnique({ where: { id } });
 
   if (!chicken || chicken.playerId !== player.id) {

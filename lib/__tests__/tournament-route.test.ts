@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 
 import { prisma } from "../db";
-import { getOrCreatePlayer } from "../player";
-import { POST } from "../../app/api/chickens/[id]/tournament/route";
+import { handleStartTournament } from "../../app/api/chickens/[id]/tournament/route";
+import { getOrCreateTestPlayer, testRequirePlayer } from "./testHelpers";
 import { GENETIC_STAT_KEYS, type GrowthStage, type StatBlock } from "../types";
 
 function statBlock(value: number): StatBlock {
@@ -51,23 +51,24 @@ test.beforeEach(async () => {
 });
 
 test("POST /api/chickens/:id/tournament returns 404 for an unknown chicken", async () => {
-  const response = await POST(postRequest("missing"), { params: Promise.resolve({ id: "missing" }) });
+  const player = await getOrCreateTestPlayer();
+  const response = await handleStartTournament(postRequest("missing"), { params: Promise.resolve({ id: "missing" }) }, testRequirePlayer(player));
   assert.equal(response.status, 404);
 });
 
 test("POST /api/chickens/:id/tournament returns 400 when the chicken cannot battle", async () => {
-  const player = await getOrCreatePlayer();
+  const player = await getOrCreateTestPlayer();
   const id = await seedChicken(player.id, { growthStage: "chick" });
 
-  const response = await POST(postRequest(id), { params: Promise.resolve({ id }) });
+  const response = await handleStartTournament(postRequest(id), { params: Promise.resolve({ id }) }, testRequirePlayer(player));
   assert.equal(response.status, 400);
 });
 
 test("POST /api/chickens/:id/tournament runs a full bracket and updates the chicken's record", async () => {
-  const player = await getOrCreatePlayer();
+  const player = await getOrCreateTestPlayer();
   const id = await seedChicken(player.id);
 
-  const response = await POST(postRequest(id), { params: Promise.resolve({ id }) });
+  const response = await handleStartTournament(postRequest(id), { params: Promise.resolve({ id }) }, testRequirePlayer(player));
   assert.equal(response.status, 200);
 
   const body = await response.json();
@@ -86,17 +87,17 @@ test("POST /api/chickens/:id/tournament runs a full bracket and updates the chic
 });
 
 test("POST /api/chickens/:id/tournament awards a championship on the chicken's record for a 1st-place finish", async () => {
-  const player = await getOrCreatePlayer();
+  const player = await getOrCreateTestPlayer();
   // Overwhelming stats make winning the whole bracket near-certain.
   const id = await seedChicken(player.id, { iv: statBlock(99) });
 
-  let response = await POST(postRequest(id), { params: Promise.resolve({ id }) });
+  let response = await handleStartTournament(postRequest(id), { params: Promise.resolve({ id }) }, testRequirePlayer(player));
   let body = await response.json();
 
   // Retry a few times in case of an unlucky roll — this is a probabilistic combat sim.
   for (let attempt = 0; attempt < 5 && body.placement !== 1; attempt++) {
     await prisma.chicken.update({ where: { id }, data: { injured: false, status: "active", health: 100 } });
-    response = await POST(postRequest(id), { params: Promise.resolve({ id }) });
+    response = await handleStartTournament(postRequest(id), { params: Promise.resolve({ id }) }, testRequirePlayer(player));
     body = await response.json();
   }
 

@@ -1,13 +1,29 @@
 import { NextResponse } from "next/server";
 
+import { requirePlayer } from "@/lib/auth/player";
+import { toErrorResponse } from "@/lib/auth/responses";
 import { prisma } from "@/lib/db";
 import { canAfford, spendCredits } from "@/lib/economy";
 import { listingToChicken, type MarketListingRow } from "@/lib/marketplace";
-import { getOrCreatePlayer } from "@/lib/player";
 
-export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(_request: Request, context: { params: Promise<{ id: string }> }) {
+  return handleBuy(context);
+}
+
+export async function handleBuy(
+  { params }: { params: Promise<{ id: string }> },
+  deps: { requirePlayer: typeof requirePlayer } = { requirePlayer }
+) {
+  try {
+    return await handlePost(params, deps);
+  } catch (error) {
+    return toErrorResponse(error);
+  }
+}
+
+async function handlePost(params: Promise<{ id: string }>, deps: { requirePlayer: typeof requirePlayer }) {
   const { id } = await params;
-  const player = await getOrCreatePlayer();
+  const player = await deps.requirePlayer();
   const listing = await prisma.marketListing.findUnique({ where: { id } });
 
   if (!listing) {

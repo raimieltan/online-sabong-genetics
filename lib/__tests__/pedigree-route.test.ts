@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 
 import { prisma } from "../db";
-import { getOrCreatePlayer } from "../player";
 import { handleGetPedigree } from "../../app/api/chickens/[id]/pedigree/route";
+import { getOrCreateTestPlayer } from "./testHelpers";
 import { GENETIC_STAT_KEYS, type StatBlock } from "../types";
 import type { Player } from "@prisma/client";
 
@@ -65,7 +65,7 @@ test.beforeEach(async () => {
 });
 
 test("GET /api/chickens/:id/pedigree returns 404 for an unknown chicken", async () => {
-  const player = await getOrCreatePlayer();
+  const player = await getOrCreateTestPlayer();
   const response = await handleGetPedigree(
     { params: Promise.resolve({ id: "missing" }) },
     withPlayer(player)
@@ -74,7 +74,7 @@ test("GET /api/chickens/:id/pedigree returns 404 for an unknown chicken", async 
 });
 
 test("GET /api/chickens/:id/pedigree returns an ancestry tree and descendant stats", async () => {
-  const player = await getOrCreatePlayer();
+  const player = await getOrCreateTestPlayer();
   const grandpa = await seedChicken(player.id, { generation: 0 });
   const dad = await seedChicken(player.id, { generation: 1, fatherId: grandpa });
   const mom = await seedChicken(player.id, { generation: 1 });

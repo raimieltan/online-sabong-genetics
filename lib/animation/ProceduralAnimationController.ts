@@ -75,6 +75,13 @@ export class ProceduralAnimationController {
   private attackVariant = 0;
   private simulationKey = "";
   private simulationBlend = 1;
+  private visualSimulationProgress = 0;
+  private smoothSpeed = 0;
+  private smoothVelX = 0;
+  private smoothVelZ = 0;
+  private smoothVelY = 0;
+  private smoothAimYaw = 0;
+  private visualInputsInitialized = false;
   private facing: "left" | "right" = "right";
   private gains: AnimationGains;
   private alive = true;
@@ -133,17 +140,23 @@ export class ProceduralAnimationController {
     }
   }
 
+  /** Capture the exact currently rendered pose before every state transition. */
+  private transitionTo(next: AnimState, currentFinished: boolean, blendScale = 1): boolean {
+    // Capture before request(): request resets stateTime/transitionT immediately.
+    copyPose(this.poseOut, this.poseBlendFrom);
+    return this.sm.request(next, currentFinished, blendScale);
+  }
+
   /** Apply an intent from BattleCanvas. No-op if the state machine rejects it. */
   play(intent: AnimIntent): void {
     this.facing = intent.facing;
     const target = intent.fatal ? "death" : intent.state;
     const finished = this.currentFinished();
     const blendScale = clamp(this.gains.inertia, 0.9, 1.4);
-    const accepted = this.sm.request(target, finished, blendScale);
+    const accepted = this.transitionTo(target, finished, blendScale);
     if (!accepted) return;
     this.playbackSpeed = Math.max(0.2, intent.speed || 1);
     this.attackVariant = variantFor(intent);
-    copyPose(this.poseOut, this.poseBlendFrom);
     if (target === "death") this.alive = false;
     const power = HIT_POWER[target];
     if (power != null && !intent.aerial) {
@@ -171,16 +184,46 @@ export class ProceduralAnimationController {
   }): void {
     const dt = Math.min(frame.dt, 1 / 30);
     this.sm.update(dt);
+
+    // Physics/simulation inputs can arrive with tiny frame-to-frame noise. Keep
+    // authoritative values untouched and smooth only the values used to pose the rig.
+    if (!this.visualInputsInitialized) {
+      this.smoothSpeed = frame.speed;
+      this.smoothVelX = frame.velX;
+      this.smoothVelZ = frame.velZ;
+      this.smoothVelY = frame.velY;
+      this.smoothAimYaw = frame.aimYaw;
+      this.visualInputsInitialized = true;
+    } else {
+      const moveA = 1 - Math.exp(-14 * dt);
+      const aimA = 1 - Math.exp(-18 * dt);
+      this.smoothSpeed += (frame.speed - this.smoothSpeed) * moveA;
+      this.smoothVelX += (frame.velX - this.smoothVelX) * moveA;
+      this.smoothVelZ += (frame.velZ - this.smoothVelZ) * moveA;
+      this.smoothVelY += (frame.velY - this.smoothVelY) * moveA;
+      this.smoothAimYaw += (frame.aimYaw - this.smoothAimYaw) * aimA;
+    }
+
     const simulation = frame.simulationIntent;
     if (simulation) {
       const simulationKey = `${simulation.state}:${simulation.startedAt}`;
+      const targetProgress = clamp01(simulation.simulationProgress ?? 0);
       if (simulationKey !== this.simulationKey) {
         copyPose(this.poseOut, this.poseBlendFrom);
         this.simulationKey = simulationKey;
         this.simulationBlend = 0;
+        this.visualSimulationProgress = targetProgress;
+      } else {
+        // Render-time interpolation hides stepped authoritative simulation ticks.
+        // Never lead the simulation; only ease toward the newest authoritative sample.
+        const progressA = 1 - Math.exp(-20 * dt);
+        this.visualSimulationProgress += (targetProgress - this.visualSimulationProgress) * progressA;
+        if (Math.abs(targetProgress - this.visualSimulationProgress) < 0.0005) {
+          this.visualSimulationProgress = targetProgress;
+        }
       }
       this.sm.current = simulation.state;
-      this.sm.stateTime = (simulation.simulationProgress ?? 0) * ANIMATIONS[simulation.state].duration;
+      this.sm.stateTime = this.visualSimulationProgress * ANIMATIONS[simulation.state].duration;
       this.playbackSpeed = 1;
       this.alive = !simulation.fatal;
       const blendDuration = 0.08 * clamp(this.gains.inertia, 0.9, 1.4);
@@ -195,22 +238,22 @@ export class ProceduralAnimationController {
     const anim = ANIMATIONS[cur];
     const done = !anim.loop && this.sm.stateTime * this.playbackSpeed >= anim.duration;
     if (done && !simulation) {
-      if (isAttack(cur)) this.sm.request("recovery", true);
+      if (isAttack(cur)) this.transitionTo("recovery", true);
       else if (cur === "recovery" || cur === "getup" || cur === "backstep" || cur === "knockback") {
-        this.sm.request("ready", true);
+        this.transitionTo("ready", true);
       } else if (cur === "hit_light" || cur === "hit_medium" || cur === "hit_heavy" ||
                  cur === "hit_critical" || cur === "stagger" || cur === "stagger_heavy") {
-        this.sm.request("ready", true);
+        this.transitionTo("ready", true);
       }
       // knockdown & death intentionally hold their final pose.
     }
 
     // --- walk / run velocity overlay --------------------------------------
     if (!simulation && isRestState(this.sm.current)) {
-      if (frame.speed > RUN_MIN) this.sm.request("run", true);
-      else if (frame.speed > WALK_ENTER) this.sm.request("walk", true);
-    } else if (!simulation && (this.sm.current === "walk" || this.sm.current === "run") && frame.speed <= WALK_EXIT) {
-      this.sm.request("ready", true);
+      if (this.smoothSpeed > RUN_MIN) this.transitionTo("run", true);
+      else if (this.smoothSpeed > WALK_ENTER) this.transitionTo("walk", true);
+    } else if (!simulation && (this.sm.current === "walk" || this.sm.current === "run") && this.smoothSpeed <= WALK_EXIT) {
+      this.transitionTo("ready", true);
     }
 
     // --- build context ----------------------------------------------------
@@ -221,19 +264,19 @@ export class ProceduralAnimationController {
     ctx.now = frame.now;
     ctx.gains = this.gains;
     ctx.facing = this.facing;
-    ctx.speed = frame.speed;
-    ctx.velX = frame.velX;
-    ctx.velZ = frame.velZ;
-    ctx.velY = frame.velY;
-    ctx.wingFlapIntensity = flapIntensityFor(state, frame, simulation);
-    ctx.aimYaw = frame.aimYaw;
+    ctx.speed = this.smoothSpeed;
+    ctx.velX = this.smoothVelX;
+    ctx.velZ = this.smoothVelZ;
+    ctx.velY = this.smoothVelY;
+    ctx.wingFlapIntensity = flapIntensityFor(state, { speed: this.smoothSpeed, velY: this.smoothVelY }, simulation);
+    ctx.aimYaw = this.smoothAimYaw;
     ctx.alive = this.alive;
     ctx.moveKind = simulation?.moveKind;
     ctx.attackVariant = simulation ? variantFor(simulation) : this.attackVariant;
     ctx.stateTime = this.sm.stateTime * this.playbackSpeed;
 
     if (state === "walk" || state === "run") {
-      const rate = clamp(frame.speed * 4, 0.25, 3.2); // cycles/sec
+      const rate = clamp(this.smoothSpeed * 4, 0.25, 3.2); // cycles/sec
       this.locoPhase = (this.locoPhase + rate * dt) % 1;
       ctx.t = this.locoPhase;
     } else if (def.loop) {

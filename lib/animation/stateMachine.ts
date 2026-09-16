@@ -46,11 +46,17 @@ export const PRIORITY: Record<AnimState, number> = {
 
 /** Per-target blend-in time (seconds). Falls back to DEFAULT_BLEND. */
 const BLEND: Partial<Record<AnimState, number>> = {
-  idle: 0.18,
-  ready: 0.14,
-  idle_alert: 0.14,
-  walk: 0.16,
-  run: 0.16,
+  idle: 0.20,
+  ready: 0.16,
+  idle_alert: 0.16,
+  walk: 0.18,
+  run: 0.18,
+  backstep: 0.12,
+  recovery: 0.14,
+  taunt: 0.16,
+  tell_aggression: 0.14,
+  tell_patience: 0.14,
+  tell_risk: 0.14,
   hit_light: 0.06,
   hit_medium: 0.07,
   hit_heavy: 0.08,
@@ -59,10 +65,11 @@ const BLEND: Partial<Record<AnimState, number>> = {
   stagger_heavy: 0.09,
   knockback: 0.06,
   knockdown: 0.05,
-  getup: 0.2,
+  getup: 0.22,
   death: 0.05,
 };
-const DEFAULT_BLEND = 0.1;
+// Normal motion gets a slightly longer blend; impact states above remain sharp.
+const DEFAULT_BLEND = 0.14;
 
 export class AnimationStateMachine {
   current: AnimState = "idle";

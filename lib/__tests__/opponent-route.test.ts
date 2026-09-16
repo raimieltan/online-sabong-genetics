@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 
 import { prisma } from "../db";
-import { getOrCreatePlayer } from "../player";
-import { POST } from "../../app/api/chickens/[id]/opponent/route";
+import { handleOpponent } from "../../app/api/chickens/[id]/opponent/route";
+import { getOrCreateTestPlayer, testRequirePlayer } from "./testHelpers";
 import { FIGHTING_STYLES, GENETIC_STAT_KEYS, type GrowthStage, type StatBlock } from "../types";
 
 function statBlock(value: number): StatBlock {
@@ -40,10 +40,6 @@ async function seedChicken(
   return id;
 }
 
-function postRequest(id: string) {
-  return new Request(`http://localhost/api/chickens/${id}/opponent`, { method: "POST" });
-}
-
 test.beforeEach(async () => {
   await prisma.egg.deleteMany();
   await prisma.chicken.deleteMany();
@@ -51,10 +47,10 @@ test.beforeEach(async () => {
 });
 
 test("POST /api/chickens/:id/opponent returns a full, unpersisted NPC chicken", async () => {
-  const player = await getOrCreatePlayer();
+  const player = await getOrCreateTestPlayer();
   const id = await seedChicken(player.id);
 
-  const response = await POST(postRequest(id), { params: Promise.resolve({ id }) });
+  const response = await handleOpponent({ params: Promise.resolve({ id }) }, testRequirePlayer(player));
   assert.equal(response.status, 200);
 
   const opponent = await response.json();
@@ -68,14 +64,18 @@ test("POST /api/chickens/:id/opponent returns a full, unpersisted NPC chicken", 
 });
 
 test("POST /api/chickens/:id/opponent returns 404 for an unknown chicken", async () => {
-  const response = await POST(postRequest("missing"), { params: Promise.resolve({ id: "missing" }) });
+  const player = await getOrCreateTestPlayer();
+  const response = await handleOpponent(
+    { params: Promise.resolve({ id: "missing" }) },
+    testRequirePlayer(player)
+  );
   assert.equal(response.status, 404);
 });
 
 test("POST /api/chickens/:id/opponent returns 400 when the chicken cannot battle", async () => {
-  const player = await getOrCreatePlayer();
+  const player = await getOrCreateTestPlayer();
   const id = await seedChicken(player.id, { growthStage: "chick" });
 
-  const response = await POST(postRequest(id), { params: Promise.resolve({ id }) });
+  const response = await handleOpponent({ params: Promise.resolve({ id }) }, testRequirePlayer(player));
   assert.equal(response.status, 400);
 });

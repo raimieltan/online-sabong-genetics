@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 
 import { isDevModeEnabled } from "@/lib/dev";
+import { requireAuthClaims } from "@/lib/auth/session";
+import { toErrorResponse } from "@/lib/auth/responses";
 import { prisma } from "@/lib/db";
 import { claimExpiredSessions } from "@/lib/facilities/service";
 import { defaultTrainingState } from "@/lib/training/limits";
@@ -12,10 +14,19 @@ type DevAction =
   | { action: "RESET_TRAINING_STATE"; chickenId: string };
 
 export async function POST(request: Request) {
-  if (!isDevModeEnabled()) {
-    return NextResponse.json({ error: "DEV_MODE_DISABLED" }, { status: 403 });
-  }
+  try {
+    const claims = await requireAuthClaims();
+    if (!isDevModeEnabled(claims.authUserId)) {
+      return NextResponse.json({ error: "DEV_MODE_DISABLED" }, { status: 403 });
+    }
 
+    return await handlePost(request);
+  } catch (error) {
+    return toErrorResponse(error);
+  }
+}
+
+async function handlePost(request: Request) {
   const body = (await request.json()) as DevAction;
 
   switch (body.action) {

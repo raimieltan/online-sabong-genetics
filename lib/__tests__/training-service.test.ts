@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 
 import { prisma } from "../db";
-import { getOrCreatePlayer } from "../player";
+import { getOrCreateTestPlayer } from "./testHelpers";
 import { getOrCreateRoosterTraining, redistributeEffortForChicken } from "../training/service";
 import { TrainingError } from "../training/errors";
 import { REDISTRIBUTE_CREDITS_PER_POINT } from "../training/effort";
@@ -47,7 +47,7 @@ test.beforeEach(async () => {
 });
 
 test("getOrCreateRoosterTraining creates a row once and reuses it after", async () => {
-  const player = await getOrCreatePlayer();
+  const player = await getOrCreateTestPlayer();
   const chickenId = await seedChicken(player.id);
 
   const first = await getOrCreateRoosterTraining(chickenId, statBlock(50));
@@ -58,7 +58,7 @@ test("getOrCreateRoosterTraining creates a row once and reuses it after", async 
 });
 
 test("redistributeEffortForChicken moves effort and debits credits", async () => {
-  const player = await getOrCreatePlayer();
+  const player = await getOrCreateTestPlayer();
   const chickenId = await seedChicken(player.id);
   const roosterTraining = await getOrCreateRoosterTraining(chickenId, statBlock(50));
 
@@ -77,7 +77,7 @@ test("redistributeEffortForChicken moves effort and debits credits", async () =>
 });
 
 test("redistributeEffortForChicken throws INSUFFICIENT_CREDITS_FOR_REDISTRIBUTE when the player can't afford it", async () => {
-  const player = await getOrCreatePlayer();
+  const player = await getOrCreateTestPlayer();
   const chickenId = await seedChicken(player.id);
   const roosterTraining = await getOrCreateRoosterTraining(chickenId, statBlock(50));
   await prisma.roosterTraining.update({

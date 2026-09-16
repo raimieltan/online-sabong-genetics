@@ -1,4 +1,19 @@
+import type { Player } from "@prisma/client";
+
+import { prisma } from "../db";
 import { GENETIC_STAT_KEYS, PHYSICAL_TRAIT_KEYS, type Chicken, type PhysicalBlock, type StatBlock } from "../types";
+
+/** Seeds (or reuses) a placeholder player row for tests that don't go through real Supabase auth. */
+export async function getOrCreateTestPlayer(): Promise<Player> {
+  const existing = await prisma.player.findFirst();
+  if (existing) return existing;
+  return prisma.player.create({ data: {} });
+}
+
+/** Injectable `requirePlayer` stand-in for route handlers' `deps` param, so tests can bypass real auth. */
+export function testRequirePlayer(player: Player) {
+  return { requirePlayer: async () => player };
+}
 
 export function statBlock(value: number): StatBlock {
   const block = {} as StatBlock;

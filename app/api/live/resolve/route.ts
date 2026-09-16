@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 
+import { requirePlayer } from "@/lib/auth/player";
+import { toErrorResponse } from "@/lib/auth/responses";
 import { applyFightOutcome, simulateFight } from "@/lib/combat";
 import { buildBattleReport, type BattleReport } from "@/lib/combat/battleReport";
 import { prisma } from "@/lib/db";
 import { BATTLE_WIN_CREDITS, earnCredits } from "@/lib/economy";
 import { calculatePayout } from "@/lib/live/bets";
 import type { LiveMode } from "@/lib/live/matchup";
-import { getOrCreatePlayer } from "@/lib/player";
 import type { Chicken } from "@/lib/types";
 
 type ResolveBody = { matchId?: string };
@@ -20,13 +21,21 @@ type ResolveBody = { matchId?: string };
  * whatever bet was placed on this match.
  */
 export async function POST(request: Request) {
+  try {
+    return await handlePost(request);
+  } catch (error) {
+    return toErrorResponse(error);
+  }
+}
+
+async function handlePost(request: Request) {
   const body: ResolveBody = await request.json();
   const { matchId } = body;
   if (!matchId) {
     return NextResponse.json({ error: "Missing matchId." }, { status: 400 });
   }
 
-  const player = await getOrCreatePlayer();
+  const player = await requirePlayer();
   const match = await prisma.liveMatch.findUnique({ where: { id: matchId } });
   if (!match || match.playerId !== player.id) {
     return NextResponse.json({ error: "Match not found." }, { status: 404 });

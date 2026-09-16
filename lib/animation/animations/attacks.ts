@@ -31,31 +31,52 @@ export function peckAttack(t: number, ctx: AnimContext, out: PoseMap): void {
   const g = ctx.gains.headThrow;
   const inn = inward(ctx);
 
+  // Continuous envelopes: every channel enters/leaves with matching endpoints,
+  // so phase changes cannot pop even when t advances by a relatively large tick.
+  const wind = easeOut(seg(t, 0, 0.25));
+  const fire = easeIn(seg(t, 0.25, 0.6));
+  const recoil = easeOutBack(seg(t, 0.6, 0.8));
+  const recover = smoothstep(seg(t, 0.8, 1));
+
+  let neck = 0;
+  let head = 0;
+  let chest = 0;
+  let spine = 0;
+  let hipsX = 0;
+  let tail = 0;
+
   if (t < 0.25) {
-    const p = easeOut(seg(t, 0, 0.25));
-    add(out, "Neck", { rx: -0.35 * p * g });
-    add(out, "Head", { rx: -0.15 * p * g });
-    add(out, "Chest", { rx: -0.06 * p });
-    add(out, "Hips", { px: inn * 0.02 * p });
+    neck = -0.35 * wind;
+    head = -0.15 * wind;
+    chest = -0.06 * wind;
+    hipsX = inn * 0.02 * wind;
   } else if (t < 0.6) {
-    const p = easeIn(seg(t, 0.25, 0.6));
-    add(out, "Neck", { rx: (-0.35 + 0.9 * (1 + 0.35) * p) * g });
-    add(out, "Head", { rx: (-0.15 + 0.45 * p) * g });
-    add(out, "Chest", { rx: 0.15 * p });
-    add(out, "Spine", { rx: 0.08 * p });
-    add(out, "Hips", { px: inn * (0.02 + 0.03 * p) });
-    add(out, "Tail", { rx: -0.1 * p });
+    // Starts exactly at the wind-up endpoint and ends at the strike endpoint.
+    neck = -0.35 + (0.865 + 0.35) * fire;
+    head = -0.15 + 0.45 * fire;
+    chest = -0.06 + 0.21 * fire;
+    spine = 0.08 * fire;
+    hipsX = inn * (0.02 + 0.03 * fire);
+    tail = -0.1 * fire;
   } else if (t < 0.8) {
-    const p = easeOutBack(seg(t, 0.6, 0.8));
-    add(out, "Neck", { rx: (0.9 * 1.35 * (1 - p) - 0.12 * p) * g });
-    add(out, "Head", { rx: (0.3 * (1 - p) - 0.1 * p) * g });
-    add(out, "Chest", { rx: 0.15 * (1 - p) });
-    add(out, "Spine", { rx: 0.08 * (1 - p) });
+    // Recoil begins from the exact values reached at t=.6.
+    neck = 0.865 + (-0.12 - 0.865) * recoil;
+    head = 0.30 + (-0.10 - 0.30) * recoil;
+    chest = 0.15 * (1 - recoil);
+    spine = 0.08 * (1 - recoil);
+    hipsX = inn * 0.05 * (1 - recoil);
+    tail = -0.1 * (1 - recoil);
   } else {
-    const p = smoothstep(seg(t, 0.8, 1));
-    add(out, "Neck", { rx: -0.12 * (1 - p) * g });
-    add(out, "Head", { rx: -0.1 * (1 - p) * g });
+    neck = -0.12 * (1 - recover);
+    head = -0.10 * (1 - recover);
   }
+
+  add(out, "Neck", { rx: neck * g });
+  add(out, "Head", { rx: head * g });
+  add(out, "Chest", { rx: chest });
+  add(out, "Spine", { rx: spine });
+  add(out, "Hips", { px: hipsX });
+  add(out, "Tail", { rx: tail });
 }
 
 // ---------------------------------------------------------------------------

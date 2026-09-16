@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 
+import { requirePlayer } from "@/lib/auth/player";
+import { toErrorResponse } from "@/lib/auth/responses";
 import { canFight } from "@/lib/combat";
 import { CombatServiceError, createCombatEncounter, createSession } from "@/lib/combat/service";
 import { prisma } from "@/lib/db";
-import { getOrCreatePlayer } from "@/lib/player";
 import { currentOpponent } from "@/lib/tournament";
 import { TournamentError } from "@/lib/tournament/errors";
 import { getTournament } from "@/lib/tournament/service";
@@ -12,8 +13,8 @@ import type { Chicken } from "@/lib/types";
 /** Opens the bracket's player match as the common authoritative session. */
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const player = await getOrCreatePlayer();
   try {
+    const player = await requirePlayer();
     const config = await request.json().catch(() => ({})) as { coachingMode?: "MANUAL" | "AUTO"; openingCommand?: "PRESS" | "WAIT" | "COUNTER" | "RECOVER"; disconnectPolicy?: "KEEP_INSTRUCTION" | "AUTO_COACH" };
     const tournament = await getTournament(player.id, id);
     if (tournament.status === "complete") throw new TournamentError("TOURNAMENT_COMPLETE");
@@ -28,6 +29,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   } catch (error) {
     if (error instanceof TournamentError) return NextResponse.json({ error: error.code }, { status: error.status });
     if (error instanceof CombatServiceError) return NextResponse.json({ error: error.code }, { status: error.status });
-    throw error;
+    return toErrorResponse(error);
   }
 }

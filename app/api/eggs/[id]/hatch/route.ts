@@ -1,13 +1,29 @@
 import { NextResponse } from "next/server";
 
+import { requirePlayer } from "@/lib/auth/player";
+import { toErrorResponse } from "@/lib/auth/responses";
 import { createChicken, generateUniqueChickName } from "@/lib/chickenGenerator";
 import { prisma } from "@/lib/db";
-import { getOrCreatePlayer } from "@/lib/player";
 import type { ChickenColorScheme, MutationGenome, PhysicalBlock, StatBlock, Trait } from "@/lib/types";
 
-export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function POST(_request: Request, context: { params: Promise<{ id: string }> }) {
+  return handleHatch(context);
+}
+
+export async function handleHatch(
+  { params }: { params: Promise<{ id: string }> },
+  deps: { requirePlayer: typeof requirePlayer } = { requirePlayer }
+) {
+  try {
+    return await handlePost(params, deps);
+  } catch (error) {
+    return toErrorResponse(error);
+  }
+}
+
+async function handlePost(params: Promise<{ id: string }>, deps: { requirePlayer: typeof requirePlayer }) {
   const { id } = await params;
-  const player = await getOrCreatePlayer();
+  const player = await deps.requirePlayer();
   const egg = await prisma.egg.findUnique({ where: { id } });
 
   if (!egg || egg.playerId !== player.id) {

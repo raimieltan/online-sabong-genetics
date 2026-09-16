@@ -2,8 +2,9 @@ import { NextResponse } from "next/server";
 
 import { canAfford, spendCredits } from "@/lib/economy";
 import type { BetSide } from "@/lib/live/bets";
+import { requirePlayer } from "@/lib/auth/player";
+import { toErrorResponse } from "@/lib/auth/responses";
 import { prisma } from "@/lib/db";
-import { getOrCreatePlayer } from "@/lib/player";
 
 type BetBody = { matchId?: string; side?: BetSide; amount?: number };
 
@@ -15,6 +16,14 @@ type BetBody = { matchId?: string; side?: BetSide; amount?: number };
  * is ever live per match.
  */
 export async function POST(request: Request) {
+  try {
+    return await handlePost(request);
+  } catch (error) {
+    return toErrorResponse(error);
+  }
+}
+
+async function handlePost(request: Request) {
   const body: BetBody = await request.json();
   const { matchId, side, amount } = body;
 
@@ -22,7 +31,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid bet." }, { status: 400 });
   }
 
-  const player = await getOrCreatePlayer();
+  const player = await requirePlayer();
   const match = await prisma.liveMatch.findUnique({ where: { id: matchId } });
 
   if (!match || match.playerId !== player.id) {

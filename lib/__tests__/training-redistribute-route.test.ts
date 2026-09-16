@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 
 import { prisma } from "../db";
-import { getOrCreatePlayer } from "../player";
 import { getOrCreateRoosterTraining } from "../training/service";
-import { POST } from "../../app/api/chickens/[id]/training/redistribute/route";
+import { handleRedistribute } from "../../app/api/chickens/[id]/training/redistribute/route";
+import { getOrCreateTestPlayer, testRequirePlayer } from "./testHelpers";
 import { GENETIC_STAT_KEYS, type StatBlock } from "../types";
 
 function statBlock(value: number): StatBlock {
@@ -53,7 +53,7 @@ test.beforeEach(async () => {
 });
 
 test("POST redistribute moves effort and returns the updated RoosterTraining state", async () => {
-  const player = await getOrCreatePlayer();
+  const player = await getOrCreateTestPlayer();
   const id = await seedChicken(player.id);
   const roosterTraining = await getOrCreateRoosterTraining(id, statBlock(50));
   await prisma.roosterTraining.update({
@@ -61,9 +61,9 @@ test("POST redistribute moves effort and returns the updated RoosterTraining sta
     data: { effortSpent: { ...roosterTraining.effortSpent, power: 40 } },
   });
 
-  const response = await POST(postRequest(id, { from: "power", to: "speed", amount: 10 }), {
+  const response = await handleRedistribute(postRequest(id, { from: "power", to: "speed", amount: 10 }), {
     params: Promise.resolve({ id }),
-  });
+  }, testRequirePlayer(player));
   assert.equal(response.status, 200);
 
   const body = await response.json();
@@ -72,19 +72,20 @@ test("POST redistribute moves effort and returns the updated RoosterTraining sta
 });
 
 test("POST redistribute returns 400 for an invalid stat", async () => {
-  const player = await getOrCreatePlayer();
+  const player = await getOrCreateTestPlayer();
   const id = await seedChicken(player.id);
   await getOrCreateRoosterTraining(id, statBlock(50));
 
-  const response = await POST(postRequest(id, { from: "not-a-stat", to: "speed", amount: 10 }), {
+  const response = await handleRedistribute(postRequest(id, { from: "not-a-stat", to: "speed", amount: 10 }), {
     params: Promise.resolve({ id }),
-  });
+  }, testRequirePlayer(player));
   assert.equal(response.status, 400);
 });
 
 test("POST redistribute returns 404 for an unknown chicken", async () => {
-  const response = await POST(postRequest("missing", { from: "power", to: "speed", amount: 10 }), {
+  const player = await getOrCreateTestPlayer();
+  const response = await handleRedistribute(postRequest("missing", { from: "power", to: "speed", amount: 10 }), {
     params: Promise.resolve({ id: "missing" }),
-  });
+  }, testRequirePlayer(player));
   assert.equal(response.status, 404);
 });

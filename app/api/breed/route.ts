@@ -2,14 +2,30 @@ import { randomUUID } from "node:crypto";
 
 import { NextResponse } from "next/server";
 
+import { requirePlayer } from "@/lib/auth/player";
+import { toErrorResponse } from "@/lib/auth/responses";
 import { prisma } from "@/lib/db";
 import { inheritColorScheme, inheritMutations, inheritPhysicalBlock, inheritStatBlock } from "@/lib/genetics";
 import { canBreed } from "@/lib/growth";
-import { getOrCreatePlayer } from "@/lib/player";
 import { inheritTraits } from "@/lib/traits";
 import type { ChickenColorScheme, GrowthStage, MutationGenome, PhysicalBlock, StatBlock, Trait } from "@/lib/types";
 
 export async function POST(request: Request) {
+  return handleBreed(request);
+}
+
+export async function handleBreed(
+  request: Request,
+  deps: { requirePlayer: typeof requirePlayer } = { requirePlayer }
+) {
+  try {
+    return await handlePost(request, deps);
+  } catch (error) {
+    return toErrorResponse(error);
+  }
+}
+
+async function handlePost(request: Request, deps: { requirePlayer: typeof requirePlayer }) {
   const body = (await request.json()) as { fatherId?: string; motherId?: string };
   const { fatherId, motherId } = body;
 
@@ -17,7 +33,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "fatherId and motherId are required" }, { status: 400 });
   }
 
-  const player = await getOrCreatePlayer();
+  const player = await deps.requirePlayer();
   const [father, mother] = await Promise.all([
     prisma.chicken.findUnique({ where: { id: fatherId } }),
     prisma.chicken.findUnique({ where: { id: motherId } }),

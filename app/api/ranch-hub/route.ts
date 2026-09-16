@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 
+import { requirePlayer } from "@/lib/auth/player";
+import { toErrorResponse } from "@/lib/auth/responses";
 import { prisma } from "@/lib/db";
-import { getOrCreatePlayerId } from "@/lib/player";
 import { loadPveDashboard } from "@/lib/pve/service";
 import { serverTiming } from "@/lib/serverTiming";
 import { currentOpponent, type TournamentState } from "@/lib/tournament";
@@ -22,8 +23,16 @@ type Activity = {
  * chicken, facility, medical, PvE, and tournament records.
  */
 export async function GET() {
+  try {
+    return await handleGet();
+  } catch (error) {
+    return toErrorResponse(error);
+  }
+}
+
+async function handleGet() {
   const startedAt = performance.now();
-  const playerId = await getOrCreatePlayerId();
+  const playerId = (await requirePlayer()).id;
   const playerReadyAt = performance.now();
   const [chickens, eggs, activeTraining, completedTraining, treatments, activeTournament, pve] = await Promise.all([
     prisma.chicken.findMany({ where: { playerId }, orderBy: { createdAt: "asc" } }),

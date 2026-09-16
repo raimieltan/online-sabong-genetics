@@ -3,8 +3,8 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 
 import { prisma } from "../db";
-import { getOrCreatePlayer } from "../player";
-import { POST } from "../../app/api/eggs/[id]/hatch/route";
+import { handleHatch } from "../../app/api/eggs/[id]/hatch/route";
+import { getOrCreateTestPlayer, testRequirePlayer } from "./testHelpers";
 import { GENETIC_STAT_KEYS, type StatBlock } from "../types";
 
 function zeroBlock(): StatBlock {
@@ -43,10 +43,10 @@ test.beforeEach(async () => {
 });
 
 test("POST /api/eggs/:id/hatch creates a chick and deletes the egg", async () => {
-  const player = await getOrCreatePlayer();
+  const player = await getOrCreateTestPlayer();
   const eggId = await seedEgg(player.id);
 
-  const response = await POST(postRequest(eggId), { params: Promise.resolve({ id: eggId }) });
+  const response = await handleHatch({ params: Promise.resolve({ id: eggId }) }, testRequirePlayer(player));
   assert.equal(response.status, 201);
 
   const chicken = await response.json();
@@ -62,12 +62,12 @@ test("POST /api/eggs/:id/hatch creates a chick and deletes the egg", async () =>
 });
 
 test("POST /api/eggs/:id/hatch assigns a random name, not a fixed placeholder", async () => {
-  const player = await getOrCreatePlayer();
+  const player = await getOrCreateTestPlayer();
 
   const names = new Set<string>();
   for (let i = 0; i < 10; i += 1) {
     const eggId = await seedEgg(player.id);
-    const response = await POST(postRequest(eggId), { params: Promise.resolve({ id: eggId }) });
+    const response = await handleHatch({ params: Promise.resolve({ id: eggId }) }, testRequirePlayer(player));
     const chicken = await response.json();
     assert.notEqual(chicken.name, "New Chick");
     names.add(chicken.name);
@@ -76,12 +76,12 @@ test("POST /api/eggs/:id/hatch assigns a random name, not a fixed placeholder", 
 });
 
 test("POST /api/eggs/:id/hatch persists a randomized fightingStyle, not always 'balanced'", async () => {
-  const player = await getOrCreatePlayer();
+  const player = await getOrCreateTestPlayer();
 
   const styles = new Set<string>();
   for (let i = 0; i < 20; i += 1) {
     const eggId = await seedEgg(player.id);
-    const response = await POST(postRequest(eggId), { params: Promise.resolve({ id: eggId }) });
+    const response = await handleHatch({ params: Promise.resolve({ id: eggId }) }, testRequirePlayer(player));
     const chicken = await response.json();
     styles.add(chicken.fightingStyle);
 
@@ -92,23 +92,24 @@ test("POST /api/eggs/:id/hatch persists a randomized fightingStyle, not always '
 });
 
 test("POST /api/eggs/:id/hatch returns 404 for an unknown egg", async () => {
-  const response = await POST(postRequest("missing"), { params: Promise.resolve({ id: "missing" }) });
+  const player = await getOrCreateTestPlayer();
+  const response = await handleHatch({ params: Promise.resolve({ id: "missing" }) }, testRequirePlayer(player));
   assert.equal(response.status, 404);
 });
 
 test("POST /api/eggs/:id/hatch returns 404 for an egg owned by another player", async () => {
-  await getOrCreatePlayer();
+  const player = await getOrCreateTestPlayer();
   const otherPlayer = await prisma.player.create({ data: {} });
   const eggId = await seedEgg(otherPlayer.id);
 
-  const response = await POST(postRequest(eggId), { params: Promise.resolve({ id: eggId }) });
+  const response = await handleHatch({ params: Promise.resolve({ id: eggId }) }, testRequirePlayer(player));
   assert.equal(response.status, 404);
 });
 
 test("POST /api/eggs/:id/hatch returns 400 for an already-hatched egg", async () => {
-  const player = await getOrCreatePlayer();
+  const player = await getOrCreateTestPlayer();
   const eggId = await seedEgg(player.id, { status: "hatched" });
 
-  const response = await POST(postRequest(eggId), { params: Promise.resolve({ id: eggId }) });
+  const response = await handleHatch({ params: Promise.resolve({ id: eggId }) }, testRequirePlayer(player));
   assert.equal(response.status, 400);
 });

@@ -2,15 +2,15 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import test from "node:test";
 
-import { POST } from "../../app/api/chickens/[id]/fight/route";
+import { handleFight } from "../../app/api/chickens/[id]/fight/route";
 import { generateRandomChicken } from "../chickenGenerator";
 import { beginSession, createCombatEncounter, createSession, getSession, issueCommand, syncSession, triggerSessionAwakening } from "../combat/service";
 import { emptyCombatCareer } from "../combat/evolution";
 import { prisma } from "../db";
-import { getOrCreatePlayer } from "../player";
 import { currentOpponent } from "../tournament";
 import { startTournament } from "../tournament/service";
 import { GENETIC_STAT_KEYS, type GrowthStage, type StatBlock } from "../types";
+import { getOrCreateTestPlayer, testRequirePlayer } from "./testHelpers";
 
 function statBlock(value: number): StatBlock {
   const block = {} as StatBlock;
@@ -42,10 +42,10 @@ test.beforeEach(async () => {
 });
 
 test("fight route creates an unresolved authoritative session from a server encounter", async () => {
-  const player = await getOrCreatePlayer();
+  const player = await getOrCreateTestPlayer();
   const fighterId = await seedChicken(player.id);
   const encounter = await createCombatEncounter({ ownerPlayerId: player.id, fighterId, opponent: generateRandomChicken({ name: "NPC" }), mode: "NORMAL" });
-  const response = await POST(request(fighterId, { encounterId: encounter.id, openingCommand: "WAIT" }), { params: Promise.resolve({ id: fighterId }) });
+  const response = await handleFight(request(fighterId, { encounterId: encounter.id, openingCommand: "WAIT" }), { params: Promise.resolve({ id: fighterId }) }, testRequirePlayer(player));
   assert.equal(response.status, 200);
   const body = await response.json();
   assert.equal(body.status, "CREATED");
@@ -60,34 +60,34 @@ test("fight route creates an unresolved authoritative session from a server enco
 });
 
 test("fight route rejects client-authored opponents", async () => {
-  const player = await getOrCreatePlayer();
+  const player = await getOrCreateTestPlayer();
   const fighterId = await seedChicken(player.id);
-  const response = await POST(request(fighterId, { opponent: generateRandomChicken({ name: "Fake" }) }), { params: Promise.resolve({ id: fighterId }) });
+  const response = await handleFight(request(fighterId, { opponent: generateRandomChicken({ name: "Fake" }) }), { params: Promise.resolve({ id: fighterId }) }, testRequirePlayer(player));
   assert.equal(response.status, 400);
   assert.equal((await response.json()).error, "CLIENT_OPPONENT_FORBIDDEN");
 });
 
 test("creation idempotency returns the same session and one fighter lease", async () => {
-  const player = await getOrCreatePlayer();
+  const player = await getOrCreateTestPlayer();
   const fighterId = await seedChicken(player.id);
   const encounter = await createCombatEncounter({ ownerPlayerId: player.id, fighterId, opponent: generateRandomChicken({ name: "NPC" }), mode: "NORMAL" });
   const key = randomUUID();
-  const first = await POST(request(fighterId, { encounterId: encounter.id }, key), { params: Promise.resolve({ id: fighterId }) });
-  const second = await POST(request(fighterId, { encounterId: encounter.id }, key), { params: Promise.resolve({ id: fighterId }) });
+  const first = await handleFight(request(fighterId, { encounterId: encounter.id }, key), { params: Promise.resolve({ id: fighterId }) }, testRequirePlayer(player));
+  const second = await handleFight(request(fighterId, { encounterId: encounter.id }, key), { params: Promise.resolve({ id: fighterId }) }, testRequirePlayer(player));
   assert.equal((await first.json()).sessionId, (await second.json()).sessionId);
   assert.equal(await prisma.combatSessionRecord.count(), 1);
 });
 
 test("ineligible fighters cannot consume an encounter", async () => {
-  const player = await getOrCreatePlayer();
+  const player = await getOrCreateTestPlayer();
   const fighterId = await seedChicken(player.id, { growthStage: "chick" });
   const encounter = await createCombatEncounter({ ownerPlayerId: player.id, fighterId, opponent: generateRandomChicken({ name: "NPC" }), mode: "NORMAL" });
-  const response = await POST(request(fighterId, { encounterId: encounter.id }), { params: Promise.resolve({ id: fighterId }) });
+  const response = await handleFight(request(fighterId, { encounterId: encounter.id }), { params: Promise.resolve({ id: fighterId }) }, testRequirePlayer(player));
   assert.equal(response.status, 409);
 });
 
 test("command ids deduplicate and commands lock at commitment", async () => {
-  const player = await getOrCreatePlayer();
+  const player = await getOrCreateTestPlayer();
   const fighterId = await seedChicken(player.id);
   const encounter = await createCombatEncounter({ ownerPlayerId: player.id, fighterId, opponent: generateRandomChicken({ name: "NPC" }), mode: "NORMAL" });
   const created = await createSession({ fighterId, encounterId: encounter.id, coachingMode: "MANUAL", openingCommand: "WAIT", disconnectPolicy: "KEEP_INSTRUCTION", idempotencyKey: randomUUID() }, player.id);
@@ -108,7 +108,7 @@ test("command ids deduplicate and commands lock at commitment", async () => {
 });
 
 test("manual awakening is authoritative, visible in projections, and idempotent", async () => {
-  const player = await getOrCreatePlayer();
+  const player = await getOrCreateTestPlayer();
   const fighterId = await seedChicken(player.id, { awakening: "unbreakable" });
   const encounter = await createCombatEncounter({ ownerPlayerId: player.id, fighterId, opponent: generateRandomChicken({ name: "NPC" }), mode: "NORMAL" });
   const created = await createSession({ fighterId, encounterId: encounter.id, coachingMode: "MANUAL", openingCommand: "WAIT", disconnectPolicy: "KEEP_INSTRUCTION", idempotencyKey: randomUUID() }, player.id);
@@ -128,7 +128,7 @@ test("manual awakening is authoritative, visible in projections, and idempotent"
 });
 
 test("launch campaign sessions hide and reject awakening controls", async () => {
-  const player = await getOrCreatePlayer();
+  const player = await getOrCreateTestPlayer();
   const fighterId = await seedChicken(player.id, { awakening: "unbreakable" });
   const encounter = await createCombatEncounter({
     ownerPlayerId: player.id,
@@ -157,7 +157,7 @@ test("launch campaign sessions hide and reject awakening controls", async () => 
 });
 
 test("terminal retries return one settlement and never duplicate consequences", async () => {
-  const player = await getOrCreatePlayer();
+  const player = await getOrCreateTestPlayer();
   const fighterId = await seedChicken(player.id);
   const opponent = generateRandomChicken({ name: "NPC" });
   const encounter = await createCombatEncounter({ ownerPlayerId: player.id, fighterId, opponent, mode: "NORMAL" });
@@ -176,7 +176,7 @@ test("terminal retries return one settlement and never duplicate consequences", 
 });
 
 test("authoritative tournament combat settles before resolving the bracket", async () => {
-  const player = await getOrCreatePlayer();
+  const player = await getOrCreateTestPlayer();
   const fighterId = await seedChicken(player.id);
   const tournament = await startTournament(player.id, fighterId, 8, "beginner", "barangay-open");
   const opponent = currentOpponent(tournament);
