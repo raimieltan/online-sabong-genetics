@@ -19,6 +19,12 @@ export default async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
 
   if (pathname.startsWith("/api/")) {
+    if (request.method !== "GET") {
+      const origin = request.headers.get("origin");
+      if (origin && origin !== getSupabaseEnv().appUrl) {
+        return NextResponse.json({ error: "Cross-origin request rejected" }, { status: 403 });
+      }
+    }
     return response;
   }
 
