@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 import { prisma } from "../db";
 import { UnauthenticatedError } from "../auth/errors";
 import { handleGetChicken } from "../../app/api/chickens/[id]/route";
+import { ensureTestAuthUser } from "./testHelpers";
 
 const OWNER_AUTH_ID = "66666666-6666-6666-6666-666666666666";
 const REQUESTER_AUTH_ID = "77777777-7777-7777-7777-777777777777";
@@ -12,6 +13,7 @@ test.beforeEach(async () => {
   await prisma.egg.deleteMany();
   await prisma.chicken.deleteMany();
   await prisma.player.deleteMany();
+  await Promise.all([ensureTestAuthUser(OWNER_AUTH_ID), ensureTestAuthUser(REQUESTER_AUTH_ID)]);
 });
 
 async function createTestChicken(playerId: string, id: string) {

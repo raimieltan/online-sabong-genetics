@@ -9,7 +9,7 @@ import { handleGetMarketplace } from "../../app/api/marketplace/route";
 import { handleBuy } from "../../app/api/marketplace/[id]/buy/route";
 import { handleSell } from "../../app/api/chickens/[id]/sell/route";
 import { GENETIC_STAT_KEYS, type StatBlock } from "../types";
-import { getOrCreateTestPlayer, testRequirePlayer } from "./testHelpers";
+import { createOtherTestPlayer, getOrCreateTestPlayer, testRequirePlayer } from "./testHelpers";
 
 function statBlock(value: number): StatBlock {
   const block = {} as StatBlock;
@@ -152,7 +152,7 @@ test("POST /api/chickens/:id/sell pays out credits and deletes the chicken", asy
 
 test("POST /api/chickens/:id/sell returns 404 for a chicken owned by another player", async () => {
   const player = await getOrCreateTestPlayer();
-  const otherPlayer = await prisma.player.create({ data: {} });
+  const otherPlayer = await createOtherTestPlayer();
   const id = await seedChicken(otherPlayer.id);
 
   const response = await handleSell({

@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 
 import { prisma } from "../db";
 import { handleGetPedigree } from "../../app/api/chickens/[id]/pedigree/route";
-import { getOrCreateTestPlayer } from "./testHelpers";
+import { ensureTestAuthUser, getOrCreateTestPlayer } from "./testHelpers";
 import { GENETIC_STAT_KEYS, type StatBlock } from "../types";
 import type { Player } from "@prisma/client";
 
@@ -100,8 +100,12 @@ test("GET /api/chickens/:id/pedigree returns an ancestry tree and descendant sta
 });
 
 test("GET returns 404 when the root rooster belongs to another player", async () => {
-  const ownerPlayer = await prisma.player.create({ data: { authUserId: "88888888-8888-8888-8888-888888888888" } });
-  const requesterPlayer = await prisma.player.create({ data: { authUserId: "99999999-9999-9999-9999-999999999999" } });
+  const [ownerAuthId, requesterAuthId] = await Promise.all([
+    ensureTestAuthUser("88888888-8888-8888-8888-888888888888"),
+    ensureTestAuthUser("99999999-9999-9999-9999-999999999999"),
+  ]);
+  const ownerPlayer = await prisma.player.create({ data: { authUserId: ownerAuthId } });
+  const requesterPlayer = await prisma.player.create({ data: { authUserId: requesterAuthId } });
   const rootChicken = await seedChicken(ownerPlayer.id, { generation: 0 });
 
   const response = await handleGetPedigree(

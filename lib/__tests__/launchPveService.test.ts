@@ -4,16 +4,19 @@ import test from 'node:test';
 import { prisma } from '../db';
 import { PveError } from '../pve/errors';
 import { campaignProgress, listBosses, startBossFight } from '../pve/service';
+import { ensureTestAuthUser } from './testHelpers';
 
 const playerId = 'launch-pve-service-test';
+const authUserId = '11111111-2222-3333-4444-555555555555';
 
 test.beforeEach(async () => {
   await prisma.pveProgress.deleteMany({ where: { playerId } });
   await prisma.pveOpponentHistory.deleteMany({ where: { playerId } });
   await prisma.pveCampaignState.deleteMany({ where: { playerId } });
+  await ensureTestAuthUser(authUserId);
   await prisma.player.upsert({
     where: { id: playerId },
-    create: { id: playerId, credits: 5_000 },
+    create: { id: playerId, authUserId, credits: 5_000 },
     update: {},
   });
 });

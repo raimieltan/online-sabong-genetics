@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 
 import { prisma } from "../db";
 import { handleHatch } from "../../app/api/eggs/[id]/hatch/route";
-import { getOrCreateTestPlayer, testRequirePlayer } from "./testHelpers";
+import { createOtherTestPlayer, getOrCreateTestPlayer, testRequirePlayer } from "./testHelpers";
 import { GENETIC_STAT_KEYS, type StatBlock } from "../types";
 
 function zeroBlock(): StatBlock {
@@ -99,7 +99,7 @@ test("POST /api/eggs/:id/hatch returns 404 for an unknown egg", async () => {
 
 test("POST /api/eggs/:id/hatch returns 404 for an egg owned by another player", async () => {
   const player = await getOrCreateTestPlayer();
-  const otherPlayer = await prisma.player.create({ data: {} });
+  const otherPlayer = await createOtherTestPlayer();
   const eggId = await seedEgg(otherPlayer.id);
 
   const response = await handleHatch({ params: Promise.resolve({ id: eggId }) }, testRequirePlayer(player));

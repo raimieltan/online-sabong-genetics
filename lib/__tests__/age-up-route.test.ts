@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { prisma } from "../db";
 import { handleAgeUp } from "../../app/api/chickens/[id]/age-up/route";
 import { GENETIC_STAT_KEYS, type GrowthStage, type StatBlock } from "../types";
-import { getOrCreateTestPlayer, testRequirePlayer } from "./testHelpers";
+import { createOtherTestPlayer, getOrCreateTestPlayer, testRequirePlayer } from "./testHelpers";
 
 function zeroBlock(): StatBlock {
   const block = {} as StatBlock;
@@ -70,7 +70,7 @@ test("POST /api/chickens/:id/age-up returns 404 for an unknown chicken", async (
 
 test("POST /api/chickens/:id/age-up returns 404 for a chicken owned by another player", async () => {
   const player = await getOrCreateTestPlayer();
-  const otherPlayer = await prisma.player.create({ data: {} });
+  const otherPlayer = await createOtherTestPlayer();
   const id = await seedChicken(otherPlayer.id, "chick");
 
   const response = await handleAgeUp({ params: Promise.resolve({ id }) }, testRequirePlayer(player));

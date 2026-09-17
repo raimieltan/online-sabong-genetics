@@ -3,10 +3,12 @@ import assert from "node:assert/strict";
 
 import { prisma } from "../db";
 import { getOrProvisionPlayer } from "../auth/player";
+import { ensureTestAuthUser } from "./testHelpers";
 
 test("getOrProvisionPlayer creates exactly one Player per authUserId", async () => {
   const authUserId = "22222222-2222-2222-2222-222222222222";
   await prisma.player.deleteMany({ where: { authUserId } });
+  await ensureTestAuthUser(authUserId);
 
   const first = await getOrProvisionPlayer(authUserId);
   const second = await getOrProvisionPlayer(authUserId);
@@ -19,6 +21,7 @@ test("getOrProvisionPlayer creates exactly one Player per authUserId", async () 
 test("getOrProvisionPlayer handles concurrent calls without duplicating the Player", async () => {
   const authUserId = "33333333-3333-3333-3333-333333333333";
   await prisma.player.deleteMany({ where: { authUserId } });
+  await ensureTestAuthUser(authUserId);
 
   const [a, b] = await Promise.all([
     getOrProvisionPlayer(authUserId),
@@ -34,6 +37,7 @@ test("two distinct authUserIds get two distinct Players", async () => {
   const idA = "44444444-4444-4444-4444-444444444444";
   const idB = "55555555-5555-5555-5555-555555555555";
   await prisma.player.deleteMany({ where: { authUserId: { in: [idA, idB] } } });
+  await Promise.all([ensureTestAuthUser(idA), ensureTestAuthUser(idB)]);
 
   const a = await getOrProvisionPlayer(idA);
   const b = await getOrProvisionPlayer(idB);

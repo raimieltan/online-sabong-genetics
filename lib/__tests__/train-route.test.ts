@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 
 import { prisma } from "../db";
 import { handleTrain } from "../../app/api/chickens/[id]/train/route";
-import { getOrCreateTestPlayer, testRequirePlayer } from "./testHelpers";
+import { createOtherTestPlayer, getOrCreateTestPlayer, testRequirePlayer } from "./testHelpers";
 import { GENETIC_STAT_KEYS, type GrowthStage, type StatBlock } from "../types";
 
 function statBlock(value: number): StatBlock {
@@ -78,7 +78,7 @@ test("POST /api/chickens/:id/train returns 404 for an unknown chicken", async ()
 
 test("POST /api/chickens/:id/train returns 404 for a chicken owned by another player", async () => {
   const player = await getOrCreateTestPlayer();
-  const otherPlayer = await prisma.player.create({ data: {} });
+  const otherPlayer = await createOtherTestPlayer();
   const id = await seedChicken(otherPlayer.id, {});
 
   const response = await handleTrain(postRequest(id, "power"), { params: Promise.resolve({ id }) }, testRequirePlayer(player));
