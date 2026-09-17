@@ -328,9 +328,14 @@ function AuthoritativeContinuousBattle({ sessionId, initialView, onComplete, aud
           const tellPosture = primaryTell ? { type: primaryTell.type as ReadTellType, strength: primaryTell.strength } : null;
           const previousAction = index === 0 ? actionA : actionB;
           const currentIntent = index === 0 ? intentA : intentB;
-          const recentMirageEvade = fighter.awakening?.type === 'flow-state'
-            && fighter.lastMirageEvadeTick !== null
-            && next.logicalTick - fighter.lastMirageEvadeTick <= 2
+          // No tick-freshness window here: /sync only lands every
+          // AUTHORITATIVE_SYNC_INTERVAL_MS (150ms/9 ticks), far coarser than a
+          // couple of ticks, so a narrow "just happened" check almost always
+          // misses the poll. lastMirageEvadeTick persists server-side until the
+          // next evade, and ChickenModel already diffs afterimageKey against the
+          // last value it saw, so forwarding the raw tick is sufficient to fire
+          // exactly once per evade.
+          const recentMirageEvade = fighter.awakening?.type === 'flow-state' && fighter.lastMirageEvadeTick !== null
             ? fighter.lastMirageEvadeTick * 10 + 2
             : undefined;
           if (state !== previousAction.current) {

@@ -24,7 +24,7 @@ export function toCombatV2Snapshot(chicken: Chicken, playerId: string, opponentI
     experience: clamp(Object.values(chicken.experience ?? {}).reduce((sum, n) => sum + n, 0) / 700),
     condition,
     maxHealth: combatMaxHealth,
-    startingHealth: clamp(chicken.health ?? combatMaxHealth, 1, combatMaxHealth),
+    startingHealth: clamp(((chicken.health ?? 100) / 100) * combatMaxHealth, 1, combatMaxHealth),
     startingStamina: clamp((chicken.energy ?? 100) * (1 - trainingFatigue * .35) * (1 - stress * .2), 15, 100),
     trainingFatigue, stress, morale, confidence,
     activeInjuries: (chicken.injuries ?? []).map(injury => ({ id: injury.id, location: injury.location, severity: injury.severity, permanent: injury.permanent })),
