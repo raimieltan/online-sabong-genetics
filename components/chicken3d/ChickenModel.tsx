@@ -274,7 +274,7 @@ function disposeAfterimage(afterimage: DodgeAfterimage) {
  * ghost cycles through the pool, so no allocation happens during combat. */
 function createDodgeAfterimage(sourceScene: THREE.Object3D): DodgeAfterimage {
   const material = new THREE.MeshBasicMaterial({
-    color: "#d9fbff",
+    color: "#ffffff",
     transparent: true,
     opacity: 0,
     depthWrite: false,
@@ -305,8 +305,8 @@ function createDodgeAfterimage(sourceScene: THREE.Object3D): DodgeAfterimage {
       posePairs: sourcePoseNodes.map((source, index) => ({ source, ghost: ghostPoseNodes[index] })).filter(pair => pair.ghost),
       baseScale: new THREE.Vector3(1, 1, 1),
       age: 0,
-      duration: 0.42,
-      maxOpacity: 0.68,
+      duration: 0.65,
+      maxOpacity: 0.95,
       active: false,
     });
   }
@@ -817,7 +817,8 @@ export function ChickenModel({
       if (!ghost.active) return;
       ghost.age += dt;
       const progress = Math.max(0, Math.min(1, ghost.age / ghost.duration));
-      afterimagePool.material.opacity = ghost.maxOpacity * (1 - progress) * (1 - progress * 0.75);
+      const fadeCurve = (1 - progress) * (1 - progress);
+      afterimagePool.material.opacity = ghost.maxOpacity * fadeCurve;
       ghost.root.scale.set(
         ghost.baseScale.x * (1 + progress * 0.12),
         ghost.baseScale.y * (1 - progress * 0.04),
@@ -907,6 +908,8 @@ export function ChickenModel({
       if (afterimageKey !== undefined && afterimageKey !== lastAfterimageKey.current) {
         lastAfterimageKey.current = afterimageKey;
         spawnDodgeAfterimage(velX, velZ);
+        spawnDodgeAfterimage(velX * 0.6, velZ * 0.6);
+        spawnDodgeAfterimage(velX * 0.3, velZ * 0.3);
       }
       updateDodgeAfterimages(safeDt);
       const visual = awakeningType ? AWAKENING_VISUALS[awakeningType] : null;
