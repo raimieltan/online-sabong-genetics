@@ -231,9 +231,15 @@ function AuthoritativeContinuousBattle({ sessionId, initialView, onComplete, aud
             window.setTimeout(() => setBursts(previous => previous.filter(item => item.id !== id)), reducedEffectsRef.current ? 350 : 1100);
           };
           if (['HIT', 'COUNTER_TRIGGERED', 'HEALTH_CHANGED', 'STAGGER', 'KNOCKDOWN', 'SESSION_TERMINAL', 'AWAKENING_STARTED', 'ACTION_ENDED'].includes(event.type)) {
-            const major = event.type === 'COUNTER_TRIGGERED' || event.type === 'STAGGER' || event.type === 'KNOCKDOWN' || Number(event.payload.value ?? 0) >= 9;
+            // Berserker attacks land with unmistakably more force: the spec
+            // calls for camera shake on heavy movements and stronger
+            // hit-stop specifically for Berserker hits, distinct from a
+            // generic crit.
+            const attackerBerserk = (event.type === 'HIT' || event.type === 'COUNTER_TRIGGERED')
+              && next.projection[fighterIndex]?.awakening?.type === 'berserker';
+            const major = event.type === 'COUNTER_TRIGGERED' || event.type === 'STAGGER' || event.type === 'KNOCKDOWN' || Number(event.payload.value ?? 0) >= 9 || attackerBerserk;
             cameraCue.current = { attacker: fighterIndex === 0 ? 'r1' : 'r2', startTime: performance.now(), isCrit: major, isMiss: event.type === 'ACTION_ENDED' && String(event.payload.engineType) === 'ATTACK_MISSED', stagger: major ? 'heavy' : 'light', seq: event.cursor, cueName: event.type === 'SESSION_TERMINAL' ? 'victory' : major ? 'critical' : 'impact_light', focus: event.type === 'SESSION_TERMINAL' ? 'midpoint' : fighterIndex === 0 ? 'r2' : 'r1' };
-            if (major && !reducedEffectsRef.current) hitStopUntil.current = performance.now() + 52;
+            if (major && !reducedEffectsRef.current) hitStopUntil.current = performance.now() + (attackerBerserk ? 68 : 52);
           }
           if (event.type === 'EVADE' && String(event.payload.detail) === 'MIRAGE_EVADE' && !reducedEffectsRef.current) {
             cameraCue.current = { attacker: fighterIndex === 0 ? 'r1' : 'r2', startTime: performance.now(), isCrit: false, isMiss: false, stagger: 'light', seq: event.cursor, cueName: 'impact_light', focus: fighterIndex === 0 ? 'r2' : 'r1' };
@@ -242,7 +248,17 @@ function AuthoritativeContinuousBattle({ sessionId, initialView, onComplete, aud
           if (event.type === 'ACTION_ENDED' && String(event.payload.engineType) === 'ATTACK_MISSED') { audio.current?.playMiss(); burst('LIHIS!', 'miss'); }
           if (event.type === 'HIT' || event.type === 'COUNTER_TRIGGERED') { const majorHit = Number(event.payload.value ?? 0) >= 9 || event.type === 'COUNTER_TRIGGERED'; if (majorHit) audio.current?.playCrit(); else audio.current?.playHit(); burst(event.type === 'COUNTER_TRIGGERED' ? 'SAGOT!' : 'TAMA!', majorHit ? 'crit' : 'hit'); }
           if (event.type === 'STAGGER' || event.type === 'KNOCKDOWN') { audio.current?.playCrit(); burst('BUWAL!', 'crit'); }
-          if (event.type === 'AWAKENING_STARTED') { audio.current?.playCrit(); burst('AWAKENING!', 'ko'); }
+          if (event.type === 'AWAKENING_STARTED') {
+            audio.current?.playCrit();
+            burst('AWAKENING!', 'ko');
+            const awakenedType = String(event.payload.detail ?? '');
+            // Apex snaps into a sudden power surge; Second Wind and
+            // Unbreakable read as a stabilizing breath/plant rather than a
+            // burst, so they get a lighter camera beat than Berserker/Apex.
+            const heavyActivation = awakenedType === 'apex' || awakenedType === 'berserker';
+            if (!reducedEffectsRef.current) hitStopUntil.current = performance.now() + (heavyActivation ? 90 : 56);
+            cameraCue.current = { attacker: fighterIndex === 0 ? 'r1' : 'r2', startTime: performance.now(), isCrit: heavyActivation, isMiss: false, stagger: heavyActivation ? 'heavy' : 'light', seq: event.cursor, cueName: heavyActivation ? 'critical' : 'impact_light', focus: fighterIndex === 0 ? 'r1' : 'r2' };
+          }
           if (event.type === 'SESSION_TERMINAL') { audio.current?.playVictory(); burst('TAPOS NA!', 'ko'); }
           if (event.type === 'COMMAND_RESOLVED' && fighterIndex === 0) {
             const grade = String(event.payload.grade ?? 'PARTIAL');
@@ -557,7 +573,8 @@ function SandboxContinuousBattle({ chickenA, chickenB, matchSeed = 81726354, aut
       for (const event of events) {
         const fighterIndex = session.state.fighters.findIndex(f => f.snapshot.fighterId === event.fighterId);
         const targetIndex = session.state.fighters.findIndex(f => f.snapshot.fighterId === event.targetId);
-        const presentation = directorRef.current.consume(event, id => session.state.fighters.findIndex(f => f.snapshot.fighterId === id));
+        const attackerBerserk = session.state.fighters[fighterIndex]?.awakening?.type === 'berserker';
+        const presentation = directorRef.current.consume(event, id => session.state.fighters.findIndex(f => f.snapshot.fighterId === id), attackerBerserk);
         const cueAttacker = fighterIndex === 0 ? 'r1' : 'r2';
         cameraCue.current = {
           attacker: cueAttacker,
@@ -612,7 +629,18 @@ function SandboxContinuousBattle({ chickenA, chickenB, matchSeed = 81726354, aut
           feedbackTimer.current = window.setTimeout(() => setCommandFeedback(null), 1400);
         }
         if (event.type === 'SIGNATURE_TECHNIQUE') { burst((event.detail ?? 'SIGNATURE').replaceAll('-', ' ').toUpperCase(), fighterIndex === 0 ? 'left' : 'right', 'crit'); setCaption('A familiar career pattern appears in the exchange.'); }
-        if (event.type === 'AWAKENING_STARTED') { const point = session.state.fighters[fighterIndex]?.position; if (point) { const origin = new THREE.Vector3(point.x, -2.92, point.z); vfx.current?.spawn('landing_dust', origin); vfx.current?.spawn('heavy_impact', origin); } audioRef.current?.playCrit(); burst('AWAKENING', fighterIndex === 0 ? 'left' : 'right', 'ko'); setCaption(`${event.detail?.replaceAll('-', ' ').toUpperCase()} — the fighter draws on everything its career taught it.`); }
+        if (event.type === 'AWAKENING_STARTED') {
+          const point = session.state.fighters[fighterIndex]?.position;
+          if (point) { const origin = new THREE.Vector3(point.x, -2.92, point.z); vfx.current?.spawn('landing_dust', origin); vfx.current?.spawn('heavy_impact', origin); }
+          audioRef.current?.playCrit();
+          burst('AWAKENING', fighterIndex === 0 ? 'left' : 'right', 'ko');
+          setCaption(`${event.detail?.replaceAll('-', ' ').toUpperCase()} — the fighter draws on everything its career taught it.`);
+          // BattleDirector already gives every awakening a strong 120ms
+          // activation beat; Apex and Berserker (explosive surge) get an
+          // extra push beyond that baseline, Second Wind/Unbreakable
+          // (stabilizing breath/plant) stay at the director's default.
+          if (event.detail === 'apex' || event.detail === 'berserker') hitStopUntil.current = performance.now() + 150;
+        }
         if (event.type === 'AWAKENING_ENDED') { burst('AWAKENING ENDED', fighterIndex === 0 ? 'left' : 'right', 'crit'); setCaption(`${event.detail?.replaceAll('-', ' ').toUpperCase()} fades after 30 seconds.`); }
         if (event.type === 'MATCH_FINISHED') { audioRef.current?.playVictory(); burst('TAPOS NA!', 'center', 'ko'); }
       }

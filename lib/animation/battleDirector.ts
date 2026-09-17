@@ -59,7 +59,13 @@ export class BattleDirector {
 
   current(): BattlePresentationState { return this.state; }
 
-  consume(event: CombatEvent, fighterIndex: (id: string | undefined) => number): BattlePresentationState {
+  /**
+   * `attackerBerserk` lets the caller flag that the event's fighter has the
+   * Berserker awakening active — the director has no combat-state access of
+   * its own, so it can't derive this itself. Berserker hits get stronger
+   * hit-stop/camera weight than an equivalent non-awakened hit.
+   */
+  consume(event: CombatEvent, fighterIndex: (id: string | undefined) => number, attackerBerserk = false): BattlePresentationState {
     const attacker = fighterIndex(event.fighterId) === 0 ? "r1" : "r2";
     const defender = attacker === "r1" ? "r2" : "r1";
     const next: BattlePresentationState = { ...this.state, sequence: this.state.sequence + 1, vfx: null, secondaryVfx: null, hitStopSeconds: 0, duckAudio: false };
@@ -77,7 +83,7 @@ export class BattleDirector {
     } else if (event.type === "ATTACK_STARTED" || event.type === "ATTACK_ACTIVE") {
       Object.assign(next, { intensity: 2, hud: "CINEMATIC", camera: "attack", focus: attacker, crowd: 0.66 });
     } else if (event.type === "ATTACK_LANDED" || event.type === "COUNTER_LANDED" || event.type === "DAMAGE") {
-      const major = event.type === "COUNTER_LANDED" || (event.value ?? 0) >= 9;
+      const major = event.type === "COUNTER_LANDED" || (event.value ?? 0) >= 9 || attackerBerserk;
       Object.assign(next, {
         intensity: major ? 3 : 2,
         hud: "CINEMATIC",
@@ -85,7 +91,7 @@ export class BattleDirector {
         focus: defender,
         vfx: major ? "critical_impact" : "light_impact",
         secondaryVfx: major ? "feathers" : null,
-        hitStopSeconds: major ? 0.052 : 0.026,
+        hitStopSeconds: attackerBerserk ? 0.068 : major ? 0.052 : 0.026,
         crowd: major ? 0.9 : 0.76,
         duckAudio: major,
       });

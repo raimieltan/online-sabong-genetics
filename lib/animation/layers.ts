@@ -195,12 +195,65 @@ export class LayerRig {
     // --- 1. Breathing -----------------------------------------------------
     if (ctx.alive) {
       const suppress = BREATH_SUPPRESS[state] ?? 1;
-      const flowStateCalm = awakening === 'flow-state' ? 0.35 : 1;
-      const breath = Math.sin(ctx.now * 0.0016);
+      // Flow State stills the body almost entirely; Berserker's breathing
+      // turns ragged and fast; Unbreakable and Apex breathe heavier/deeper
+      // under strain or power rather than faster.
+      const breathRate = awakening === 'berserker' ? 0.0027 : 0.0016;
+      const breathAmount = awakening === 'flow-state' ? 0.35
+        : awakening === 'berserker' ? 1.35
+        : awakening === 'unbreakable' ? 1.5
+        : awakening === 'apex' ? 1.25
+        : awakening === 'second-wind' ? 0.85
+        : 1;
+      const breath = Math.sin(ctx.now * breathRate);
       const amt = 0.5 + 0.5 * breath; // 0..1
-      add(pose, "Chest", { py: amt * 0.012 * g.bob * suppress * flowStateCalm, rx: -amt * 0.03 * g.bob * suppress * flowStateCalm });
-      add(pose, "Spine", { rx: -amt * 0.012 * g.bob * suppress * flowStateCalm });
-      add(pose, "Neck", { rx: amt * 0.015 * g.bob * suppress * flowStateCalm });
+      add(pose, "Chest", { py: amt * 0.012 * g.bob * suppress * breathAmount, rx: -amt * 0.03 * g.bob * suppress * breathAmount });
+      add(pose, "Spine", { rx: -amt * 0.012 * g.bob * suppress * breathAmount });
+      add(pose, "Neck", { rx: amt * 0.015 * g.bob * suppress * breathAmount });
+    }
+
+    // --- 1b. Awakening stance bias -----------------------------------------
+    // A steady, additive postural signature per awakening so each one reads
+    // distinctly even at a glance, independent of the particle aura.
+    if (ctx.alive) {
+      switch (awakening) {
+        case 'unbreakable':
+          // Heavier, grounded, feet planted: lower center of mass, chest
+          // pressed forward absorbing punishment rather than yielding to it.
+          add(pose, "Hips", { py: -0.022, rx: 0.02 });
+          add(pose, "Chest", { rx: 0.018 });
+          add(pose, "WingL", { rz: 0.05 });
+          add(pose, "WingR", { rz: -0.05 });
+          break;
+        case 'berserker': {
+          // Forward-leaning, head low and locked on, tail kicked up — a
+          // fighter about to close distance and trade, not wait.
+          const twitch = Math.sin(ctx.now * 0.021) * 0.012;
+          add(pose, "Spine", { rx: -0.035 });
+          add(pose, "Chest", { rx: -0.02 });
+          add(pose, "Head", { rx: -0.05 + twitch });
+          add(pose, "Tail", { rx: 0.08 });
+          break;
+        }
+        case 'second-wind':
+          // The upright "second breath" recovery: posture snaps back up,
+          // wings lift off a slumped resting position.
+          add(pose, "Chest", { py: 0.01, rx: -0.012 });
+          add(pose, "Hips", { py: 0.008 });
+          add(pose, "WingL", { rz: -0.03 });
+          add(pose, "WingR", { rz: 0.03 });
+          break;
+        case 'apex':
+          // Dominant, chest-out, head raised — maximum output carried like
+          // confidence rather than strain.
+          add(pose, "Chest", { py: 0.016, rx: -0.024 });
+          add(pose, "Neck", { rx: -0.02 });
+          add(pose, "Head", { rx: -0.015 });
+          add(pose, "Hips", { py: 0.006 });
+          break;
+        default:
+          break;
+      }
     }
 
     // --- 2. Head tracking ----------------------------------------------------
