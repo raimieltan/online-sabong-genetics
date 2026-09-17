@@ -126,6 +126,8 @@ function AuthoritativeContinuousBattle({ sessionId, initialView, onComplete, aud
   const onCompleteRef = useRef(onComplete);
   const animA = useRef(pose()), animB = useRef(pose());
   const targetA = useRef(pose()), targetB = useRef(pose());
+  const velocityA = useRef({ x: 0, y: 0, z: 0 }), velocityB = useRef({ x: 0, y: 0, z: 0 });
+  const lastSyncAt = useRef(performance.now());
   const intentA = useRef<AnimIntent | null>(null), intentB = useRef<AnimIntent | null>(null);
   const awakeningA = useRef<AwakeningType | null>(initialView?.projection[0]?.awakening?.type ?? null);
   const awakeningB = useRef<AwakeningType | null>(initialView?.projection[1]?.awakening?.type ?? null);
@@ -163,7 +165,19 @@ function AuthoritativeContinuousBattle({ sessionId, initialView, onComplete, aud
       previous = now;
       hitStopScale.current = now < hitStopUntil.current ? 0 : 1;
       const blend = 1 - Math.exp(-8 * dt);
-      for (const [current, target] of [[animA.current, targetA.current], [animB.current, targetB.current]] as const) {
+      // Dead-reckon the authoritative target between /sync responses using the
+      // fighter's last known velocity, so network latency/jitter shows up as a
+      // (self-correcting) drift instead of the fighter freezing until the next
+      // snapshot lands. Extrapolation is capped so a stalled connection settles
+      // instead of running the fighter away from its true position.
+      const sinceSync = now - lastSyncAt.current;
+      const extrapolate = sinceSync < MAX_EVENT_REPLAY_WINDOW_MS * 2;
+      for (const [current, target, velocity] of [[animA.current, targetA.current, velocityA.current], [animB.current, targetB.current, velocityB.current]] as const) {
+        if (extrapolate) {
+          target.offsetX += velocity.x * dt;
+          target.offsetY += velocity.y * dt;
+          target.offsetZ += velocity.z * dt;
+        }
         current.offsetX += (target.offsetX - current.offsetX) * blend;
         current.offsetY += (target.offsetY - current.offsetY) * blend;
         current.offsetZ += (target.offsetZ - current.offsetZ) * blend;
@@ -275,11 +289,19 @@ function AuthoritativeContinuousBattle({ sessionId, initialView, onComplete, aud
           eventReplayAvailableAt = replayStartedAt + replayWindowMs;
         }
         if (!sceneFighters && next.fighters) setSceneFighters(next.fighters);
+        lastSyncAt.current = performance.now();
         next.projection.forEach((fighter, index) => {
           const target = index === 0 ? targetA.current : targetB.current;
+          const velocity = index === 0 ? velocityA.current : velocityB.current;
           target.offsetX = (fighter.position.x - (index === 0 ? -WORLD_HALF_GAP : WORLD_HALF_GAP)) / ANIM_PX_TO_WORLD;
           target.offsetY = -fighter.position.y / ANIM_PX_TO_WORLD;
           target.offsetZ = fighter.position.z / ANIM_PX_TO_WORLD;
+          // Server velocity is authoritative-space units/sec; convert with the
+          // same scale used for position so extrapolation tracks 1:1 between syncs.
+          const atRest = fighter.mentalState === 'down' || next.status !== 'ACTIVE';
+          velocity.x = atRest ? 0 : fighter.velocity.x / ANIM_PX_TO_WORLD;
+          velocity.y = atRest ? 0 : -fighter.velocity.y / ANIM_PX_TO_WORLD;
+          velocity.z = atRest ? 0 : fighter.velocity.z / ANIM_PX_TO_WORLD;
           const primaryTell = fighter.readTells[0];
           const cue = tellPostureCue(primaryTell?.type as ReadTellType | undefined, primaryTell?.strength ?? 0, index === 0 ? 'left' : 'right');
           target.rot = cue.rot;
@@ -606,8 +628,11 @@ function SandboxContinuousBattle({ chickenA, chickenB, matchSeed = 81726354, aut
         current.scaleY = cue.scaleY;
         current.scaleX = 1;
         current.yaw += cue.yawOffset;
-        const runtime = fighter.currentAction, action = runtime && ACTIONS[runtime.id]; let progress = Math.min(1, (state.tick - fighter.stateEnteredTick) / 20);
-        if (runtime && action) { const age = state.tick - runtime.startedTick; progress = runtime.phase === 'startup' ? age / action.startupTicks * .52 : runtime.phase === 'active' ? .52 + (age - action.startupTicks) / action.activeTicks * .2 : .72 + (age - action.startupTicks - action.activeTicks) / action.recoveryTicks * .28; }
+        // `alpha` fractions the current tick, so folding it into these tick
+        // differences keeps action progress continuous between 60Hz sim
+        // steps instead of jumping once per tick on higher-refresh displays.
+        const runtime = fighter.currentAction, action = runtime && ACTIONS[runtime.id]; let progress = Math.min(1, (state.tick + alpha - fighter.stateEnteredTick) / 20);
+        if (runtime && action) { const age = state.tick + alpha - runtime.startedTick; progress = runtime.phase === 'startup' ? age / action.startupTicks * .52 : runtime.phase === 'active' ? .52 + (age - action.startupTicks) / action.activeTicks * .2 : .72 + (age - action.startupTicks - action.activeTicks) / action.recoveryTicks * .28; }
         const aerial = fighter.aerial && (fighter.aerial.launchedTick < 0 || !fighter.grounded || fighter.aerial.phase === 'LAND') && fighter.groundedTicks <= 10 ? fighter.aerial : undefined;
         const recentMirageEvade = fighter.lastMirageEvadeTick !== undefined && state.tick - fighter.lastMirageEvadeTick <= 2
           ? fighter.lastMirageEvadeTick * 10 + 2

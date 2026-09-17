@@ -49,6 +49,7 @@ export type PublicFighterState = {
   combatMomentum: number;
   mentalState: string;
   position: { x: number; y: number; z: number };
+  velocity: { x: number; y: number; z: number };
   facing: number;
   actionId: string | null;
   engagement: EngagementPhase;
@@ -151,6 +152,7 @@ export function publicFighters(state: CombatMatchState): PublicFighterState[] {
     combatMomentum: fighter.combatMomentum,
     mentalState: fighter.mentalState,
     position: { ...fighter.position },
+    velocity: { ...fighter.velocity },
     facing: fighter.facing,
     actionId: fighter.currentAction?.id ?? null,
     engagement: fighter.engagement.phase,
