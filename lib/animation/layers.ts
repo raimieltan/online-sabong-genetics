@@ -139,7 +139,7 @@ export class LayerRig {
    * @param ctx    frame context
    * @param state  current animation state (for breathing suppression)
    */
-  apply(pose: PoseMap, ctx: AnimContext, state: AnimState): void {
+  apply(pose: PoseMap, ctx: AnimContext, state: AnimState, awakening?: string | null): void {
     const dt = ctx.dt;
     const g = ctx.gains;
 
@@ -195,11 +195,12 @@ export class LayerRig {
     // --- 1. Breathing -----------------------------------------------------
     if (ctx.alive) {
       const suppress = BREATH_SUPPRESS[state] ?? 1;
+      const flowStateCalm = awakening === 'flow-state' ? 0.35 : 1;
       const breath = Math.sin(ctx.now * 0.0016);
       const amt = 0.5 + 0.5 * breath; // 0..1
-      add(pose, "Chest", { py: amt * 0.012 * g.bob * suppress, rx: -amt * 0.03 * g.bob * suppress });
-      add(pose, "Spine", { rx: -amt * 0.012 * g.bob * suppress });
-      add(pose, "Neck", { rx: amt * 0.015 * g.bob * suppress });
+      add(pose, "Chest", { py: amt * 0.012 * g.bob * suppress * flowStateCalm, rx: -amt * 0.03 * g.bob * suppress * flowStateCalm });
+      add(pose, "Spine", { rx: -amt * 0.012 * g.bob * suppress * flowStateCalm });
+      add(pose, "Neck", { rx: amt * 0.015 * g.bob * suppress * flowStateCalm });
     }
 
     // --- 2. Head tracking ----------------------------------------------------

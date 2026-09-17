@@ -244,6 +244,8 @@ export interface AnimIntent {
   tellPosture?: { type: import('../combat-v2/types').ReadTellType; strength: number } | null;
   /** One-shot simulation tick for a successful Flow State dodge snapshot. */
   afterimageKey?: number;
+  /** Current awakening type (if any) — damps idle breathing when flow-state. */
+  awakening?: import('../combat-v2/types').AwakeningType | null;
   state: AnimState;
   /** ms timestamp when this intent began. */
   startedAt: number;

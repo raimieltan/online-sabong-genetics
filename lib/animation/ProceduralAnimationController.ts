@@ -85,6 +85,7 @@ export class ProceduralAnimationController {
   private facing: "left" | "right" = "right";
   private gains: AnimationGains;
   private alive = true;
+  private awakening: string | null = null;
 
   // scratch
   private _euler = new THREE.Euler(0, 0, 0, "XYZ");
@@ -181,7 +182,9 @@ export class ProceduralAnimationController {
     velY: number;
     aimYaw: number;
     simulationIntent?: AnimIntent;
+    awakening?: string | null;
   }): void {
+    this.awakening = frame.awakening ?? null;
     const dt = Math.min(frame.dt, 1 / 30);
     this.sm.update(dt);
 
@@ -305,7 +308,7 @@ export class ProceduralAnimationController {
       copyPose(this.poseBase, this.poseOut);
     }
 
-    this.layers.apply(this.poseOut, ctx, state);
+    this.layers.apply(this.poseOut, ctx, state, this.awakening);
     this.writeBones();
   }
 

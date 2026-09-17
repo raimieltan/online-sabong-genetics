@@ -235,6 +235,10 @@ function AuthoritativeContinuousBattle({ sessionId, initialView, onComplete, aud
             cameraCue.current = { attacker: fighterIndex === 0 ? 'r1' : 'r2', startTime: performance.now(), isCrit: major, isMiss: event.type === 'ACTION_ENDED' && String(event.payload.engineType) === 'ATTACK_MISSED', stagger: major ? 'heavy' : 'light', seq: event.cursor, cueName: event.type === 'SESSION_TERMINAL' ? 'victory' : major ? 'critical' : 'impact_light', focus: event.type === 'SESSION_TERMINAL' ? 'midpoint' : fighterIndex === 0 ? 'r2' : 'r1' };
             if (major && !reducedEffectsRef.current) hitStopUntil.current = performance.now() + 52;
           }
+          if (event.type === 'EVADE' && String(event.payload.detail) === 'MIRAGE_EVADE' && !reducedEffectsRef.current) {
+            cameraCue.current = { attacker: fighterIndex === 0 ? 'r1' : 'r2', startTime: performance.now(), isCrit: false, isMiss: false, stagger: 'light', seq: event.cursor, cueName: 'impact_light', focus: fighterIndex === 0 ? 'r2' : 'r1' };
+            hitStopUntil.current = performance.now() + 48;
+          }
           if (event.type === 'ACTION_ENDED' && String(event.payload.engineType) === 'ATTACK_MISSED') { audio.current?.playMiss(); burst('LIHIS!', 'miss'); }
           if (event.type === 'HIT' || event.type === 'COUNTER_TRIGGERED') { const majorHit = Number(event.payload.value ?? 0) >= 9 || event.type === 'COUNTER_TRIGGERED'; if (majorHit) audio.current?.playCrit(); else audio.current?.playHit(); burst(event.type === 'COUNTER_TRIGGERED' ? 'SAGOT!' : 'TAMA!', majorHit ? 'crit' : 'hit'); }
           if (event.type === 'STAGGER' || event.type === 'KNOCKDOWN') { audio.current?.playCrit(); burst('BUWAL!', 'crit'); }
@@ -270,7 +274,7 @@ function AuthoritativeContinuousBattle({ sessionId, initialView, onComplete, aud
           const index = next.projection.findIndex(fighter => fighter.fighterId === event.payload.fighterId);
           if (index < 0) return;
           const state = animation[String(event.payload.actionId ?? '')] ?? 'ready';
-          const intent: AnimIntent = { state, startedAt: event.cursor, speed: 1, moveKind: String(event.payload.actionId ?? state), facing: index === 0 ? 'right' : 'left', tacticalMode: index === 0 ? commandModeForPresentation(next.activeCommand) : 'balanced', fatal: false };
+          const intent: AnimIntent = { state, startedAt: event.cursor, speed: 1, moveKind: String(event.payload.actionId ?? state), facing: index === 0 ? 'right' : 'left', tacticalMode: index === 0 ? commandModeForPresentation(next.activeCommand) : 'balanced', fatal: false, awakening: next.projection[index]?.awakening?.type ?? null };
           if (index === 0) { actionA.current = state; intentA.current = intent; }
           else { actionB.current = state; intentB.current = intent; }
         };
@@ -566,6 +570,7 @@ function SandboxContinuousBattle({ chickenA, chickenB, matchSeed = 81726354, aut
           hudVisibilityRef.current = presentation.hud;
           setHudVisibility(presentation.hud);
         }
+        if (event.type === 'EVADE' && String(event.detail) === 'MIRAGE_EVADE') { hitStopUntil.current = performance.now() + 48; }
         if (event.type === 'ATTACK_MISSED') { audioRef.current?.playMiss(); burst('LIHIS!', fighterIndex === 0 ? 'right' : 'left', 'miss'); setCaption('Wala sa oras — nakaiwas! Basahin ang galaw, coach!'); }
         if (event.type === 'ATTACK_LANDED' || event.type === 'COUNTER_LANDED') {
           const critical = event.type === 'COUNTER_LANDED' || (event.value ?? 0) >= 9;
@@ -644,7 +649,7 @@ function SandboxContinuousBattle({ chickenA, chickenB, matchSeed = 81726354, aut
         const flowStep = fighter.awakening?.type === 'flow-state' && (fighter.state === 'evading' || runtime?.id === 'sidestep')
           ? (runtime?.startedTick ?? fighter.stateEnteredTick) * 10 + 1
           : undefined;
-        const intent: AnimIntent = { state: animation[(aerial?.phase === 'LAND' ? undefined : runtime)?.id ?? fighter.state] ?? 'ready', startedAt: (runtime?.startedTick ?? fighter.stateEnteredTick) * 1000 / 60, speed: 1, moveKind: runtime?.id ?? fighter.state, facing: index === 0 ? 'right' : 'left', simulationProgress: progress, tacticalMode: fighter.tacticalMode, tellPosture: primaryTell ? { type: primaryTell.type, strength: primaryTell.strength } : null, fatal: fighter.state === 'down', afterimageKey: recentMirageEvade ?? flowStep };
+        const intent: AnimIntent = { state: animation[(aerial?.phase === 'LAND' ? undefined : runtime)?.id ?? fighter.state] ?? 'ready', startedAt: (runtime?.startedTick ?? fighter.stateEnteredTick) * 1000 / 60, speed: 1, moveKind: runtime?.id ?? fighter.state, facing: index === 0 ? 'right' : 'left', simulationProgress: progress, tacticalMode: fighter.tacticalMode, tellPosture: primaryTell ? { type: primaryTell.type, strength: primaryTell.strength } : null, fatal: fighter.state === 'down', afterimageKey: recentMirageEvade ?? flowStep, awakening: fighter.awakening?.type ?? null };
         if (aerial && state.phase !== 'finished') intent.aerial = { ...aerial, tick: state.tick + alpha, actionId: runtime?.id, strikeProgress: runtime?.phase === 'active' && action ? (state.tick + alpha - runtime.startedTick - action.startupTicks) / action.activeTicks : undefined, phaseProgress: (state.tick + alpha - aerial.phaseTick) / (aerial.phase === 'PRELOAD' ? action?.aerial?.takeoffTick ?? 6 : aerial.phase === 'STRIKE_ACTIVE' ? action?.activeTicks ?? 6 : 8) };
         if (index === 0) intentA.current = intent; else intentB.current = intent;
         if (index === 0) awakeningA.current = fighter.awakening?.type ?? null; else awakeningB.current = fighter.awakening?.type ?? null;
