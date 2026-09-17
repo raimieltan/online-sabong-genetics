@@ -21,7 +21,10 @@ export default async function proxy(request: NextRequest) {
   if (pathname.startsWith("/api/")) {
     if (request.method !== "GET") {
       const origin = request.headers.get("origin");
-      if (origin && origin !== getSupabaseEnv().appUrl) {
+      // Compare against the request's own resolved origin (respects Vercel's
+      // forwarded host/proto) rather than a separately-configured env var, so
+      // this doesn't drift out of sync across preview URLs or custom domains.
+      if (origin && origin !== request.nextUrl.origin) {
         return NextResponse.json({ error: "Cross-origin request rejected" }, { status: 403 });
       }
     }
