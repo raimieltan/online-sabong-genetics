@@ -45,8 +45,12 @@ const COMMAND_ORDER: PlayerTacticalMode[] = ['pressure', 'defensive', 'counter',
  * only physically hinted, not yet a real read). */
 const TELL_HUD_THRESHOLD = 0.22;
 const AWAKENING_LABELS: Record<string, string> = { unbreakable: 'Unbreakable', berserker: 'Berserker', 'flow-state': 'Flow State', 'second-wind': 'Second Wind', apex: 'Apex' };
-const AUTHORITATIVE_SYNC_INTERVAL_MS = 60;
-const MAX_EVENT_REPLAY_WINDOW_MS = 100;
+// Each /sync call is a DB read + a transactional write on the server (engine
+// checkpoint restore/advance/persist), not a cheap poll — the interval must
+// stay conservative. Smoothness instead comes from client-side velocity
+// extrapolation (see the animate loop) filling the gaps between snapshots.
+const AUTHORITATIVE_SYNC_INTERVAL_MS = 150;
+const MAX_EVENT_REPLAY_WINDOW_MS = 250;
 
 function coachCaption(phase: string | null, tellType?: string, command?: string): string {
   if (tellType) {
