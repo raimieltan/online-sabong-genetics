@@ -45,8 +45,8 @@ const COMMAND_ORDER: PlayerTacticalMode[] = ['pressure', 'defensive', 'counter',
  * only physically hinted, not yet a real read). */
 const TELL_HUD_THRESHOLD = 0.22;
 const AWAKENING_LABELS: Record<string, string> = { unbreakable: 'Unbreakable', berserker: 'Berserker', 'flow-state': 'Flow State', 'second-wind': 'Second Wind', apex: 'Apex' };
-const AUTHORITATIVE_SYNC_INTERVAL_MS = 250;
-const MAX_EVENT_REPLAY_WINDOW_MS = 450;
+const AUTHORITATIVE_SYNC_INTERVAL_MS = 60;
+const MAX_EVENT_REPLAY_WINDOW_MS = 100;
 
 function coachCaption(phase: string | null, tellType?: string, command?: string): string {
   if (tellType) {
@@ -162,7 +162,7 @@ function AuthoritativeContinuousBattle({ sessionId, initialView, onComplete, aud
       const dt = Math.min(0.05, Math.max(0, (now - previous) / 1000));
       previous = now;
       hitStopScale.current = now < hitStopUntil.current ? 0 : 1;
-      const blend = 1 - Math.exp(-14 * dt);
+      const blend = 1 - Math.exp(-8 * dt);
       for (const [current, target] of [[animA.current, targetA.current], [animB.current, targetB.current]] as const) {
         current.offsetX += (target.offsetX - current.offsetX) * blend;
         current.offsetY += (target.offsetY - current.offsetY) * blend;
